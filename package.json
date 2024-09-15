@@ -5,11 +5,15 @@
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
     "hardhat": "^2.22.10",
+    "ts-node": "^10.9.2",
     "typechain": "^8.3.2",
     "typescript": "^5.6.2"
   },
   "dependencies": {
+    "@gelatonetwork/automate-sdk": "^3.0.2",
+    "@gelatonetwork/web3-functions-sdk": "2.3.0",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
-    "@openzeppelin/hardhat-upgrades": "^3.2.1"
+    "@openzeppelin/hardhat-upgrades": "^3.2.1",
+    "ky": "^0.33.2"
   }
 }

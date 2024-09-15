@@ -117,7 +117,6 @@ describe("Deployment", function () {
     expect(await coin.symbol()).to.be.equal("GM");
     expect(await coin.name()).to.be.equal("GM Coin");
 
-
     expect(await coin.balanceOf(owner)).to.be.equal(100000);
 
     await coin.connect(owner).transfer(addr1, 1000);

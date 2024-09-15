@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
+import "./parts/TwitterVerification.sol";
 
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
@@ -14,8 +15,11 @@ contract GMCoin is
     Initializable,
     OwnableUpgradeable,
     ERC20Upgradeable,
-    UUPSUpgradeable
+    UUPSUpgradeable,
+    TwitterVerification
 {
+
+
     address plannedNewImplementation;
     uint256 public plannedNewImplementationTime;
 
@@ -33,11 +37,13 @@ contract GMCoin is
         address _owner,
         address _feeAddress, 
         uint256 _comissionPercentage, 
-        uint256 _initialSupply    
+        uint256 _initialSupply,
+        address _gelatoOracleAddress    
     ) public initializer {
         __Ownable_init(_owner);
         __UUPSUpgradeable_init();
         __ERC20_init("GM Coin", "GM");
+        __TwitterVerification__init(_gelatoOracleAddress);
 
         feePercentage = _comissionPercentage;
         feeAddress = _feeAddress;
