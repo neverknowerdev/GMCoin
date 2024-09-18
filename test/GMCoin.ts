@@ -2,15 +2,42 @@
 
 import { expect } from "chai";
 import { ethers, upgrades } from "hardhat";
-import { Contract, ContractFactory } from "ethers";
-import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { Contract, ContractFactory, Signer, Wallet, Provider, HDNodeWallet } from "ethers";
+import { time, loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { GMCoin } from "../typechain-types/contracts/GMCoin";
 import hre from "hardhat";
 
+
 describe("Deployment", function () {
+  async function deployGMCoinWithProxy() {
+    // Contracts are deployed using the first signer/account by default
+    const [owner, feeAddr, gelatoAddr, otherAcc1, otherAcc2] = await hre.ethers.getSigners();
+
+    const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
+    const coinContract: GMCoin = await upgrades.deployProxy(TwitterCoin, 
+      [owner.address, feeAddr.address, 50, 1_000_000, gelatoAddr.address], 
+      {
+        kind: "uups",
+      }) as unknown as GMCoin;
+
+    await coinContract.waitForDeployment();
+
+    const deployedAddress = await coinContract.getAddress();
+
+    console.log('contract deployed at ', deployedAddress);
+
+    // const tx = await owner.sendTransaction({
+    //   to: deployedAddress,
+    //   value: ethers.parseEther("1.0"),
+    // });
+    // await tx.wait();
+
+    return { coinContract, owner, feeAddr, gelatoAddr, otherAcc1, otherAcc2 };
+  }
+
   it("proxy redeployment success", async function () {
     // 1. Retrieve Signers
-    const [owner] = await hre.ethers.getSigners();
+    const [owner, gelatoAddr] = await hre.ethers.getSigners();
 
     // 2. Get Contract Factories
     const TwitterCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin");
@@ -19,7 +46,7 @@ describe("Deployment", function () {
     // 3. Deploy Upgradeable Proxy for TwitterCoin
     const instance: Contract = await upgrades.deployProxy(
       TwitterCoinFactory,
-      [owner.address, owner.address, 50, 1000],
+      [owner.address, owner.address, 50, 1000, gelatoAddr.address],
       {
         kind: "uups",
       }
@@ -103,12 +130,12 @@ describe("Deployment", function () {
   });
 
   it('transaction fee', async() => {
-    const [owner, feeAddr, addr1, addr2] = await ethers.getSigners();
+    const [owner, feeAddr, gelatoAddr, addr1, addr2] = await ethers.getSigners();
 
     console.log('owner', owner.address);
 
     const TwitterCoin = await ethers.getContractFactory("GMCoin");
-    const coin: GMCoin = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000], {kind: "uups"}) as unknown as GMCoin;
+    const coin: GMCoin = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address], {kind: "uups"}) as unknown as GMCoin;
 
     await coin.waitForDeployment();
 
@@ -134,4 +161,63 @@ describe("Deployment", function () {
     expect(await coin.balanceOf(addr1)).to.be.equal(895+90000-450);
     expect(await coin.balanceOf(feeAddr)).to.be.equal(5+450);
   });
-});
+
+  it('updating twitter data', async() => {
+    const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(deployGMCoinWithProxy);
+
+    const limit = 10_000;
+    const batchSize = 500;
+
+    console.log('total batches to insert', limit/batchSize);
+
+    for(let bi=0; (bi+1)*batchSize<=limit; bi++) {
+      console.log('batch #', bi+1);
+
+      const usernames = [];
+      const USERNAME_LENGTH = 10; // You can adjust the length as needed
+  
+      for (let i = 0; i < batchSize; i++) {
+        usernames.push(generateRandomString(USERNAME_LENGTH));
+      }
+  
+      let wallets = await generateWallets(ethers.provider, batchSize);
+  
+      for(let i=0; i<batchSize; i++) {
+        await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address);
+      }
+
+      let contractUsernames = await coinContract.connect(owner).getTwitterUsernames(bi*batchSize, (bi+1)*batchSize);
+      console.log('allTwitterUsernames', contractUsernames);
+  
+  
+      const points = Array(batchSize).fill(10);
+  
+      await coinContract.connect(gelatoAddr).updateTwitterStat(usernames, points);
+    }
+    
+
+    // await gelatoAddr.sendTransaction({ to: await coinContract.getAddress(), data:  });
+
+  });
+}).timeout("5m");;
+
+function generateRandomString(length: number) {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+async function generateWallets(provider: Provider, count: number = 1000): Promise<HDNodeWallet[]> {
+  const wallets: HDNodeWallet[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const wallet = ethers.Wallet.createRandom();
+    const connectedWallet = wallet.connect(provider);
+    wallets.push(connectedWallet);
+  }
+
+  return wallets;
+}

@@ -28,4 +28,6 @@ contract TwitterVerification is Initializable {
 
         walletsByUsernames[username] = wallet;
     }
+
+    
 }
