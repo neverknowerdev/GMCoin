@@ -69,68 +69,123 @@ contract GMCoin is
         plannedNewImplementation = address(0);
     }
 
+    uint256 totalHolders;
+    address[] holderWallets;
+    mapping(address => uint256) holderWalletToIndex;
     function _update(address from, address to, uint256 value) internal override {
         if(from != address(0) && to != address(0)) {
             // taking fee only for transfer operation
             uint256 feeAmount = (value * feePercentage) / 10000;
-            value = value - feeAmount;
+            value = value - feeAmount; 
 
             super._update(from, feeAddress, feeAmount);
         }
 
         super._update(from, to, value);
+
+        if (balanceOf(from) == 0) { // --
+            totalHolders--;
+
+            uint256 fromIndex = holderWalletToIndex[from];
+            holderWallets[fromIndex] = holderWallets[holderWallets.length-1];
+            holderWalletToIndex[holderWallets[holderWallets.length-1]] = fromIndex;
+            holderWallets.pop();
+
+            holderWalletToIndex[from] = 0;
+        } 
+        if(balanceOf(to)- value == 0) { // ++
+            totalHolders++;
+
+            holderWallets.push(to);
+            holderWalletToIndex[to] = holderWallets.length;
+        }
     }
 
-/*
-    Twitter verification
-*/
-    event TwitterVerificationRequested(string username, address wallet);
-    event TwitterLinked(string username, address wallet);
-
-    mapping (string => address) walletsByUsernames;
-    string[] public allTwitterUsernames;
+    mapping (string => address) wallets;
+    string[] public allTwitterUsers;
+    uint256 public totalUsers = 0;
 
     address gelatoAddress;
+    event VerifyTwitterRequested(string authCode, string verifier, address wallet);
 
-    function getTwitterUsernames(uint256 start, uint256 count) external view returns (string[] memory) {
-        require(start < allTwitterUsernames.length, "Start index out of bounds");
+    function getTwitterUsers(uint256 start, uint256 count) external view returns (string[] memory) {
+        require(start < allTwitterUsers.length, "Start index out of bounds");
     
         uint256 end = start + count;
-        if (end > allTwitterUsernames.length) {
-            end = allTwitterUsernames.length;
+        if (end > allTwitterUsers.length) {
+            end = allTwitterUsers.length;
         }
         uint256 batchSize = end - start;
         string[] memory batch = new string[](batchSize);
         for (uint256 i = 0; i < batchSize; i++) {
-            batch[i] = allTwitterUsernames[start + i];
+            batch[i] = allTwitterUsers[start + i];
         }
         return batch;
     }
-    
-    function linkTwitter(string calldata username, address wallet) public {
-        require(walletsByUsernames[username] == address(0), "you're already linked twitter");
 
-        emit TwitterVerificationRequested(username, wallet);
+    function verifyTwitterRequest(string calldata authCode, string calldata verifier) public {
+        emit VerifyTwitterRequested(authCode, verifier, msg.sender);
     }
 
-    function verifyTwitter(string calldata username, address wallet) public {
+    function verifyTwitter(string calldata userEncoded, address wallet) public {
         require(msg.sender == gelatoAddress, "only Gelato can call this function");
 
-        if (walletsByUsernames[username] == address(0)) {
-            walletsByUsernames[username] = wallet;
-            allTwitterUsernames.push(username);
+        wallets[userEncoded] = wallet;
+        allTwitterUsers.push(userEncoded);
+    }
+
+    // 1.0 = value / 100_000
+    uint256 public COINS_MULTIPLICATOR = 100_000_000;
+    uint256 public POINTS_MULTIPLICATOR_PER_TWEET = 1_000_000;
+    uint256 public POINTS_MULTIPLICATOR_PER_LIKE = 1_000_000;
+
+    uint256 public dayPoints = 0; // total tweets + likes for usernames
+    uint256 public dayPointsFromStakers = 0; // (total tweets - user's tweets) + likes for usernames
+    uint256 countedUsers = 0;
+    uint256 lastMintedDay = 0;
+    uint256 lastDaySupply = 0;
+
+    uint256 public constant SECONDS_IN_A_DAY = 60*60*24;
+    uint256 currentDay = block.timestamp % (SECONDS_IN_A_DAY);
+
+    function mintCoinsForTwitterUsers(uint256 startIndex, uint256 endIndex, uint256[] calldata tweets, uint256[] calldata likes) public {
+        require(msg.sender == gelatoAddress, "only Gelato can call this function");
+        require((endIndex - startIndex == tweets.length) && (tweets.length == likes.length), "wrong input array lengths");
+        require(endIndex - startIndex > 0, "empty array");
+
+        // new day?
+        if(startIndex == 0) {
+            if (block.timestamp % SECONDS_IN_A_DAY == lastMintedDay) {
+                revert("minting process already started for this day");
+            }
+
+            lastDaySupply = totalSupply();
+        }
+
+        for(uint256 i=startIndex; i<endIndex; i++) {
+            address walletAddr = wallets[allTwitterUsers[i]];
+            // TODO here: convertation from 100_000 
+            uint256 amount = tweets[i] * POINTS_MULTIPLICATOR_PER_TWEET+ likes[i] * POINTS_MULTIPLICATOR_PER_LIKE;
+            amount *= COINS_MULTIPLICATOR;
+            _mint(walletAddr, amount);
         }
     }
 
-    function updateTwitterStat(string[] calldata usernames, uint256[] calldata points) public {
+    function mintCoinsForSkakers(uint256 startIndex, uint256 endIndex) public {
         require(msg.sender == gelatoAddress, "only Gelato can call this function");
-        require(usernames.length == points.length, "wrong input array lengths");
-        require(usernames.length > 0, "empty array");
-
-        for(uint32 i=0; i<usernames.length; i++) {      
-            address walletAddr = walletsByUsernames[usernames[i]];
-            uint256 amount = points[i] * 10;
-            _transfer(address(this), walletAddr, amount);
+        require(endIndex - startIndex > 0, "empty array");
+        require(endIndex < holderWallets.length, "endIndex is out of range for holderWallets");
+        require(startIndex > 0, "startIndex should be greater than 0");
+        
+        
+        uint256 pointsToShare = dayPoints - dayPointsFromStakers;
+        
+        for(uint i=startIndex; i<endIndex; i++) {
+            uint256 holderBalance = balanceOf(holderWallets[i]);
+            if(holderBalance > 0){
+                uint256 reward = (holderBalance * pointsToShare) / lastDaySupply;
+                _mint(holderWallets[i], reward);
+            }
         }
     }
 }

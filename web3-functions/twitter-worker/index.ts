@@ -31,9 +31,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
   if (!twitterClientID)
     return { canExec: false, message: `TWITTER_BEARER not set in secrets` };
 
-  const twitterAuthRedirectURL = await context.secrets.get("TWITTER_AUTH_REDIRECT_URL");
-  if (!twitterAuthRedirectURL) 
-    return { canExec: false, message: `TWITTER_AUTH_REDIRECT_URL not set in secrets` };
 
   console.log(`verifier address is ${userArgs.verifierContractAddress}`);
 

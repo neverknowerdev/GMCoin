@@ -6,6 +6,6 @@ import "../GMCoin.sol";
 contract GMCoinExposed is GMCoin
 {
     function getWalletByUsername(string calldata username) public view returns (address) {
-        return walletsByUsernames[username];
+        return wallets[username];
     }
 }
