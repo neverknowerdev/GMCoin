@@ -127,11 +127,11 @@ contract GMCoin is
         emit VerifyTwitterRequested(authCode, verifier, msg.sender);
     }
 
-    function verifyTwitter(string calldata userEncoded, address wallet) public {
+    function verifyTwitter(string calldata userID, address wallet) public {
         require(msg.sender == gelatoAddress, "only Gelato can call this function");
 
-        wallets[userEncoded] = wallet;
-        allTwitterUsers.push(userEncoded);
+        wallets[userID] = wallet;
+        allTwitterUsers.push(userID);
     }
 
     // 1.0 = value / 100_000
