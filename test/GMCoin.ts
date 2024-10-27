@@ -17,7 +17,7 @@ describe("GM", function () {
 
     const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
     const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, 
-      [owner.address, feeAddr.address, 50, 1_000_000, gelatoAddr.address], 
+      [owner.address, feeAddr.address, 50, 1_000_000, gelatoAddr.address, 1_000_000], 
       {
         kind: "uups",
       }) as unknown as GMCoinExposed;
@@ -48,7 +48,7 @@ describe("GM", function () {
     // 3. Deploy Upgradeable Proxy for TwitterCoin
     const instance: Contract = await upgrades.deployProxy(
       TwitterCoinFactory,
-      [owner.address, owner.address, 50, 1000, gelatoAddr.address],
+      [owner.address, owner.address, 50, 1000, gelatoAddr.address, 1_000_000],
       {
         kind: "uups",
       }
@@ -137,7 +137,7 @@ describe("GM", function () {
     console.log('owner', owner.address);
 
     const TwitterCoin = await ethers.getContractFactory("GMCoin");
-    const coin: GMCoin = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address], {kind: "uups"}) as unknown as GMCoin;
+    const coin: GMCoin = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, 1_000_000], {kind: "uups"}) as unknown as GMCoin;
 
     await coin.waitForDeployment();
 

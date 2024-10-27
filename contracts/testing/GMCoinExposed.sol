@@ -9,19 +9,11 @@ contract GMCoinExposed is GMCoin
         return walletByTwitterUsername(username);
     }
 
-    function getAllStakerIndexes() public view returns (uint256[] memory) {
-        return stakerIDs;
-    }
-
-    function getMintingDayTotalPoints() public view returns (uint256) {
-        return mintingDayTotalPoints;
+    function getCurrentComplexity() public view returns (uint256) {
+        return COINS_MULTIPLICATOR;
     }
 
     function getMintingDayPointsFromUsers() public view returns (uint256) {
         return mintingDayPointsFromUsers;
-    }
-
-    function getMintingDayTotalCoinsStaked() public view returns (uint256) {
-        return mintingDayTotalCoinsStaked;
     }
 }

@@ -38,7 +38,8 @@ contract GMCoin is
         address _feeAddress, 
         uint256 _comissionPercentage, 
         uint256 _initialSupply,
-        address _gelatoOracleAddress    
+        address _gelatoOracleAddress    ,
+        uint256 coinsMultiplicator
     ) public initializer {
         feePercentage = _comissionPercentage;
         feeAddress = _feeAddress;
@@ -48,7 +49,7 @@ contract GMCoin is
         __Ownable_init(_owner);
         __UUPSUpgradeable_init();
         __ERC20_init("GM Coin", "GM");
-        __TwitterOracle__init(_gelatoOracleAddress);
+        __TwitterOracle__init(coinsMultiplicator, _gelatoOracleAddress);
 
         _mint(address(_owner), _initialSupply);
     }
@@ -106,9 +107,5 @@ contract GMCoin is
 
         _mint(address(this), amountToMintForLiquidityPool);
         _mint(walletAddr, amount);
-    }
-
-    function _balanceOfUserByIndex(uint256 userID) internal override view returns (uint256) {
-        return balanceOf(walletByTwitterUserIndex(userID));
     }
 }
