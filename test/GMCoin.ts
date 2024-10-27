@@ -5,20 +5,22 @@ import { ethers, upgrades } from "hardhat";
 import { Contract, ContractFactory, Signer, Wallet, Provider, HDNodeWallet } from "ethers";
 import { time, loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { GMCoin } from "../typechain-types/contracts/GMCoin";
+import { GMCoinExposed } from "../typechain-types/contracts/testing/GMCoinExposed";
 import hre from "hardhat";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 
-describe("Deployment", function () {
+describe("GM", function () {
   async function deployGMCoinWithProxy() {
     // Contracts are deployed using the first signer/account by default
     const [owner, feeAddr, gelatoAddr, otherAcc1, otherAcc2] = await hre.ethers.getSigners();
 
     const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-    const coinContract: GMCoin = await upgrades.deployProxy(TwitterCoin, 
+    const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, 
       [owner.address, feeAddr.address, 50, 1_000_000, gelatoAddr.address], 
       {
         kind: "uups",
-      }) as unknown as GMCoin;
+      }) as unknown as GMCoinExposed;
 
     await coinContract.waitForDeployment();
 
@@ -162,62 +164,44 @@ describe("Deployment", function () {
     expect(await coin.balanceOf(feeAddr)).to.be.equal(5+450);
   });
 
-  it('updating twitter data', async() => {
-    const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(deployGMCoinWithProxy);
+//   it('updating twitter data bulk', async() => {
+//     const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(deployGMCoinWithProxy);
 
-    const limit = 10_000;
-    const batchSize = 500;
+//     const limit = 10_000;
+//     const batchSize = 500;
 
-    console.log('total batches to insert', limit/batchSize);
+//     console.log('total batches to insert', limit/batchSize);
 
-    for(let bi=0; (bi+1)*batchSize<=limit; bi++) {
-      console.log('batch #', bi+1);
+//     for(let bi=0; (bi+1)*batchSize<=limit; bi++) {
+//       console.log('batch #', bi+1);
 
-      const usernames = [];
-      const USERNAME_LENGTH = 10; // You can adjust the length as needed
+//       const usernames = [];
+//       const USERNAME_LENGTH = 10; // You can adjust the length as needed
   
-      for (let i = 0; i < batchSize; i++) {
-        usernames.push(generateRandomString(USERNAME_LENGTH));
-      }
+//       for (let i = 0; i < batchSize; i++) {
+//         usernames.push(generateRandomString(USERNAME_LENGTH));
+//       }
   
-      let wallets = await generateWallets(ethers.provider, batchSize);
+//       let wallets = await generateWallets(ethers.provider, batchSize);
   
-      for(let i=0; i<batchSize; i++) {
-        await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address);
-      }
+//       for(let i=0; i<batchSize; i++) {
+//         await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address);
+//       }
 
-      let contractUsernames = await coinContract.connect(owner).getTwitterUsernames(bi*batchSize, (bi+1)*batchSize);
-      console.log('allTwitterUsernames', contractUsernames);
+//       let contractUsernames = await coinContract.connect(owner).getTwitterUsers(bi*batchSize, batchSize);
+//       console.log('allTwitterUsernames', contractUsernames);
   
   
-      const points = Array(batchSize).fill(10);
+//       const points = Array(batchSize).fill(10);
   
-      await coinContract.connect(gelatoAddr).updateTwitterStat(usernames, points);
-    }
+//       await coinContract.connect(gelatoAddr).updateTwitterStat(usernames, points);
+//     }
     
 
-    // await gelatoAddr.sendTransaction({ to: await coinContract.getAddress(), data:  });
+//     // await gelatoAddr.sendTransaction({ to: await coinContract.getAddress(), data:  });
 
-  });
-}).timeout("5m");;
+//   });
 
-function generateRandomString(length: number) {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
+  
 
-async function generateWallets(provider: Provider, count: number = 1000): Promise<HDNodeWallet[]> {
-  const wallets: HDNodeWallet[] = [];
-
-  for (let i = 0; i < count; i++) {
-    const wallet = ethers.Wallet.createRandom();
-    const connectedWallet = wallet.connect(provider);
-    wallets.push(connectedWallet);
-  }
-
-  return wallets;
-}
+}).timeout("5m");

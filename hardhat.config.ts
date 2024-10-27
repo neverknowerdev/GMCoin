@@ -10,7 +10,15 @@ dotenv.config({ path: __dirname + "/.env" });
 
 
 const config: HardhatUserConfig = {
-  solidity: "0.8.24",
+  solidity: {
+    version: "0.8.24",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200
+      }
+    }
+  },
   defaultNetwork: "hardhat",
   typechain: {
     outDir: "typechain", // Directory for TypeChain-generated files
@@ -27,7 +35,7 @@ const config: HardhatUserConfig = {
     }
   },
   gasReporter: {
-    enabled: (process.env.REPORT_GAS) ? true : false,
+    enabled: (process.env.REPORT_GAS == "true") ? true : false,
     L1: "binance",
     L2: "base",
     coinmarketcap: process.env.COINMARKETCAP_KEY,
