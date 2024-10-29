@@ -118,12 +118,10 @@ contract GMTwitterOracle is Initializable {
 
         // complexity calculation
         if(yesterday > epochStartedAt && yesterday - epochStartedAt >= EPOCH_DAYS) {
-            epochStartedAt = block.timestamp - block.timestamp % SECONDS_IN_A_DAY;
+            epochStartedAt = yesterday;
 
             // if(currentEpochPoints > lastEpochPoints) {
-            console.log('change complexity befor', COINS_MULTIPLICATOR);
             COINS_MULTIPLICATOR = COINS_MULTIPLICATOR * 80 / 100; // minus 20%
-            console.log('change complexity after', COINS_MULTIPLICATOR);
             emit changedComplexity(COINS_MULTIPLICATOR);
             // }
             //  else if(COMPLEXITY_DIVIDER > 1 && lastEpochPoints < currentEpochPoints) {

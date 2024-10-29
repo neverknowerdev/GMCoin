@@ -168,34 +168,34 @@ describe("GM minting", function () {
     
         const totalPointsForUsers = expectedPoints.reduce((acc, current) => acc + current, 0);
     
-        console.log('pointsForUsers', totalPointsForUsers);
+        log('pointsForUsers', totalPointsForUsers);
         expect(await coinContract.getMintingDayPointsFromUsers()).to.be.equal(totalPointsForUsers);
 
     
         let coinsSum: bigint = 0n;
         for(let i=0; i<batchSize; i++) {
-          console.log('checking', i);
+        log('checking', i);
           const expectedCoins = Math.floor(expectedPoints[i] * 1_000_000);
-          console.log('points', expectedPoints[i]);
-          console.log('expectedCoins', expectedCoins);
+        log('points', expectedPoints[i]);
+        log('expectedCoins', expectedCoins);
           // const expCoins = expPoints * 1_000_000n * 10n**18n / 1n;
           
           
           const walletBalance = await coinContract.balanceOf(wallets[i]);
           const actualCoins: bigint = walletBalance / 10n**18n;
-          console.log('actualCoins', actualCoins);
-          console.log('');
+          log('actualCoins', actualCoins);
+          log('');
     
           expect(actualCoins).to.be.equal(expectedCoins);
           coinsSum += actualCoins;
         }
     
-        console.log('totalPoints', totalPointsForUsers);
-        console.log('coinsSum',coinsSum);
+        log('totalPoints', totalPointsForUsers);
+        log('coinsSum',coinsSum);
         expect(BigInt(totalPointsForUsers) - (coinsSum / 1_000_000n)).to.be.below(5); // rounding diff here is ok
     
         let liquidityPoolBalance = await coinContract.balanceOf(coinContract.getAddress());
-        console.log('contract balance (liquidity pool)', liquidityPoolBalance);
+        log('contract balance (liquidity pool)', liquidityPoolBalance);
         expect(liquidityPoolBalance / 10n**18n).to.be.equal(coinsSum/2n);
     
     
@@ -221,6 +221,8 @@ describe("GM minting", function () {
 
         const userData = generateRandomUserData(10);
 
+        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
+
         // first day
         await expect(gelatoContract.startMinting()).to.emit(coinContract, "mintingStarted").withArgs(startOfPrevDay);
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting process already started");
@@ -229,6 +231,7 @@ describe("GM minting", function () {
         await expect(gelatoContract.mintCoinsForTwitterUsers(0, 9, userData, '0x')).to.be.rejectedWith("no ongoing minting process");
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
+        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
 
         // next day
         const startOf2Day = startOfTheDayTimestamp + time.duration.days(1);
@@ -237,6 +240,7 @@ describe("GM minting", function () {
         await expect(gelatoContract.mintCoinsForTwitterUsers(0, 9, userData, '0x')).to.emit(coinContract, "MintingFinished");
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
+        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
 
         // 3rd day
         const startOf3Day = startOf2Day + time.duration.days(1);
@@ -245,6 +249,7 @@ describe("GM minting", function () {
         await expect(gelatoContract.mintCoinsForTwitterUsers(0, 9, userData, '0x')).to.emit(coinContract, "MintingFinished");
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
+        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
 
         // 4rd day
         const startOf4Day = startOf3Day + time.duration.days(1);
@@ -253,6 +258,7 @@ describe("GM minting", function () {
         await expect(gelatoContract.mintCoinsForTwitterUsers(0, 9, userData, '0x')).to.emit(coinContract, "MintingFinished");
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
+        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
 
         // 5rd day
         const startOf5Day = startOf4Day + time.duration.days(1);
@@ -261,6 +267,7 @@ describe("GM minting", function () {
         await expect(gelatoContract.mintCoinsForTwitterUsers(0, 9, userData, '0x')).to.emit(coinContract, "MintingFinished");
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
+        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
 
         // 6rd day
         const startOf6Day = startOf5Day + time.duration.days(1);
@@ -269,6 +276,7 @@ describe("GM minting", function () {
         await expect(gelatoContract.mintCoinsForTwitterUsers(0, 9, userData, '0x')).to.emit(coinContract, "MintingFinished");
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
+        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
 
         // 7rd day
         const startOf7Day = startOf6Day + time.duration.days(1);
@@ -277,11 +285,12 @@ describe("GM minting", function () {
         await expect(gelatoContract.mintCoinsForTwitterUsers(0, 9, userData, '0x')).to.emit(coinContract, "MintingFinished");
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
+        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
 
         // 8rd day
         const currentComplexity = await gelatoContract.getCurrentComplexity();
         const expectedNewComplexity = currentComplexity * 80n / 100n;
-        console.log('currentComplexity', currentComplexity, expectedNewComplexity);
+        log('currentComplexity', currentComplexity, expectedNewComplexity);
         const startOf8Day = startOf7Day + time.duration.days(1);
         await time.increaseTo(startOf8Day);
         await expect(gelatoContract.startMinting()).
@@ -290,17 +299,61 @@ describe("GM minting", function () {
         await expect(gelatoContract.mintCoinsForTwitterUsers(0, 9, userData, '0x')).to.emit(coinContract, "MintingFinished");
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
+        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOf8Day - time.duration.days(1));
       });
 
-      it('minting for twitter users: multiple days', async() => {
+      it('minting for twitter users: epochs and complexity', async() => {
         const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(deployGMCoinWithProxy);
     
         let users = generateNewUsers(30);
         let userData = generateRandomUserData(30);
 
-        const startOfTheDayTimestamp = await getStartOfDayTimestamp();
-        await simulateDayFull(startOfTheDayTimestamp, users, userData, coinContract, gelatoAddr);
-        await expect(coinContract.connect(gelatoAddr).startMinting()).to.be.revertedWith("minting is already started for that day");
+        log('week 1');
+        let complexity = await coinContract.getCurrentComplexity();
+        let dayTimestamp = await time.latest();
+        for(let i=0; i<7; i++) {
+            log('day', i+1);
+            
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.getCurrentComplexity()).to.be.equal(complexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        log('week 2');
+        let newComplexity = complexity * 80n / 100n;
+        for(let i=0; i<7; i++) {
+            log('day', i+1);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.getCurrentComplexity()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        log('week 3');
+        newComplexity = newComplexity * 80n / 100n;
+        for(let i=0; i<7; i++) {
+            log('day', i+1);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.getCurrentComplexity()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        log('week 4');
+        newComplexity = newComplexity * 80n / 100n;
+        for(let i=0; i<7; i++) {
+            log('day', i+1);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.getCurrentComplexity()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
       });
 
 
@@ -348,7 +401,8 @@ async function simulateDayFull(dayTimestamp: number, users: User[], userData: Tw
     }
     expect(alreadyExistingTwitterUsernames.length).to.be.equal(users.length);
 
-    const startOfPrevDay = dayTimestamp - time.duration.days(1);
+    // const startOfPrevDay = dayTimestamp - time.duration.days(1);
+    const startOfPrevDay = await getStartOfDayTimestamp() - time.duration.days(1);
     await expect(gelatoContract.startMinting()).to.emit(coinContract, "mintingStarted").withArgs(startOfPrevDay);
   
     await expect(gelatoContract.mintCoinsForTwitterUsers(0, userData.length-1, userData, '0x')).
@@ -437,6 +491,12 @@ async function simulateDay(dayTimestamp: number, totalGMCoins: number, coinContr
   
     return wallets;
   }
+
+  function log(...args: any[]) {
+    if (process.env.SHOW_LOGS === "true") {
+        console.log(...args);
+    }
+}
 
   // function calcPointsForStakers(coinContract: GMCoinExposed, totalCoins: number, stakerIndexes: bigint[], wallets: HDNodeWallet[], userData: TweetData[]) {
 //   let totalDayPoints = totalCoins;

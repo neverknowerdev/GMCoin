@@ -16,4 +16,8 @@ contract GMCoinExposed is GMCoin
     function getMintingDayPointsFromUsers() public view returns (uint256) {
         return mintingDayPointsFromUsers;
     }
+
+    function getStartOfTheEpoch() public view returns (uint256) {
+        return epochStartedAt;
+    }
 }
