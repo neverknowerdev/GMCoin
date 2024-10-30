@@ -7,13 +7,14 @@ import { Contract } from "ethers";
 import ky from "ky";
 
 // Define Twitter API endpoint
-const TWITTER_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token';
-const TWITTER_ME_URL = 'https://api.twitter.com/2/users/me';
-const TWITTER_REVOKE_URL = 'https://api.twitter.com/2/oauth2/revoke';
+const TWITTER_TOKEN_URL = 'https://api.x.com/2/oauth2/token';
+const TWITTER_ME_URL = 'https://api.x.com/2/users/me';
+const TWITTER_FOLLOW_URL = 'https://api.x.com/2/users/:id/following';
+const TWITTER_REVOKE_URL = 'https://api.x.com/2/oauth2/revoke';
 
 
 const VerifierContractABI = [
-  "event VerifyTwitterRequested(string authCode, string verifier, address wallet)",
+  "event VerifyTwitterRequested(string authCode, string verifier, address wallet, bool autoFollow)",
   "function verifyTwitter(string calldata userID, address wallet)",
 ];
 
@@ -53,7 +54,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
     const event = contract.parseLog(log);
 
     // Handle event data
-    const { authCode, verifier, wallet } = event.args;
+    const { authCode, verifier, wallet, autoFollow } = event.args;
     console.log(`Veryfing Twitter for address ${wallet}..`);
     // verify here
 
@@ -103,8 +104,23 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
       };
     }
 
-
-    // Step 4: Revoke the access token after successful validation
+    if(autoFollow) {
+      // Step 4: follow GM account
+      await ky.post(
+        TWITTER_FOLLOW_URL.replace(':id', userID),
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            target_user_id: '1830701284288028673'
+          }).toString(),
+        }
+      );
+    }
+    
+    // Step 5: Revoke the access token after successful validation
     await ky.post(
       TWITTER_REVOKE_URL,
       {
@@ -117,7 +133,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
         }).toString(),
       }
     );
-
 
     return {
       canExec: true,

@@ -4,18 +4,25 @@ import {
   Web3FunctionEventContext,
 } from "@gelatonetwork/web3-functions-sdk";
 import { Contract } from "ethers";
+import { boolean } from "hardhat/internal/core/params/argumentTypes";
 import ky from "ky";
 
 // Define Twitter API endpoint
-const TWITTER_TOKEN_URL = 'https://api.twitter.com/2/oauth2/token';
-const TWITTER_ME_URL = 'https://api.twitter.com/2/users/me';
-const TWITTER_REVOKE_URL = 'https://api.twitter.com/2/oauth2/revoke';
+const TWITTER_API_SEARCH_URL = 'https://twitter283.p.rapidapi.com/Search';
 
 
-const VerifierContractABI = [
-  "event VerifyTwitterRequested(string authCode, string verifier, address wallet)",
-  "function verifyTwitter(string calldata userID, address wallet)",
+const ContractABI = [
+  "event mintingFromTwitterProgress(uint lastProcessedIndex, string cursor)",
+  "function getTwitterUsers(uint256 start, uint256 count) external view returns (string[] memory)",
+  // "event mintingForStakersProgress(uint lastProcessedIndex)",
+  "function mintCoinsForTwitterUsers(uint256 startIndex, uint256 endIndex, uint256[] calldata tweets, uint256[] calldata likes)",
+  // "function mintCoinsForSkakers(uint256 startIndex, uint256 endIndex)",
 ];
+
+const BATCH_COUNT = 100;
+const MAX_TWITTER_SEARCH_QUERY_LENGTH = 512;
+const BASE_QUERY = `"gm"`;
+const KEYWORD = "gm"; 
 
 Web3Function.onRun(async (context: Web3FunctionEventContext) => {
   // Get event log from Web3FunctionEventContext
@@ -26,107 +33,99 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
   if (!bearerToken)
     return { canExec: false, message: `TWITTER_BEARER not set in secrets` };
 
-  const twitterClientID = await context.secrets.get("TWITTER_CLIENT_ID");
-  console.log(`Twitter ClientID: ${twitterClientID}`);
-  if (!twitterClientID)
-    return { canExec: false, message: `TWITTER_BEARER not set in secrets` };
-
-
-  console.log(`verifier address is ${userArgs.verifierContractAddress}`);
-
   try {
     const provider = multiChainProvider.default();
 
-    const verifierContract = new Contract(
-      userArgs.verifierContractAddress as string,
-      VerifierContractABI,
+    const smartContract = new Contract(
+      userArgs.contractAddress as string,
+      ContractABI,
       provider
     );
 
-    // Parse your event from ABI
-    console.log("Parsing event");
 
-    const contract = new Interface(VerifierContractABI);
+    const contract = new Interface(ContractABI);
     const event = contract.parseLog(log);
 
     // Handle event data
-    const { authCode, verifier, wallet } = event.args;
-    console.log(`Veryfing Twitter for address ${wallet}..`);
-    // verify here
+    const { lastProcessedIndex, lastCursor } = event.args;
+    console.log(`Minting for users strarting from index #${lastProcessedIndex}, cursor ${lastCursor}..`);
 
 
-    // Step 1: exchange authCode for accessToken
-    const tokenResponse = await ky.post(
-      TWITTER_TOKEN_URL,
-      {
-        headers: {
-          'Authorization': `Bearer ${bearerToken}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          client_id: twitterClientID, // Ensure client ID is set in env
-          redirect_uri: twitterAuthRedirectURL, // Ensure redirect URI is set in env
-          grant_type: 'authorization_code',
-          code: authCode,
-          code_verifier: verifier, // OAuth code verifier, not the contract object
-        }).toString(),
+    let startIndex = lastProcessedIndex+1;
+    
+    const userIDs: string[] = await smartContract.getTwitterUsers(startIndex, BATCH_COUNT);
+    console.log('result', userIDs);
+
+    // function getStakersForUserIndexRange(uint256 startIndex, uint256 endIndex) public view returns (uint256[] memory)
+    const stakerUserIndexes = await smartContract.getStakersForUserIndexRange(startIndex, startIndex + BATCH_COUNT);
+    console.log('stakerUserIndexes', stakerUserIndexes);
+
+    const stakerUserIDs = userIDs.filter((value, index) => {
+      return stakerUserIndexes.includes(index);
+    });
+    
+    const { queryString, lastIndexUsed } = createUserQueryString(userIDs, MAX_TWITTER_SEARCH_QUERY_LENGTH, BASE_QUERY);
+    console.log(`created query "${queryString}"`);
+    console.log(`lastIndexUsed ${lastIndexUsed}`);
+
+    const { tweets, cursor } = await fetchTweets(queryString, lastCursor);
+    const results: Result[] = processTweets(userIDs, tweets);
+
+    let stakerIndexesToAdd: number[] = [];
+    let stakerIndexesToRemove: number[] = [];
+
+    let stakerIndexesUnknownStatus: number[] = [];
+    for(let i=0; i<results.length; i++) {
+      if (results[i].isStaking == null) {
+        stakerIndexesUnknownStatus.push(startIndex+i);
+        continue;
       }
-    ).json();
 
-    const accessToken = (tokenResponse as any).access_token;
-
-    if (!accessToken) {
-      return {
-        canExec: false,
-        message: 'Failed to retrieve access token.',
-      };
+      if(results[i].isStaking === true && !stakerUserIDs.includes(userIDs[i])) {
+        stakerIndexesToAdd.push(startIndex+i);
+      }
+      if(results[i].isStaking === false && stakerUserIDs.includes(userIDs[i])) {
+        stakerIndexesToRemove.push(startIndex+i);
+      }
     }
 
-
-    // Step 2: Use access token to call the users/me endpoint
-    const userResponse = await ky.get(TWITTER_ME_URL, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-    }).json();
-
-    const twitterUser = userResponse as any;
-    const userID = twitterUser.data.id;
-
-    if (!userID) {
-      return {
-        canExec: false,
-        message: 'Failed to retrieve user from Twitter.',
-      };
+    if(stakerIndexesUnknownStatus.length > 0) {
+      // make request to Twitter
     }
 
+    let resultTransactions: any[] = [];
+    resultTransactions.push({
+      to: userArgs.verifierContractAddress as string,
+      data: verifierContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
+        startIndex,
+        lastIndexUsed,
+        results,
+        cursor,
+      ]),
+    });
+    
+    if(stakerIndexesToAdd.length > 0) {
+      resultTransactions.push({
+        to: userArgs.verifierContractAddress as string,
+        data: verifierContract.interface.encodeFunctionData("addStakers", [
+          stakerIndexesToAdd
+        ]),
+      });
+    }
 
-    // Step 4: Revoke the access token after successful validation
-    await ky.post(
-      TWITTER_REVOKE_URL,
-      {
-        headers: {
-          'Authorization': `Bearer ${bearerToken}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          token: accessToken
-        }).toString(),
-      }
-    );
-
+    if(stakerIndexesToRemove.length > 0) {
+      resultTransactions.push({
+        to: userArgs.verifierContractAddress as string,
+        data: verifierContract.interface.encodeFunctionData("removeStakersDelayed", [
+          stakerIndexesToRemove
+        ]),
+      });
+    }
+    
 
     return {
       canExec: true,
-      callData: [
-        {
-          to: userArgs.verifierContractAddress as string,
-          data: verifierContract.interface.encodeFunctionData("verifyTwitter", [
-            userID,
-            wallet,
-          ]),
-        },
-      ],
+      callData: resultTransactions,
     };
   } catch (error: any) {
     console.error('Error during Twitter user validation:', error);
@@ -136,3 +135,226 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
     };
   }
 });
+
+
+
+/**
+ * Function to create a query string from an array of user IDs.
+ * @param {string[]} userIDs - Array of user IDs.
+ * @param {number} maxLength - Maximum allowed length for the query string (e.g., 512 characters).
+ * @param {string} queryPrefix - The initial part of the query string.
+ * @returns {string} - The formatted string in the format `(queryPrefix) AND (from:[userID] OR from:[userID])`.
+ */
+function createUserQueryString(userIDs: string[], maxLength: number, queryPrefix: string): { queryString: string; lastIndexUsed: number } {
+  let queryString = `(${queryPrefix}) AND (`;
+  let lastIndexUsed = -1; 
+
+  for (let i = 0; i < userIDs.length; i++) {
+      const userID = userIDs[i];
+      const nextPart = `from:${userID}`;
+
+      if (queryString.length + nextPart.length + 1 > maxLength) {  // +1 for the closing parenthesis
+          break;
+      } else {
+        queryString += ' OR '
+      }
+
+      queryString += nextPart;
+      lastIndexUsed = i; 
+  }
+
+  queryString += ')';
+
+  // Close the final query string with parentheses
+  return { queryString, lastIndexUsed };
+}
+
+// Define the result structure
+interface Result {
+  hashtagTweets: number;
+  moneytagTweets: number;
+  simpleTweets: number;
+  likes: number;
+  isStaking: boolean | null;
+}
+
+// Function to process tweets and create the result array
+function processTweets(userIDs: string[], foundTweets: Tweet[]): Result[] {
+  const results: Result[] = userIDs.map(() => ({
+      hashtagTweets: 0,
+      moneytagTweets: 0,
+      simpleTweets: 0,
+      likes: 0,
+      isStaking: null,
+  }));
+
+  // Iterate through foundTweets and update the corresponding user's result
+  for (const tweet of foundTweets) {
+      const userIndex = userIDs.indexOf(tweet.userID);
+
+      // If user is found in userIDs
+      if (userIndex !== -1) {
+          const foundKeyword = findKeywordWithPrefix(tweet.tweetContent, KEYWORD);
+          if(foundKeyword == "$"+KEYWORD) {
+            results[userIndex].moneytagTweets++;
+          } else if(foundKeyword == "#"+KEYWORD) {
+            results[userIndex].hashtagTweets++;
+          } else if(foundKeyword == KEYWORD) {
+            results[userIndex].simpleTweets++;
+          }
+          
+          const foundKeywordInDescription = findKeywordWithPrefix(tweet.userDescriptionText, KEYWORD);
+          results[userIndex].isStaking = foundKeywordInDescription === "$"+KEYWORD
+
+          results[userIndex].likes += tweet.likesCount;
+      }
+  }
+
+  return results;
+}
+
+function findKeywordWithPrefix(text: string, keyword: string): string {
+  const words = text.split(/\s+/);  // Split by whitespace to get individual words
+
+
+  for (const word of words) {
+      // Remove punctuation from the word
+      const cleanedWord = word.replace(/[.,!?;:()]/g, "");
+
+      // Check for hashtag tweets
+      if (cleanedWord === "$"+KEYWORD) {
+          return "$"+KEYWORD;
+      }
+      // Check for moneytag tweets
+      else if (cleanedWord === "#"+KEYWORD) {
+          return "#"+KEYWORD;
+      }
+      // Check for simple keyword tweets
+      else if (cleanedWord === KEYWORD) {
+          return KEYWORD;
+      }
+  }
+
+  return "";
+}
+
+
+
+// Define the schema of the tweet result
+interface Tweet {
+  userID: string;
+  tweetID: string;
+  tweetContent: string;
+  likesCount: number;
+  userDescriptionText: string;
+}
+
+// Define the response structure from the Twitter API
+interface TwitterApiResponse {
+  data: {
+      search_by_raw_query: {
+          search_timeline: {
+              timeline: {
+                  instructions: Array<{
+                      entries: Array<{
+                          content: {
+                              tweet_results?: {
+                                  result: {
+                                      rest_id: string; // This is the tweetID
+                                      core: {
+                                          user_results: {
+                                              result: {
+                                                  rest_id: string; // This is the userID
+                                                  profile_bio: {
+                                                      description: string;
+                                                  };
+                                              };
+                                          };
+                                      };
+                                      legacy: {
+                                          full_text: string; // The tweet content
+                                          favorite_count: number; // The number of likes
+                                      };
+                                  };
+                              };
+                          };
+                      }>;
+                  }>;
+                  response_objects?: {
+                      feedback_actions?: Array<{
+                          value: {
+                              timeline: {
+                                  cursor: string; // For pagination
+                              };
+                          };
+                      }>;
+                  };
+              };
+          };
+      };
+  };
+}
+
+
+// Function to fetch tweets based on a query
+async function fetchTweets(queryString: string, cursor: string): Promise<{ tweets: Tweet[]; cursor?: string }> {
+  const secretKey = process.env.TWITTER_RAPIDAPI_KEY;  // Read secret key from environment
+  if (!secretKey) {
+      throw new Error('Missing TWITTER_RAPIDAPI_KEY environment variable');
+  }
+
+
+  try {
+      // Perform the GET request using ky
+      const response = await ky.get(TWITTER_API_SEARCH_URL, {
+          headers: {
+              'X-Rapidapi-Key': secretKey,
+              'X-Rapidapi-Host': 'twitter283.p.rapidapi.com',
+          },
+          searchParams: {
+              q: queryString,
+              type: 'Latest',
+              count: '20',
+              cursor: cursor,
+              safe_search: 'false',
+          },
+      }).json<TwitterApiResponse>();
+
+      const tweets: Tweet[] = [];
+  
+      // Navigate the response and extract the required tweet information
+      const instructions = response.data.search_by_raw_query.search_timeline.timeline.instructions;
+      for (const instruction of instructions) {
+          for (const entry of instruction.entries) {
+              const tweetData = entry.content.tweet_results?.result;
+  
+              if (tweetData) {
+                  const user = tweetData.core.user_results.result;
+                  const legacy = tweetData.legacy;
+  
+                  const tweet: Tweet = {
+                      tweetID: tweetData.rest_id,  // Extract tweetID from rest_id
+                      userID: user.rest_id,        // Extract userID from user_results
+                      tweetContent: legacy.full_text,  // Extract tweet content
+                      likesCount: legacy.favorite_count, // Extract likes count
+                      userDescriptionText: user.profile_bio?.description || '', // Extract user bio
+                  };
+                  tweets.push(tweet);
+              }
+          }
+      }
+  
+      // Capture the cursor for pagination if available
+      const feedbackActions = response.data.search_by_raw_query.search_timeline.timeline.response_objects?.feedback_actions;
+      if (feedbackActions && feedbackActions.length > 0) {
+        cursor = feedbackActions[0].value.timeline.cursor;
+      }  else {
+        cursor = "";
+      }
+
+      return { tweets, cursor };
+  } catch (error) {
+      console.error('Error fetching tweets:', error);
+      throw error;
+  }
+}
