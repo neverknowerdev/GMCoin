@@ -14,7 +14,7 @@ const TWITTER_REVOKE_URL = 'https://api.x.com/2/oauth2/revoke';
 
 
 const VerifierContractABI = [
-  "event VerifyTwitterRequested(string authCode, string verifier, address wallet, bool autoFollow)",
+  "event VerifyTwitterRequested(string authCode, string verifier, address indexed wallet, bool autoFollow)",
   "function verifyTwitter(string calldata userID, address wallet)",
 ];
 
@@ -30,7 +30,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
   const twitterClientID = await context.secrets.get("TWITTER_CLIENT_ID");
   console.log(`Twitter ClientID: ${twitterClientID}`);
   if (!twitterClientID)
-    return { canExec: false, message: `TWITTER_BEARER not set in secrets` };
+    return { canExec: false, message: `TWITTER_CLIENT_ID not set in secrets` };
 
   const twitterAuthRedirectURL = await context.secrets.get("TWITTER_AUTH_REDIRECT_URL");
   if (!twitterAuthRedirectURL) 
@@ -46,6 +46,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
       VerifierContractABI,
       provider
     );
+
 
     // Parse your event from ABI
     console.log("Parsing event");

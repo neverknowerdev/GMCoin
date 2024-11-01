@@ -71,7 +71,7 @@ contract GMTwitterOracle is Initializable {
         return batch;
     }
 
-    event VerifyTwitterRequested(string authCode, string verifier, address wallet, bool autoFollow);
+    event VerifyTwitterRequested(string authCode, string verifier, address indexed wallet, bool autoFollow);
 
     function requestTwitterVerification(string calldata authCode, string calldata verifier, bool autoFollow) public {
         emit VerifyTwitterRequested(authCode, verifier, msg.sender, autoFollow);

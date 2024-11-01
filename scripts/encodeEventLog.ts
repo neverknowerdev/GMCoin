@@ -3,42 +3,45 @@ import * as fs from 'fs';
 
 // Define the event ABI with indexed parameters
 const abi: string[] = [
-  "event TwitterVerificationRequested(string username, address wallet)"
+  "event VerifyTwitterRequested(string authCode, string verifier, address indexed wallet, bool autoFollow)"
 ];
 
 // Create an interface
 const iface = new ethers.Interface(abi);
 
 // Event parameters
-const username: string = "neverknower_dev";
+// const username: string = "neverknower_dev";
 const wallet: string = "0x6794a56583329794f184d50862019ecf7b6d8ba6";
+const authCode: string = "testAuthCode";
+const verifier: string = "testVerifier";
+const autoFollow: boolean = false;
 
 // Get the event fragment
-const eventFragment = iface.getEvent("TwitterVerificationRequested");
+// const eventFragment = iface.getEvent("VerifyTwitterRequested");
 
 // Event signature hash (Topic 0)
-const eventSignature = "TwitterVerificationRequested(string,address)";
+// const eventSignature = "TwitterVerificationRequested(string,address)";
+const eventSignature = "VerifyTwitterRequested(string,string,address,bool)";
 const eventSignatureHash = ethers.id(eventSignature);
 
 // Encode indexed parameters
-const usernameTopic = ethers.keccak256(ethers.toUtf8Bytes(username));
+// const usernameTopic = ethers.keccak256(ethers.toUtf8Bytes(username));
 const walletTopic = ethers.zeroPadValue(wallet, 32);
 
 // Construct topics array
 const topics: string[] = [
-  eventSignatureHash
+  eventSignatureHash,
+  walletTopic
 ];
 
-const data = iface.encodeEventLog(
-    eventFragment as EventFragment,
-    [username, wallet]
-  );
+const abiCoder = new ethers.AbiCoder();
+const data = abiCoder.encode(["string", "string", "bool"], [authCode, verifier, autoFollow]);
 
 // Create the log object
 const log = {
   address: "0xYourContractAddress",
   topics: topics,
-  data: data.data,
+  data: data,
   blockNumber: "0",
   transactionHash: "0x0000000000000000000000000000000000000000000000000000000000000000",
   transactionIndex: "0",
