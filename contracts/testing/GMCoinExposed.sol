@@ -5,8 +5,8 @@ import "../GMCoin.sol";
 
 contract GMCoinExposed is GMCoin
 {
-    function getWalletByUsername(string calldata username) public view returns (address) {
-        return walletByTwitterUsername(username);
+    function getWalletByUserID(string calldata username) public view returns (address) {
+        return walletByTwitterUser(username);
     }
 
     function getCurrentComplexity() public view returns (uint256) {

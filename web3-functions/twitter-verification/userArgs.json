@@ -1,3 +1,4 @@
 {
-  "verifierContractAddress": ""
+  "verifierContractAddress": "",
+  "TwitterHost": "https://api.x.com"
 }

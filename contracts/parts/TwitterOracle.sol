@@ -48,7 +48,7 @@ contract GMTwitterOracle is Initializable {
         // currentDay = block.timestamp % (SECONDS_IN_A_DAY);
      }
 
-    function walletByTwitterUsername(string calldata username) internal view returns (address) {
+    function walletByTwitterUser(string calldata username) internal view returns (address) {
         return wallets[username];
     }
 
@@ -72,14 +72,18 @@ contract GMTwitterOracle is Initializable {
     }
 
     event VerifyTwitterRequested(string authCode, string verifier, address indexed wallet, bool autoFollow);
+    event TwitterConnected(string userID, address indexed wallet);
 
     function requestTwitterVerification(string calldata authCode, string calldata verifier, bool autoFollow) public {
         emit VerifyTwitterRequested(authCode, verifier, msg.sender, autoFollow);
     }
 
     function verifyTwitter(string calldata userID, address wallet) public onlyGelato {
-        wallets[userID] = wallet;
-        allTwitterUsers.push(userID);
+        if(wallets[userID] == address(0)) {
+            wallets[userID] = wallet;
+            allTwitterUsers.push(userID);
+            emit TwitterConnected(userID, wallet);
+        }
     }
 
 
