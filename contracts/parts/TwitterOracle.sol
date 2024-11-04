@@ -56,18 +56,23 @@ contract GMTwitterOracle is Initializable {
         return wallets[allTwitterUsers[userIndex]];
     }
 
-    function getTwitterUsers(uint256 start, uint256 count) public view returns (string[] memory) {
+    function getTwitterUsers(uint64 start, uint16 count) public view returns (string[] memory) {
+        console.log('getTwitterUsers', start, count);
         // require(start < allTwitterUsers.length, "Start index out of bounds");
     
-        uint256 end = start + count;
+        uint64 end = start + count;
         if (end > allTwitterUsers.length) {
-            end = allTwitterUsers.length;
+            end = uint64(allTwitterUsers.length);
         }
-        uint256 batchSize = end - start;
+
+        require(start < end, "wrong start index");
+
+        uint16 batchSize = uint16(end - start);
         string[] memory batch = new string[](batchSize);
-        for (uint256 i = 0; i < batchSize; i++) {
+        for (uint16 i = 0; i < batchSize; i++) {
             batch[i] = allTwitterUsers[start + i];
         }
+        
         return batch;
     }
 

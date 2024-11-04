@@ -8,6 +8,8 @@ import {
 import { Web3FunctionHardhat } from "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
 import { GMCoinExposed } from "../typechain";
 import { MockHttpServer } from './tools/mockServer';
+import { Provider, HDNodeWallet } from "ethers";
+
 
 
 describe("GelatoW3F", function () {
@@ -145,7 +147,7 @@ describe("GelatoW3F", function () {
       let { result } = await oracleW3f.run("onRun", { 
         userArgs: {
           verifierContractAddress: verifierAddress,
-          TwitterHost: "http://localhost:8118",
+          twitterHost: "http://localhost:8118",
         }
        });
       result = result as Web3FunctionResultV2;
@@ -160,10 +162,73 @@ describe("GelatoW3F", function () {
       expect(resultWallet.toLowerCase()).to.equal("0x6794a56583329794f184d50862019ecf7b6d8ba6");
     });
 
-    it('')
+    it('twitter-worker success', async function() {
+      const [owner, feeAddr, otherAcc1, gelatoAddr] = await hre.ethers.getSigners();
+
+      const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
+      const instance: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, 100_000], {kind: "uups"}) as unknown as GMCoin;
+
+      await instance.waitForDeployment();
+
+      const gelatoContract = instance.connect(gelatoAddr);
+
+      const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, 200);
+
+      for(let i=0; i<200; i++) {
+        await gelatoContract.verifyTwitter(String(i+1), generatedWallets[i]);
+      }
+
+      
+
+
+      mockServer.mock('/2/oauth2/token', 'POST', 
+        {
+          "token_type": "bearer",
+          "expires_in": 7200,
+          "access_token": "YTc4LXlfTk1tVnRZaUN4YUJSU1QxTTdSNlJXeDRDWUdJWXBTZzBHdmhVU2U1OjE3MzA1Njc2MTY4MjY6MTowOmF0OjE",
+          "scope": "users.read tweet.read follows.write"
+        }
+      )
+
+
+
+      const verifierAddress = await instance.getAddress();
+      console.log(`deployed GMCoin to ${verifierAddress}`);
+
+      let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-worker");
+
+      let { result } = await oracleW3f.run("onRun", { 
+        userArgs: {
+          contractAddress: verifierAddress,
+          twitterHost: "http://localhost:8118",
+        }
+       });
+      result = result as Web3FunctionResultV2;
+
+      expect(result.canExec).to.equal(true);
+
+      // for (let calldata of result.callData) {
+      //     await gelatoAddr.sendTransaction({ to: calldata.to, data: calldata.data });    
+      // }
+
+      // let resultWallet = await instance.getWalletByUserID("1796129942104657921");
+      // expect(resultWallet.toLowerCase()).to.equal("0x6794a56583329794f184d50862019ecf7b6d8ba6");
+    });
+
 })
 
 
+function generateWallets(provider: Provider, count: number = 1000): HDNodeWallet[] {
+  const wallets: HDNodeWallet[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const wallet = ethers.Wallet.createRandom();
+    const connectedWallet = wallet.connect(provider);
+    wallets.push(connectedWallet);
+  }
+
+  return wallets;
+}
 
 /*
 Possible Twitter API responses:
@@ -183,3 +248,5 @@ Possible Twitter API responses:
 }
 
 */
+
+

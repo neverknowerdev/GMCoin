@@ -3,20 +3,19 @@ import {
   Web3Function,
   Web3FunctionEventContext,
 } from "@gelatonetwork/web3-functions-sdk";
-import { Contract } from "ethers";
-import { boolean } from "hardhat/internal/core/params/argumentTypes";
+import { Contract, getBytes } from "ethers";
+import { Buffer } from 'buffer';
 import ky from "ky";
+
+
 
 // Define Twitter API endpoint
 const TWITTER_API_SEARCH_URL = 'https://twitter283.p.rapidapi.com/Search';
 
-
 const ContractABI = [
-  "event mintingFromTwitterProgress(uint lastProcessedIndex, string cursor)",
-  "function getTwitterUsers(uint256 start, uint256 count) external view returns (string[] memory)",
-  // "event mintingForStakersProgress(uint lastProcessedIndex)",
+  "event mintingFromTwitter_Progress(uint lastProcessedIndex, bytes nextCursor)",
+  "function getTwitterUsers(uint64 start, uint16 count) external view returns (string[] memory)",
   "function mintCoinsForTwitterUsers(uint256 startIndex, uint256 endIndex, uint256[] calldata tweets, uint256[] calldata likes)",
-  // "function mintCoinsForSkakers(uint256 startIndex, uint256 endIndex)",
 ];
 
 const BATCH_COUNT = 100;
@@ -29,9 +28,13 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
   const { log, userArgs, multiChainProvider } = context;
 
   const bearerToken = await context.secrets.get("TWITTER_BEARER");
-  console.log(`bearer token: ${bearerToken}`);
   if (!bearerToken)
     return { canExec: false, message: `TWITTER_BEARER not set in secrets` };
+
+  const secretKey = await context.secrets.get("TWITTER_RAPIDAPI_KEY");
+  if (!secretKey) {
+      throw new Error('Missing TWITTER_RAPIDAPI_KEY environment variable');
+  }
 
   try {
     const provider = multiChainProvider.default();
@@ -42,92 +45,56 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
       provider
     );
 
-
     const contract = new Interface(ContractABI);
     const event = contract.parseLog(log);
 
     // Handle event data
-    const { lastProcessedIndex, lastCursor } = event.args;
-    console.log(`Minting for users strarting from index #${lastProcessedIndex}, cursor ${lastCursor}..`);
+    const { lastProcessedIndex: lastProcessedIndexBigNumber, nextCursor: nextCursorString } = event.args;
+    const lastProcessedIndex = Number(lastProcessedIndexBigNumber.toBigInt());
+
+
+    const nextCursor = bytesStringToString(nextCursorString);
+    console.log(`Minting for users strarting from index #${lastProcessedIndex}, cursor ${nextCursor}..`);
 
 
     let startIndex = lastProcessedIndex+1;
+    if (lastProcessedIndex == 0) {
+      startIndex = 0;
+    }
+
+    console.log('startIndex', startIndex);
     
     const userIDs: string[] = await smartContract.getTwitterUsers(startIndex, BATCH_COUNT);
     console.log('result', userIDs);
-
-    // function getStakersForUserIndexRange(uint256 startIndex, uint256 endIndex) public view returns (uint256[] memory)
-    const stakerUserIndexes = await smartContract.getStakersForUserIndexRange(startIndex, startIndex + BATCH_COUNT);
-    console.log('stakerUserIndexes', stakerUserIndexes);
-
-    const stakerUserIDs = userIDs.filter((value, index) => {
-      return stakerUserIndexes.includes(index);
-    });
     
     const { queryString, lastIndexUsed } = createUserQueryString(userIDs, MAX_TWITTER_SEARCH_QUERY_LENGTH, BASE_QUERY);
     console.log(`created query "${queryString}"`);
     console.log(`lastIndexUsed ${lastIndexUsed}`);
 
-    const { tweets, cursor } = await fetchTweets(queryString, lastCursor);
+    const { tweets, cursor } = await fetchTweets(secretKey, queryString, nextCursor);
     const results: Result[] = processTweets(userIDs, tweets);
-
-    let stakerIndexesToAdd: number[] = [];
-    let stakerIndexesToRemove: number[] = [];
-
-    let stakerIndexesUnknownStatus: number[] = [];
-    for(let i=0; i<results.length; i++) {
-      if (results[i].isStaking == null) {
-        stakerIndexesUnknownStatus.push(startIndex+i);
-        continue;
-      }
-
-      if(results[i].isStaking === true && !stakerUserIDs.includes(userIDs[i])) {
-        stakerIndexesToAdd.push(startIndex+i);
-      }
-      if(results[i].isStaking === false && stakerUserIDs.includes(userIDs[i])) {
-        stakerIndexesToRemove.push(startIndex+i);
-      }
-    }
-
-    if(stakerIndexesUnknownStatus.length > 0) {
-      // make request to Twitter
-    }
 
     let resultTransactions: any[] = [];
     resultTransactions.push({
       to: userArgs.verifierContractAddress as string,
-      data: verifierContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
+      data: smartContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
         startIndex,
         lastIndexUsed,
         results,
         cursor,
       ]),
     });
-    
-    if(stakerIndexesToAdd.length > 0) {
-      resultTransactions.push({
-        to: userArgs.verifierContractAddress as string,
-        data: verifierContract.interface.encodeFunctionData("addStakers", [
-          stakerIndexesToAdd
-        ]),
-      });
-    }
-
-    if(stakerIndexesToRemove.length > 0) {
-      resultTransactions.push({
-        to: userArgs.verifierContractAddress as string,
-        data: verifierContract.interface.encodeFunctionData("removeStakersDelayed", [
-          stakerIndexesToRemove
-        ]),
-      });
-    }
-    
 
     return {
       canExec: true,
       callData: resultTransactions,
     };
   } catch (error: any) {
+    if (error.code === 'CALL_EXCEPTION' && error.reason) {
+      console.log(error);
+      console.error(`transaction reverted: ${error.reason}`);
+    }
+
     console.error('Error during Twitter user validation:', error);
     return {
       canExec: false,
@@ -146,21 +113,24 @@ Web3Function.onRun(async (context: Web3FunctionEventContext) => {
  * @returns {string} - The formatted string in the format `(queryPrefix) AND (from:[userID] OR from:[userID])`.
  */
 function createUserQueryString(userIDs: string[], maxLength: number, queryPrefix: string): { queryString: string; lastIndexUsed: number } {
-  let queryString = `(${queryPrefix}) AND (`;
+  let queryString = `${queryPrefix} AND (`;
   let lastIndexUsed = -1; 
 
   for (let i = 0; i < userIDs.length; i++) {
       const userID = userIDs[i];
       const nextPart = `from:${userID}`;
 
-      if (queryString.length + nextPart.length + 1 > maxLength) {  // +1 for the closing parenthesis
-          break;
-      } else {
-        queryString += ' OR '
+      if(queryString.length + nextPart.length + 1 + 4 > maxLength) {
+        break;
+      }
+
+      if(i > 0) {
+        queryString += ` OR `;
       }
 
       queryString += nextPart;
       lastIndexUsed = i; 
+      
   }
 
   queryString += ')';
@@ -175,7 +145,6 @@ interface Result {
   moneytagTweets: number;
   simpleTweets: number;
   likes: number;
-  isStaking: boolean | null;
 }
 
 // Function to process tweets and create the result array
@@ -185,7 +154,6 @@ function processTweets(userIDs: string[], foundTweets: Tweet[]): Result[] {
       moneytagTweets: 0,
       simpleTweets: 0,
       likes: 0,
-      isStaking: null,
   }));
 
   // Iterate through foundTweets and update the corresponding user's result
@@ -202,9 +170,6 @@ function processTweets(userIDs: string[], foundTweets: Tweet[]): Result[] {
           } else if(foundKeyword == KEYWORD) {
             results[userIndex].simpleTweets++;
           }
-          
-          const foundKeywordInDescription = findKeywordWithPrefix(tweet.userDescriptionText, KEYWORD);
-          results[userIndex].isStaking = foundKeywordInDescription === "$"+KEYWORD
 
           results[userIndex].likes += tweet.likesCount;
       }
@@ -297,13 +262,7 @@ interface TwitterApiResponse {
 
 
 // Function to fetch tweets based on a query
-async function fetchTweets(queryString: string, cursor: string): Promise<{ tweets: Tweet[]; cursor?: string }> {
-  const secretKey = process.env.TWITTER_RAPIDAPI_KEY;  // Read secret key from environment
-  if (!secretKey) {
-      throw new Error('Missing TWITTER_RAPIDAPI_KEY environment variable');
-  }
-
-
+async function fetchTweets(secretKey: string, queryString: string, cursor: string): Promise<{ tweets: Tweet[]; cursor?: string }> {
   try {
       // Perform the GET request using ky
       const response = await ky.get(TWITTER_API_SEARCH_URL, {
@@ -357,4 +316,10 @@ async function fetchTweets(queryString: string, cursor: string): Promise<{ tweet
       console.error('Error fetching tweets:', error);
       throw error;
   }
+}
+
+function bytesStringToString(strBytes: string): string {
+  const cursorBytes = getBytes(strBytes);
+  let decoder = new TextDecoder("utf-8");
+  return decoder.decode(cursorBytes);
 }

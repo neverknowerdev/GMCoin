@@ -32,6 +32,8 @@
     "@openzeppelin/contracts": "^5.0.2",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
     "@openzeppelin/hardhat-upgrades": "^3.2.1",
-    "ky": "^0.33.3"
+    "buffer": "^6.0.3",
+    "ky": "^0.33.3",
+    "p-limit": "^3.1.0"
   }
 }
