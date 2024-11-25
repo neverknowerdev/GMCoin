@@ -3,39 +3,26 @@ import * as fs from 'fs';
 
 // Define the event ABI with indexed parameters
 const abi: string[] = [
-  "event VerifyTwitterRequested(string authCode, string verifier, address indexed wallet, bool autoFollow)"
+  "event mintingFromTwitter_Progress(uint lastProcessedIndex, bytes nextCursor)"
 ];
 
-// Create an interface
-const iface = new ethers.Interface(abi);
+const lastProcessedIndex = 5;
+const nextCursor = ethers.toUtf8Bytes("aaabbbfff"); // Convert string to bytes
 
-// Event parameters
-// const username: string = "neverknower_dev";
-const wallet: string = "0x6794a56583329794f184d50862019ecf7b6d8ba6";
-const authCode: string = "testAuthCode";
-const verifier: string = "testVerifier";
-const autoFollow: boolean = false;
 
-// Get the event fragment
-// const eventFragment = iface.getEvent("VerifyTwitterRequested");
+const eventSignature = "mintingFromTwitter_Progress(uint256,bytes)";
+const topic0 = ethers.keccak256(ethers.toUtf8Bytes(eventSignature));
 
-// Event signature hash (Topic 0)
-// const eventSignature = "TwitterVerificationRequested(string,address)";
-const eventSignature = "VerifyTwitterRequested(string,string,address,bool)";
-const eventSignatureHash = ethers.id(eventSignature);
-
-// Encode indexed parameters
-// const usernameTopic = ethers.keccak256(ethers.toUtf8Bytes(username));
-const walletTopic = ethers.zeroPadValue(wallet, 32);
-
-// Construct topics array
 const topics: string[] = [
-  eventSignatureHash,
-  walletTopic
+  topic0
 ];
 
 const abiCoder = new ethers.AbiCoder();
-const data = abiCoder.encode(["string", "string", "bool"], [authCode, verifier, autoFollow]);
+// Encode the parameters for the data field
+const data = abiCoder.encode(
+  ["uint256", "bytes"],
+  [lastProcessedIndex, nextCursor]
+);
 
 // Create the log object
 const log = {

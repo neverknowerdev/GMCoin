@@ -1,7 +1,8 @@
 import { Interface } from "@ethersproject/abi";
 import {
   Web3Function,
-  Web3FunctionEventContext
+  Web3FunctionEventContext,
+  Web3FunctionResult
 } from "@gelatonetwork/web3-functions-sdk";
 import { Contract } from "ethers";
 import ky , { HTTPError }from "ky";
@@ -18,11 +19,11 @@ const VerifierContractABI = [
   "function verifyTwitter(string calldata userID, address wallet)",
 ];
 
-Web3Function.onRun(async (context: Web3FunctionEventContext) => {
+Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
   // Get event log from Web3FunctionEventContext
   const { log, userArgs, multiChainProvider } = context;
 
-  const TwitterApiURL = userArgs.TwitterHost;
+  const TwitterApiURL = userArgs.twitterHost;
 
   const bearerToken = await context.secrets.get("TWITTER_BEARER");
   console.log(`bearer token: ${bearerToken}`);

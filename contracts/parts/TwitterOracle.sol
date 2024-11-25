@@ -13,7 +13,7 @@ contract GMTwitterOracle is Initializable {
     }
 
     // twitter users data
-    mapping (string => address) private wallets;
+    mapping(string => address) private wallets;
     string[] private allTwitterUsers;
 
     uint256 public COINS_MULTIPLICATOR;
@@ -22,22 +22,22 @@ contract GMTwitterOracle is Initializable {
     uint256 public constant POINTS_MULTIPLICATOR_PER_HASHTAG = 4;
     uint256 public constant POINTS_MULTIPLICATOR_PER_CASHTAG = 10;
 
-    uint256 public constant SECONDS_IN_A_DAY = 60*60*24;
-    uint256 public constant EPOCH_DURATION = 7*1 days;
+    uint256 public constant SECONDS_IN_A_DAY = 60 * 60 * 24;
+    uint256 public constant EPOCH_DURATION = 7 * 1 days;
 
     uint public constant EPOCH_DAYS = 7 days;
 
     uint256[255] private __gap;
 
-     function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress) public initializer  {
+    function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress) public initializer {
         gelatoAddress = _gelatoAddress;
 
-        COINS_MULTIPLICATOR = coinsPerTweet*10**18;
+        COINS_MULTIPLICATOR = coinsPerTweet * 10 ** 18;
 
-        epochStartedAt = block.timestamp - (block.timestamp % 1 days) - 1 days;
+        epochStartedAt = uint32(block.timestamp - (block.timestamp % 1 days) - 1 days);
 
         // pre-yesterday
-        lastMintedDay = block.timestamp - (block.timestamp % 1 days) - 2 days;
+        lastMintedDay = uint32(block.timestamp - (block.timestamp % 1 days) - 2 days);
 
         // dayPoints = 0;
         // dayPointsFromStakers = 0;
@@ -46,7 +46,7 @@ contract GMTwitterOracle is Initializable {
         // lastDaySupply = 0;
 
         // currentDay = block.timestamp % (SECONDS_IN_A_DAY);
-     }
+    }
 
     function walletByTwitterUser(string calldata username) internal view returns (address) {
         return wallets[username];
@@ -57,23 +57,35 @@ contract GMTwitterOracle is Initializable {
     }
 
     function getTwitterUsers(uint64 start, uint16 count) public view returns (string[] memory) {
-        console.log('getTwitterUsers', start, count);
         // require(start < allTwitterUsers.length, "Start index out of bounds");
-    
+
         uint64 end = start + count;
         if (end > allTwitterUsers.length) {
             end = uint64(allTwitterUsers.length);
         }
 
-        require(start < end, "wrong start index");
+        require(start <= end, "wrong start index");
 
         uint16 batchSize = uint16(end - start);
-        string[] memory batch = new string[](batchSize);
+        string[] memory batchArr = new string[](batchSize);
         for (uint16 i = 0; i < batchSize; i++) {
-            batch[i] = allTwitterUsers[start + i];
+            batchArr[i] = allTwitterUsers[start + i];
         }
-        
-        return batch;
+
+        return batchArr;
+    }
+
+    function getTwitterUsersByIndexes(uint64[] calldata indexes) public view returns (string[] memory) {
+        string[] memory batchArr = new string[](indexes.length);
+        for (uint16 i = 0; i < indexes.length; i++) {
+            batchArr[i] = allTwitterUsers[i];
+        }
+
+        return batchArr;
+    }
+
+    function getTotalUserCount() public view returns (uint64) {
+        return uint64(allTwitterUsers.length);
     }
 
     event VerifyTwitterRequested(string authCode, string verifier, address indexed wallet, bool autoFollow);
@@ -84,53 +96,55 @@ contract GMTwitterOracle is Initializable {
     }
 
     function verifyTwitter(string calldata userID, address wallet) public onlyGelato {
-        if(wallets[userID] == address(0)) {
+        if (wallets[userID] == address(0)) {
             wallets[userID] = wallet;
             allTwitterUsers.push(userID);
             emit TwitterConnected(userID, wallet);
         }
     }
 
-
-    event mintingFromTwitter_Progress(uint lastProcessedIndex, bytes nextCursor);
-    event mintingForStakers_Progress(uint lastProcessedIndex);
-
     struct UserTwitterData {
-        uint256 tweets;
-        uint256 hashtagTweets;     // Number of hashtags in the tweet
-        uint256 cashtagTweets;    // Number of cashtags in the tweet
-        uint256 simpleTweets;       // Number of simple tags in the tweet
-        uint256 likes;        // Number of likes for the tweet
+        uint64 userIndex;
+        uint16 tweets;
+        uint16 hashtagTweets;     // Number of hashtags in the tweet
+        uint16 cashtagTweets;     // Number of cashtags in the tweet
+        uint16 simpleTweets;      // Number of simple tags in the tweet
+        uint32 likes;        // Number of likes for the tweet
     }
 
-    event mintingStarted(uint256 mintingDay);
+    struct Batch {
+        uint64 startIndex;
+        uint64 endIndex;
+        string nextCursor;
+    }
+
+    event twitterMintingProcessed(uint32 mintingDayTimestamp, Batch[] batches);
+    event twitterMintingErrored(uint32 mintingDayTimestamp, Batch[] errorBatches);
+    event MintingStarted(uint32 mintingDay);
+    event MintingFinished(uint32 mintingDayTimestamp);
     event changedComplexity(uint256 newMultiplicator);
 
-    uint256 internal lastMintedDay;
+    uint32 internal lastMintedDay;
 
-    uint public epochStartedAt;
+    uint32 public epochStartedAt;
     uint256 public lastEpochPoints;
     uint256 public currentEpochPoints;
 
-    bool internal mintingInProgress;
     uint256 internal mintingDayPointsFromUsers;
 
     function startMinting() public onlyGelato {
-        require(!mintingInProgress, "minting process already started");
-        
-        uint256 yesterday = block.timestamp - (block.timestamp % 1 days) - 1 days;
-        require(lastMintedDay < yesterday, "minting is already started for that day");
-
-        mintingInProgress = true;
+        uint32 dayToMint = lastMintedDay + 1 days;
+        require(lastMintedDay < dayToMint, "minting is already started for that day");
 
         mintingDayPointsFromUsers = 0;
 
         // complexity calculation
-        if(yesterday > epochStartedAt && yesterday - epochStartedAt >= EPOCH_DAYS) {
-            epochStartedAt = yesterday;
+        if (dayToMint > epochStartedAt && dayToMint - epochStartedAt >= EPOCH_DAYS) {
+            epochStartedAt = dayToMint;
 
             // if(currentEpochPoints > lastEpochPoints) {
-            COINS_MULTIPLICATOR = COINS_MULTIPLICATOR * 80 / 100; // minus 20%
+            COINS_MULTIPLICATOR = COINS_MULTIPLICATOR * 80 / 100;
+            // minus 20%
             emit changedComplexity(COINS_MULTIPLICATOR);
             // }
             //  else if(COMPLEXITY_DIVIDER > 1 && lastEpochPoints < currentEpochPoints) {
@@ -141,19 +155,19 @@ contract GMTwitterOracle is Initializable {
             currentEpochPoints = 0;
         }
 
-        emit mintingStarted(yesterday);
+        emit MintingStarted(dayToMint);
+
+        Batch[] memory emptyArray;
+        emit twitterMintingProcessed(dayToMint, emptyArray);
     }
 
-    event MintingFinished();
-
-    function finishMinting() internal {
-        require(mintingInProgress, "no ongoing minting process");
+    function finishMinting(uint32 mintingDayTimestamp) public onlyGelato {
+        require(lastMintedDay < mintingDayTimestamp, "wring mintingDayTimestamp");
 
         currentEpochPoints += mintingDayPointsFromUsers;
-        mintingInProgress = false;
-        lastMintedDay += 1 days;
+        lastMintedDay = mintingDayTimestamp;
 
-        emit MintingFinished();
+        emit MintingFinished(mintingDayTimestamp);
     }
 
 
@@ -162,36 +176,33 @@ contract GMTwitterOracle is Initializable {
 
     }
 
-    function mintCoinsForTwitterUsers(uint256 startIndex, uint256 endIndex, UserTwitterData[] calldata userData, bytes memory nextCursor) public onlyGelato {
-        require(mintingInProgress, "no ongoing minting process");
-        require(endIndex - startIndex == userData.length -1 , "wrong input array lengths");
-        require(userData.length > 0, "empty userData array");
+    function logErrorBatches(uint32 mintingDayTimestamp, Batch[] calldata batches) public onlyGelato {
+        emit twitterMintingErrored(mintingDayTimestamp, batches);
+    }
 
-        for(uint256 i=0; i<userData.length; i++) {
-            uint256 points = 
-                      userData[i].simpleTweets * POINTS_MULTIPLICATOR_PER_TWEET
-                    + userData[i].likes * POINTS_MULTIPLICATOR_PER_LIKE
-                    + userData[i].hashtagTweets * POINTS_MULTIPLICATOR_PER_HASHTAG
-                    + userData[i].cashtagTweets * POINTS_MULTIPLICATOR_PER_CASHTAG;
+    function mintCoinsForTwitterUsers(UserTwitterData[] calldata userData, uint32 mintingDayTimestamp, Batch[] calldata batches) public onlyGelato {
+        for (uint256 i = 0; i < userData.length; i++) {
+            if (userData[i].userIndex > allTwitterUsers.length) {
+                revert("wrong userIndex");
+            }
 
-            if(points == 0) {
+            uint256 points =
+            userData[i].simpleTweets * POINTS_MULTIPLICATOR_PER_TWEET
+            + userData[i].likes * POINTS_MULTIPLICATOR_PER_LIKE
+            + userData[i].hashtagTweets * POINTS_MULTIPLICATOR_PER_HASHTAG
+            + userData[i].cashtagTweets * POINTS_MULTIPLICATOR_PER_CASHTAG;
+
+            if (points == 0) {
                 continue;
             }
 
             mintingDayPointsFromUsers += points;
 
             uint256 coins = points * COINS_MULTIPLICATOR;
-            _mintForUserByIndex(startIndex+i, coins);
+
+            _mintForUserByIndex(userData[i].userIndex, coins);
         }
-        
-        if(nextCursor.length > 0) {
-            emit mintingFromTwitter_Progress(startIndex, nextCursor);
-        } else{ 
-            if (endIndex == allTwitterUsers.length-1) {
-                finishMinting();
-            } else {
-                emit mintingFromTwitter_Progress(endIndex, "");
-            }
-        }
+
+        emit twitterMintingProcessed(mintingDayTimestamp, batches);
     }
 }

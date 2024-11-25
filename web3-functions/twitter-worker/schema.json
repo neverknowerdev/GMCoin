@@ -3,6 +3,8 @@
   "runtime": "js-1.0",
   "memory": 128,
   "timeout": 30,
+  "retries": 10,
+  "retryDelay": 60,
   "userArgs": {
     
   }
