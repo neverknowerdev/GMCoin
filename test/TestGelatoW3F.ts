@@ -6,8 +6,8 @@ const {ethers, w3f, upgrades} = hre;
 import {
     Web3FunctionUserArgs,
     Web3FunctionResultV2,
-} from "@gelatonetwork/web3-functions-sdk";
-import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
+} from "@gelatonetwork/web3-functions-sdk2";
+import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk2/hardhat-plugin";
 import {GMCoinExposed} from "../typechain";
 import {MockHttpServer} from './tools/mockServer';
 import {Provider, HDNodeWallet} from "ethers";
@@ -15,6 +15,7 @@ import {generateEventLogFile, writeEventLogFile} from './tools/helpers';
 import {time} from "@nomicfoundation/hardhat-network-helpers";
 import * as url from 'url';
 import fs from "fs";
+import {max} from "hardhat/internal/util/bigint";
 
 describe("GelatoW3F", function () {
     let mockServer: MockHttpServer;
@@ -70,7 +71,7 @@ describe("GelatoW3F", function () {
         const [owner, feeAddr, otherAcc1, gelatoAddr] = await ethers.getSigners();
 
         const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const instance: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, 100_000], {kind: "uups"}) as unknown as GMCoinExposed;
+        const instance: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, 100_000], {kind: "uups"}) as GMCoinExposed;
 
         await instance.waitForDeployment();
 
@@ -81,6 +82,7 @@ describe("GelatoW3F", function () {
             },
             400
         );
+
 
         const verifierAddress = await instance.getAddress();
         console.log(`deployed GMCoin to ${verifierAddress}`);
@@ -189,13 +191,30 @@ describe("GelatoW3F", function () {
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
-        const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, 200);
+        const userLimit = 1000;
 
-        for (let i = 0; i < 200; i++) {
+        const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
+
+        for (let i = 0; i < userLimit; i++) {
             await gelatoContract.verifyTwitter(String(i + 1) as any, generatedWallets[i] as any);
         }
 
-        let allUserTweets = loadUserTweets("./test/files/user200Tweets.json");
+        let allUserTweetsByUser = loadUserTweets("./test/files/user200Tweets.json");
+        // make it for 1000 users!
+        const maxUsersAlready = allUserTweetsByUser.size;
+
+        let ii = 0;
+        for (let i = maxUsersAlready; i < userLimit; i++) {
+            const userTweets = allUserTweetsByUser.get(`${ii + 1}`);
+            allUserTweetsByUser.set(Number(i + 1).toString(), userTweets);
+
+            ii++;
+            if (ii > maxUsersAlready) {
+                ii = 0;
+            }
+        }
+
+        let tweetMap: Map<string, Tweet> = new Map();
 
         mockServer.mockFunc('/Search', 'GET', (url: url.UrlWithParsedQuery) => {
             const q = url.query["q"] as string;
@@ -204,9 +223,24 @@ describe("GelatoW3F", function () {
             console.log('cursor', cursor);
             const userIDList = extractUserIDs(q);
 
-            const {filteredTweets, nextCursor} = filterUserTweets(allUserTweets, userIDList, cursor, 20);
+            const {filteredTweets, nextCursor} = filterUserTweets(allUserTweetsByUser, userIDList, cursor, 20);
 
-            return generateResponse(filteredTweets, nextCursor, cursor == '');
+            let {
+                response,
+                tweetMap: newTweetMap
+            } = generateResponse(filteredTweets, tweetMap, nextCursor, cursor == '');
+            tweetMap = newTweetMap;
+            return response;
+        });
+
+        mockServer.mockFunc('/tweet-lookup/', 'GET', (url: url.UrlWithParsedQuery) => {
+            const idList = url.query["ids"] as string;
+            const tweetIDs = idList.split(',');
+
+            const expansionFields = (url.query["tweet.fields"] as string).split(",");
+            expect(expansionFields.indexOf("public_metrics")).to.be.greaterThan(-1);
+
+            return generateResponseForTweetLookup(tweetMap, tweetIDs, -10);
         });
 
         const verifierAddress = await smartContract.getAddress();
@@ -216,8 +250,9 @@ describe("GelatoW3F", function () {
         const userArgs = {
             contractAddress: verifierAddress,
             searchURL: "http://localhost:8118/Search",
-            tweetLookupURL: "https://localhost:8118/tweet-lookup/",
+            tweetLookupURL: "http://localhost:8118/tweet-lookup/",
             concurrencyLimit: 3,
+            userIdFetchLimit: 300,
         };
 
 
@@ -233,7 +268,8 @@ describe("GelatoW3F", function () {
             const oracleW3f: Web3FunctionHardhat = w3f.get("twitter-worker");
             let {result, storage} = await oracleW3f.run("onRun", {
                 userArgs: userArgs,
-                storage: actualStorage
+                storage: actualStorage,
+                log: overrideLog,
             });
             actualStorage = storage.storage;
 
@@ -257,6 +293,10 @@ describe("GelatoW3F", function () {
                             continue;
                         }
 
+                        if (decodedLog.name == "MintingFinished") {
+                            break;
+                        }
+
                         expect(decodedLog.name).to.be.equal("twitterMintingProcessed");
                         expect(decodedLog.args.mintingDayTimestamp).to.be.equal(yesterday);
 
@@ -272,13 +312,13 @@ describe("GelatoW3F", function () {
                         hasLogsToProcess = true;
                         prevBatches = decodedLog.args.batches;
 
-                        // overrideLog = log;
-
-                        await writeEventLogFile("web3-functions/twitter-worker", log);
+                        overrideLog = log;
                     }
                 }
             }
         }
+
+        console.log('minting finished here!!');
 
 
         // let resultWallet = await instance.getWalletByUserID("1796129942104657921");
@@ -460,8 +500,30 @@ describe("GelatoW3F", function () {
         return {filteredTweets, nextCursor};
     }
 
+    function generateResponseForTweetLookup(tweetMap: Map<string, Tweet>, tweetIDs: string[], likesDelta: number): any {
+        let response: any = {
+            "data": []
+        }
+        for (const tweetID of tweetIDs) {
+            const tweet = tweetMap.get(tweetID);
+            let likesCount = tweet.likesCount - likesDelta;
+            if (likesCount < 0) {
+                likesCount = 0;
+            }
+            response.data.push({
+                "id": `${tweetID}`,
+                "text": `${tweet.text}`,
+                "public_metrics": {
+                    "like_count": likesCount,
+                }
+            });
+        }
 
-    function generateResponse(userTweets: Map<string, Tweet[]>, nextCursor: string, isFirstCursorReply: boolean): any {
+        return response;
+    }
+
+
+    function generateResponse(userTweets: Map<string, Tweet[]>, tweetMap: Map<string, Tweet>, nextCursor: string, isFirstCursorReply: boolean): { response: any, tweetMap: Map<string, Tweet> } {
         const randomString = (length: number) => Math.random().toString(36).substr(2, length);
         const randomNumber = (min: number, max: number) =>
             Math.floor(Math.random() * (max - min + 1)) + min;
@@ -474,6 +536,8 @@ describe("GelatoW3F", function () {
                 const tweetId = randomString(16);
                 const userName = `${userId}`;
                 const userScreenName = `screen${userId}`;
+
+                tweetMap.set(tweetId, tweet);
 
                 const tweetObject = {
                     content: {
@@ -612,7 +676,7 @@ describe("GelatoW3F", function () {
             };
         }
 
-        return response;
+        return {response, tweetMap};
     }
 
     /*

@@ -203,6 +203,8 @@ contract GMTwitterOracle is Initializable {
             _mintForUserByIndex(userData[i].userIndex, coins);
         }
 
-        emit twitterMintingProcessed(mintingDayTimestamp, batches);
+        if (batches.length > 0) {
+            emit twitterMintingProcessed(mintingDayTimestamp, batches);
+        }
     }
 }

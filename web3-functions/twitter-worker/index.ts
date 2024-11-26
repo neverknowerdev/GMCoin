@@ -4,12 +4,10 @@ import {
     Web3FunctionEventContext,
     Web3FunctionStorage,
     Web3FunctionResult
-} from "@gelatonetwork/web3-functions-sdk";
+} from "@gelatonetwork/web3-functions-sdk2";
 import {Contract, ContractRunner, getBytes} from "ethers";
 import ky from "ky";
-import pLimit from 'p-limit';
-import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
-import {use} from "chai";
+import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk2/dist/lib/types/Web3FunctionResult";
 
 const ContractABI = [
     {
@@ -208,7 +206,6 @@ const ContractABI = [
 
 ];
 
-const userIDFetchLimit = 4000;
 const MAX_TWITTER_SEARCH_QUERY_LENGTH = 512;
 const KEYWORD = "gm";
 
@@ -218,6 +215,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
     const SearchURL = userArgs.searchURL as string;
     const CONCURRENCY_LIMIT = userArgs.concurrencyLimit as number;
+    const UserIDFetchLimit = userArgs.userIdFetchLimit as number;
 
     const bearerToken = await context.secrets.get("TWITTER_BEARER");
     if (!bearerToken)
@@ -243,8 +241,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
         const {mintingDayTimestamp, batches: initBatches} = event.args;
 
-        console.log('initBatches', initBatches);
-
         let batches = initBatches.map(item => ({
             startIndex: item.startIndex.toNumber(),
             endIndex: item.endIndex.toNumber(),
@@ -253,59 +249,52 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
         console.log('');
         console.log('onRun!', mintingDayTimestamp);
-        console.log('initStorage', await storage.getKeys());
         console.log('received batches', batches);
-
-        const maxUserIndex = await getMaxUserIndex(smartContract, mintingDayTimestamp, storage);
-        const isMintingFinished = await checkMintedLastUserIndex(mintingDayTimestamp, initBatches, maxUserIndex, storage);
-        console.log('maxUserIndex', maxUserIndex);
-        console.log('isMintingFinished', isMintingFinished);
-
-        if (isMintingFinished) {
-            const transactions = await verifyMostLikedTweets(storage, mintingDayTimestamp, smartContract, userArgs.tweetLookupURL as string, bearerToken);
-            return {
-                canExec: true,
-                callData: transactions
-            }
-        }
 
         batches = batches.filter(batch => batch.nextCursor != '')
             .sort((a, b) => Number(a.startIndex - b.startIndex));
 
-        console.log('actual batches', batches);
-
-        let {UserIDs, indexOffset} = await syncUserIDs(mintingDayTimestamp, smartContract, storage, batches)
-        console.log('indexOffset', indexOffset);
-
+        let {
+            UserIDs,
+            indexOffset
+        } = await syncUserIDs(mintingDayTimestamp, smartContract, storage, batches, UserIDFetchLimit, CONCURRENCY_LIMIT)
+        console.log('indexOffset', indexOffset, "UserIDs", UserIDs.length);
         let queryList: string[] = [];
         for (let i = 0; i < batches.length; i++) {
             const cur = batches[i];
             const localStartIndex = cur.startIndex - indexOffset;
             const localEndIndex = cur.endIndex - indexOffset;
 
-            queryList.push(createUserQueryStringStatic(UserIDs.slice(Number(localStartIndex), Number(localEndIndex)), mintingDayTimestamp, KEYWORD));
+            const generatedQuery = createUserQueryStringStatic(UserIDs.slice(localStartIndex, localEndIndex + 1), mintingDayTimestamp, KEYWORD);
+            queryList.push(generatedQuery);
         }
 
-        if (batches.length < CONCURRENCY_LIMIT) {
-            console.log('generating new batches..');
+        if (batches.length < CONCURRENCY_LIMIT && UserIDs.length > 0) {
+            console.log('generating new batches and queries..');
+            const maxEndIndex = initBatches.reduce((max, batch) => Math.max(max, batch.endIndex.toNumber()), 0);
+
             const newCursorsCount = CONCURRENCY_LIMIT - batches.length;
 
-            let index = indexOffset;
+            let startIndex = maxEndIndex > 0 ? maxEndIndex + 1 : 0;
             for (let i = 0; i < newCursorsCount; i++) {
                 const {
                     queryString,
                     lastIndexUsed
-                } = createUserQueryString(UserIDs, mintingDayTimestamp, MAX_TWITTER_SEARCH_QUERY_LENGTH, KEYWORD);
+                } = createUserQueryString(UserIDs.slice(startIndex), mintingDayTimestamp, MAX_TWITTER_SEARCH_QUERY_LENGTH, KEYWORD);
+
+                if (lastIndexUsed == -1) {
+                    break;
+                }
 
                 queryList.push(queryString);
 
                 const newBatch: Batch = {
-                    startIndex: index,
-                    endIndex: index + lastIndexUsed,
+                    startIndex: startIndex,
+                    endIndex: startIndex + lastIndexUsed,
                     nextCursor: ''
                 }
 
-                index += lastIndexUsed;
+                startIndex += lastIndexUsed + 1;
 
                 batches.push(newBatch);
 
@@ -315,17 +304,40 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             }
         }
 
+
+        const isMintingFinished = batches.length == 0
+
+        if (isMintingFinished) {
+            const transactions = await verifyMostLikedTweets(storage, mintingDayTimestamp, smartContract, userArgs.tweetLookupURL as string, bearerToken);
+            transactions.push({
+                to: await smartContract.getAddress() as string,
+                data: smartContract.interface.encodeFunctionData("finishMinting", [
+                    mintingDayTimestamp
+                ]),
+            });
+
+            // finish minting at all
+            const keys = await storage.getKeys();
+            for (let i = 0; i < keys.length; i++) {
+                if (keys[i].startsWith(`${mintingDayTimestamp}`)) {
+                    await storage.delete(keys[i]);
+                }
+            }
+
+            return {
+                canExec: true,
+                callData: transactions
+            }
+        }
+
         let userTweetCount: Map<number, number> = new Map<number, number>;
 
         let tweetsToVerify: Tweet[] = await getTweetsToVerify(mintingDayTimestamp, storage);
 
         let isNewTweetsToVerify = false;
-        const limit = pLimit(CONCURRENCY_LIMIT);
         let errorBatches: any[] = [];
-        console.log('batches', batches);
         const results = await Promise.all(
-            batches.map((cur, index) =>
-                limit(async () => {
+            batches.map(async (cur, index) => {
                     try {
                         let {
                             tweets,
@@ -337,7 +349,8 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                         // we need to verify tweets with >100 likes through official Twitter API
                         let newi = 0;
                         const minLikesCount = tweetsToVerify.length > 0 ? tweetsToVerify[tweetsToVerify.length - 1].likesCount : 0;
-                        for (let i = 0; i < tweets.length; i++) {
+                        const currTweetsLength = tweets.length
+                        for (let i = 0; i < currTweetsLength; i++) {
                             if (tweets[i].likesCount > 100 && tweets[i].likesCount > minLikesCount) {
                                 tweetsToVerify.push(tweets[i]);
                                 isNewTweetsToVerify = true;
@@ -382,7 +395,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                         console.error('error fetching and processing tweets: ', error);
                         return null;
                     }
-                })
+                }
             )
         );
 
@@ -390,13 +403,15 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             await saveTweetsToVerify(mintingDayTimestamp, storage, tweetsToVerify);
         }
 
+
         const flattenedResults = results.flat().filter((res): res is Result => res !== null);
         const sortedResults = flattenedResults.sort((a, b) => Number(a.userIndex - b.userIndex));
 
-        console.log('sortedResults', sortedResults);
+        console.log('newBatches', batches);
+        console.log('sortedResults', sortedResults.length);
 
         let transactions: any[] = [];
-        if (sortedResults.length > 0) {
+        if (sortedResults.length > 0 || batches.length > 0) {
             transactions.push({
                 to: userArgs.contractAddress as string,
                 data: smartContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
@@ -446,25 +461,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
 async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: number, smartContract: Contract, tweetLookupURL: string, bearerToken: string): Promise<Web3FunctionResultCallData[]> {
     const tweetsToVerify = await getTweetsToVerify(mintingDayTimestamp, storage)
-    if (tweetsToVerify.length == 0) {
-        // finish minting at all
-        const keys = await storage.getKeys();
-        for (let i = 0; i < keys.length; i++) {
-            if (keys[i].startsWith(`${mintingDayTimestamp}`)) {
-                await storage.delete(keys[i]);
-            }
-        }
-
-
-        return [
-            {
-                to: await smartContract.getAddress() as string,
-                data: smartContract.interface.encodeFunctionData("finishMinting", [
-                    mintingDayTimestamp
-                ]),
-            }
-        ];
-    }
     if (tweetsToVerify.length > 0) {
         const tweetIdToUserIndexMap: Map<string, number> = new Map();
 
@@ -485,14 +481,16 @@ async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: n
         const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
 
         if (sortedResults) {
-            return [{
-                to: await smartContract.getAddress() as string,
-                data: smartContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
-                    sortedResults,
-                    mintingDayTimestamp,
-                    [],
-                ]),
-            }]
+            return [
+                {
+                    to: await smartContract.getAddress() as string,
+                    data: smartContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
+                        sortedResults,
+                        mintingDayTimestamp,
+                        [],
+                    ]),
+                },
+            ]
         }
 
     }
@@ -506,44 +504,7 @@ async function saveTweetsToVerify(mintingDayTimestamp: number, storage: w3fStora
     await storage.set(`${mintingDayTimestamp}_tweetsToVerify`, JSON.stringify(tweets));
 }
 
-async function checkMintedLastUserIndex(mintingDayTimestamp: number, batches: Batch[], maxUserIndex: number, storage: w3fStorage): Promise<boolean> {
-    // check that batch with maxUserIndex was persed
-    let mintedLastUserIndexStr = await storage.get(`${mintingDayTimestamp}_isMintedLastUserIndex`);
-    if (mintedLastUserIndexStr === undefined) {
-        await storage.set(`${mintingDayTimestamp}_isMintedLastUserIndex`, "false");
-        return Promise.resolve(false);
-    }
-
-    let mintedLastUserIndex = mintedLastUserIndexStr === "true";
-    if (!mintedLastUserIndexStr) {
-        if (batches.length > 0) {
-            if (batches[batches.length - 1].endIndex == maxUserIndex && batches[batches.length - 1].nextCursor == '') {
-                mintedLastUserIndex = true;
-            }
-        }
-        await storage.set(`${mintingDayTimestamp}_isMintedLastUserIndex`, mintedLastUserIndex.toString());
-    }
-
-    // check that all batches are finished
-    for (let i = 0; i < batches.length; i++) {
-        if (batches[i].nextCursor != '') {
-            return Promise.resolve(false);
-        }
-    }
-
-    return Promise.resolve(mintedLastUserIndex);
-}
-
-async function getMaxUserIndex(smartContract: Contract, mintingDayTimestamp: number, storage: w3fStorage,): Promise<number> {
-    let maxUserIndex = parseInt(await storage.get(`${mintingDayTimestamp}_maxUserIndex`) || '0');
-    if (maxUserIndex == 0) {
-        maxUserIndex = await smartContract.getTotalUserCount();
-        await storage.set(`${mintingDayTimestamp}_maxUserIndex`, maxUserIndex.toString());
-    }
-    return Promise.resolve(maxUserIndex);
-}
-
-async function syncUserIDs(mintingDayTimestamp: number, smartContract: Contract, storage: w3fStorage, batches: Batch[]): Promise<{ UserIDs: string[]; indexOffset: number }> {
+async function syncUserIDs(mintingDayTimestamp: number, smartContract: Contract, storage: w3fStorage, batches: Batch[], fetchLimit: number, concurrencyLimit: number): Promise<{ UserIDs: string[]; indexOffset: number }> {
     console.log('syncUserIDs');
     const lowestStartIndex = batches.reduce((min, batch) => {
         return batch.startIndex < min ? batch.startIndex : min;
@@ -553,23 +514,30 @@ async function syncUserIDs(mintingDayTimestamp: number, smartContract: Contract,
         return batch.endIndex > max ? batch.endIndex : max;
     }, 0);
 
+    const minNeededSize = concurrencyLimit * 70;
 
-    const cachedUserIndexStart = parseInt(await storage.get(`${mintingDayTimestamp}_UserIndexStart`) || '-1');
-    const cachedUserIndexEnd = parseInt(await storage.get(`${mintingDayTimestamp}_UserIndexEnd`) || '-1');
-
+    let isFetchedLastUser = await storage.get(`${mintingDayTimestamp}_isFetchedLastUserIndex`) == 'true';
     let userIndexOffset = parseInt(await storage.get(`${mintingDayTimestamp}_userIndexOffset`) || '0');
+
+    const cachedUserIndexStart = parseInt(await storage.get(`${mintingDayTimestamp}_userIndexStart`) || '-1');
+    const cachedUserIndexEnd = parseInt(await storage.get(`${mintingDayTimestamp}_userIndexEnd`) || '-1');
+
 
     let userIDs: string[];
 
     console.log('cacheduserIndexStart', cachedUserIndexStart, "lowestStartIndex", lowestStartIndex, "highestEndIndex", highestEndIndex);
-    if (cachedUserIndexStart == -1 || cachedUserIndexEnd < highestEndIndex || cachedUserIndexEnd - highestEndIndex < 400) {
-        userIDs = await smartContract.getTwitterUsers(lowestStartIndex, userIDFetchLimit);
+    if (cachedUserIndexStart == -1 || (!isFetchedLastUser && (cachedUserIndexEnd < highestEndIndex || cachedUserIndexEnd - highestEndIndex < minNeededSize))) {
+        userIDs = await smartContract.getTwitterUsers(lowestStartIndex, fetchLimit);
+
+        if (userIDs.length < fetchLimit) {
+            await storage.set(`${mintingDayTimestamp}_isFetchedLastUserIndex`, 'true');
+        }
 
         userIndexOffset = lowestStartIndex;
         await storage.set(`${mintingDayTimestamp}_userIndexOffset`, userIndexOffset.toString());
 
-        await storage.set(`${mintingDayTimestamp}_UserIndexStart`, lowestStartIndex.toString());
-        await storage.set(`${mintingDayTimestamp}_UserIndexEnd`, (lowestStartIndex + userIDs.length).toString());
+        await storage.set(`${mintingDayTimestamp}_userIndexStart`, lowestStartIndex.toString());
+        await storage.set(`${mintingDayTimestamp}_userIndexEnd`, (lowestStartIndex + userIDs.length).toString());
 
         await storage.set(`${mintingDayTimestamp}_userIDs`, JSON.stringify(userIDs));
     } else {
@@ -799,6 +767,7 @@ async function fetchTweets(searchURL: string, secretKey: string, queryString: st
     try {
         // Perform the GET request using ky
         const response = await ky.get(searchURL, {
+            timeout: 3000,
             headers: {
                 'X-Rapidapi-Key': secretKey,
                 'X-Rapidapi-Host': 'twitter283.p.rapidapi.com',
@@ -811,6 +780,8 @@ async function fetchTweets(searchURL: string, secretKey: string, queryString: st
                 safe_search: 'false',
             }
         }).json<TwitterApiResponse>();
+
+        console.log('received response from server');
 
         const tweets: Tweet[] = [];
 
@@ -845,6 +816,8 @@ async function fetchTweets(searchURL: string, secretKey: string, queryString: st
                 }
             }
         }
+
+        console.log('after loop', tweets.length, nextCursor);
 
         return {tweets, nextCursor};
     } catch (error) {
