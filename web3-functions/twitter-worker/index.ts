@@ -178,19 +178,6 @@ const ContractABI = [
         "type": "function"
     },
     {
-        "inputs": [],
-        "name": "getTotalUserCount",
-        "outputs": [
-            {
-                "internalType": "uint64",
-                "name": "",
-                "type": "uint64"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
         "inputs": [
             {
                 "internalType": "uint32",
@@ -306,7 +293,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
 
         const isMintingFinished = batches.length == 0
-
         if (isMintingFinished) {
             const transactions = await verifyMostLikedTweets(storage, mintingDayTimestamp, smartContract, userArgs.tweetLookupURL as string, bearerToken);
             transactions.push({
@@ -351,12 +337,16 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                         const minLikesCount = tweetsToVerify.length > 0 ? tweetsToVerify[tweetsToVerify.length - 1].likesCount : 0;
                         const currTweetsLength = tweets.length
                         for (let i = 0; i < currTweetsLength; i++) {
+                            const foundKeyword = findKeywordWithPrefix(tweets[i].tweetContent)
+                            if (foundKeyword == "") {
+                                continue;
+                            }
+
                             if (tweets[i].likesCount > 100 && tweets[i].likesCount > minLikesCount) {
+                                tweets[i].userIndex = indexOffset + UserIDs.indexOf(tweets[i].userID);
                                 tweetsToVerify.push(tweets[i]);
                                 isNewTweetsToVerify = true;
 
-
-                                // tweets[i].userID
                                 tweetsToVerify.sort((a, b) => b.likesCount - a.likesCount);
                                 if (tweetsToVerify.length > 300) {
                                     tweets.push(tweetsToVerify[tweetsToVerify.length - 1]);
@@ -408,7 +398,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         const sortedResults = flattenedResults.sort((a, b) => Number(a.userIndex - b.userIndex));
 
         console.log('newBatches', batches);
-        console.log('sortedResults', sortedResults.length);
+        console.log('sortedResults', sortedResults);
 
         let transactions: any[] = [];
         if (sortedResults.length > 0 || batches.length > 0) {
@@ -462,25 +452,33 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: number, smartContract: Contract, tweetLookupURL: string, bearerToken: string): Promise<Web3FunctionResultCallData[]> {
     const tweetsToVerify = await getTweetsToVerify(mintingDayTimestamp, storage)
     if (tweetsToVerify.length > 0) {
-        const tweetIdToUserIndexMap: Map<string, number> = new Map();
+        console.log('tweetsToVerify', tweetsToVerify);
 
-        tweetsToVerify.forEach((tweet) => {
-            tweetIdToUserIndexMap.set(tweet.tweetID, parseInt(tweet.userID));
-        })
         const verifiedTweets = await fetchTweetsInBatches(tweetLookupURL, tweetsToVerify, bearerToken);
+        console.log('verifiedTweets response', verifiedTweets);
+
+        let resultsByUser: Map<number, Result> = new Map();
+        for (const vt of verifiedTweets) {
+            resultsByUser.set(vt.userIndex, {...defaultResult});
+        }
+        for (let i = 0; i < verifiedTweets.length; i++) {
+            console.log('processing verified tweet', verifiedTweets[i].userIndex, verifiedTweets[i]);
+            const result = resultsByUser.get(verifiedTweets[i].userIndex);
+
+            const res = calculateTweet(result, verifiedTweets[i].tweetContent, verifiedTweets[i].likesCount);
+            resultsByUser.set(verifiedTweets[i].userIndex, res);
+        }
 
         let results: Result[] = [];
-        for (let i = 0; i < verifiedTweets.length; i++) {
-            const res = calculateTweet({} as Result, verifiedTweets[i].tweetContent, verifiedTweets[i].likesCount);
-            res.userIndex = tweetIdToUserIndexMap.get(verifiedTweets[i].tweetID) || 0;
-            if (res.userIndex > 0) {
-                results.push(res);
-            }
+        for (let [userIndex, result] of resultsByUser) {
+            result.userIndex = userIndex;
+            results.push(result);
         }
 
         const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
 
         if (sortedResults) {
+            console.log('verified sortedResults', sortedResults);
             return [
                 {
                     to: await smartContract.getAddress() as string,
@@ -629,6 +627,15 @@ interface Result {
     likes: number;
 }
 
+const defaultResult: Result = {
+    userIndex: 0,
+    hashtagTweets: 0,
+    cashtagTweets: 0,
+    simpleTweets: 0,
+    tweets: 0,
+    likes: 0,
+};
+
 // Function to process tweets and create the result array
 function processTweets(indexOffset: number, userIDs: string[], foundTweets: Tweet[]): Result[] {
     let results: Result[] = userIDs.map((value, index) => ({
@@ -656,7 +663,7 @@ function processTweets(indexOffset: number, userIDs: string[], foundTweets: Twee
 }
 
 function calculateTweet(result: Result, tweetContent: string, likesCount: number): Result {
-    const foundKeyword = findKeywordWithPrefix(tweetContent, KEYWORD);
+    const foundKeyword = findKeywordWithPrefix(tweetContent);
     if (foundKeyword == "") {
         return result;
     }
@@ -675,7 +682,7 @@ function calculateTweet(result: Result, tweetContent: string, likesCount: number
     return result;
 }
 
-function findKeywordWithPrefix(text: string, keyword: string): string {
+function findKeywordWithPrefix(text: string): string {
     const words = text.split(/\s+/);  // Split by whitespace to get individual words
 
     let foundWord = "";
@@ -688,11 +695,11 @@ function findKeywordWithPrefix(text: string, keyword: string): string {
             return "$" + KEYWORD;
         }
         // Check for moneytag tweets
-        else if (cleanedWord === "#" + KEYWORD && foundWord == "gm") {
+        else if (cleanedWord === "#" + KEYWORD) {
             foundWord = "#gm";
         }
         // Check for simple keyword tweets
-        else if (cleanedWord === KEYWORD) {
+        else if (cleanedWord === KEYWORD && foundWord == "") {
             foundWord = cleanedWord;
         }
     }
@@ -863,24 +870,19 @@ async function fetchTweetsInBatches(
                 .json<any>();
 
             // Step 3: Process the response and map to Tweet interface
-            if (response.data && response.includes && response.includes.users) {
-                const usersMap = new Map(
-                    response.includes.users.map((user: any) => [user.id, user])
-                );
-
+            if (response.data) {
                 response.data.forEach((tweet: any) => {
-                    const user = usersMap.get(tweet.author_id);
-                    const userIndex = userIdToUserIndex.get(tweet.author_id)
-                    if (user) {
-                        results.push({
-                            userID: tweet.author_id,
-                            tweetID: tweet.id,
-                            tweetContent: tweet.text,
-                            likesCount: tweet.public_metrics.like_count,
-                            userDescriptionText: user.description,
-                            userIndex: userIndex,
-                        });
-                    }
+                    const userIndex = userIdToUserIndex.get(tweet.author_id);
+
+                    console.log('response verified tweet', tweet);
+                    results.push({
+                        userID: tweet.author_id,
+                        tweetID: tweet.id,
+                        tweetContent: tweet.text,
+                        likesCount: tweet.public_metrics.like_count,
+                        userDescriptionText: "",
+                        userIndex: userIndex,
+                    });
                 });
             }
         } catch (error) {

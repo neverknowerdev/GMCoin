@@ -84,10 +84,6 @@ contract GMTwitterOracle is Initializable {
         return batchArr;
     }
 
-    function getTotalUserCount() public view returns (uint64) {
-        return uint64(allTwitterUsers.length);
-    }
-
     event VerifyTwitterRequested(string authCode, string verifier, address indexed wallet, bool autoFollow);
     event TwitterConnected(string userID, address indexed wallet);
 
