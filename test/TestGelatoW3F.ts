@@ -184,19 +184,23 @@ describe("GelatoW3F", function () {
 
         const [owner, feeAddr, otherAcc1, gelatoAddr] = await ethers.getSigners();
 
+        const coinsMultiplier = 100_000;
         const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const smartContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, 100_000], {kind: "uups"}) as unknown as GMCoinExposed;
+        const smartContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, coinsMultiplier], {kind: "uups"}) as unknown as GMCoinExposed;
 
         await smartContract.waitForDeployment();
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
-        const userLimit = 1000;
+        const userLimit = 100;
 
         const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
 
+        let walletByUsername: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
-            await gelatoContract.verifyTwitter(String(i + 1) as any, generatedWallets[i] as any);
+            const username = String(i + 1)
+            await gelatoContract.verifyTwitter(username as any, generatedWallets[i] as any);
+            walletByUsername.set(username, generatedWallets[i].address);
         }
 
         let allUserTweetsByUser = loadUserTweets("./test/files/user200Tweets.json");
@@ -214,22 +218,23 @@ describe("GelatoW3F", function () {
             }
         }
 
+        for (const [userID, tweets] of allUserTweetsByUser) {
+            for (const tweet of tweets) {
+                tweet.author_id = userID;
+            }
+            allUserTweetsByUser.set(userID, tweets);
+        }
+
         let tweetMap: Map<string, Tweet> = new Map();
 
         mockServer.mockFunc('/Search', 'GET', (url: url.UrlWithParsedQuery) => {
             const q = url.query["q"] as string;
             const cursor = url.query["cursor"] as string;
-            console.log('query', q);
-            console.log('cursor', cursor);
             const userIDList = extractUserIDs(q);
 
             const {filteredTweets, nextCursor} = filterUserTweets(allUserTweetsByUser, userIDList, cursor, 20);
 
-            let {
-                response,
-                tweetMap: newTweetMap
-            } = generateResponse(filteredTweets, tweetMap, nextCursor, cursor == '');
-            tweetMap = newTweetMap;
+            let response = generateResponse(filteredTweets, tweetMap, nextCursor, cursor == '');
             return response;
         });
 
@@ -240,7 +245,8 @@ describe("GelatoW3F", function () {
             const expansionFields = (url.query["tweet.fields"] as string).split(",");
             expect(expansionFields.indexOf("public_metrics")).to.be.greaterThan(-1);
 
-            return generateResponseForTweetLookup(tweetMap, tweetIDs, -10);
+
+            return generateResponseForTweetLookup(tweetMap, tweetIDs, 0);
         });
 
         const verifierAddress = await smartContract.getAddress();
@@ -318,6 +324,40 @@ describe("GelatoW3F", function () {
             }
         }
 
+        let userPoints: Map<string, number> = new Map();
+        allUserTweetsByUser.forEach((tweets, uid) => {
+            const calculateTotalPoints = (tweets: Tweet[]): number => {
+                return tweets.reduce((totalPoints, tweet) => {
+                    const gmCount = (tweet.text.match(/\bgm\b/gi) || []).length; // Matches whole "gm" words
+                    const hashtagGmCount = (tweet.text.match(/#gm/gi) || []).length; // Matches "#gm"
+                    const dollarGmCount = (tweet.text.match(/\$gm/gi) || []).length; // Matches "$gm"
+
+                    let pointsPerTweet = 0;
+                    if (dollarGmCount > 0) {
+                        pointsPerTweet += 10;
+                    } else if (hashtagGmCount > 0) {
+                        pointsPerTweet += 4;
+                    } else if (gmCount > 0) {
+                        pointsPerTweet += 2;
+                    }
+
+                    if (pointsPerTweet > 0) {
+                        pointsPerTweet += tweet.likesCount;
+                    }
+
+                    return totalPoints + pointsPerTweet;
+                }, 0);
+            };
+
+            userPoints.set(uid, calculateTotalPoints(tweets));
+        })
+
+        for (const [uid, wallet] of walletByUsername) {
+            const points = userPoints.get(uid);
+            const balance = await smartContract.balanceOf(wallet as any);
+
+            expect(balance / BigInt(coinsMultiplier) / 10n ** 18n, `userIndex ${parseInt(uid) - 1}`).to.be.equal(BigInt(points));
+        }
         console.log('minting finished here!!');
 
 
@@ -328,22 +368,22 @@ describe("GelatoW3F", function () {
     it('filterUserTweets', async function () {
         let userTweetsMap: UserTweetsMap = new Map();
         userTweetsMap.set("1", [
-            {text: "1_1", likesCount: 10},
-            {text: "1_2", likesCount: 10},
-            {text: "1_3", likesCount: 10},
-            {text: "1_4", likesCount: 10},
-            {text: "1_5", likesCount: 10},
+            {text: "1_1", likesCount: 10, author_id: ""},
+            {text: "1_2", likesCount: 10, author_id: ""},
+            {text: "1_3", likesCount: 10, author_id: ""},
+            {text: "1_4", likesCount: 10, author_id: ""},
+            {text: "1_5", likesCount: 10, author_id: ""},
         ])
         userTweetsMap.set("2", [
-            {text: "2_1", likesCount: 20},
-            {text: "2_2", likesCount: 20},
-            {text: "2_3", likesCount: 20},
+            {text: "2_1", likesCount: 20, author_id: ""},
+            {text: "2_2", likesCount: 20, author_id: ""},
+            {text: "2_3", likesCount: 20, author_id: ""},
         ])
         userTweetsMap.set("3", [
-            {text: "3_1", likesCount: 20},
-            {text: "3_2", likesCount: 20},
-            {text: "3_3", likesCount: 20},
-            {text: "3_4", likesCount: 20},
+            {text: "3_1", likesCount: 20, author_id: ""},
+            {text: "3_2", likesCount: 20, author_id: ""},
+            {text: "3_3", likesCount: 20, author_id: ""},
+            {text: "3_4", likesCount: 20, author_id: ""},
         ])
         let userIDList = ["1", "2", "3", "4", "5"];
         let {filteredTweets, nextCursor} = filterUserTweets(userTweetsMap, userIDList, "", 5);
@@ -351,11 +391,11 @@ describe("GelatoW3F", function () {
         // expect(filteredUserIDs).to.be.equal(['1']);
 
         expect(JSON.stringify(filteredTweets.get("1"))).to.be.equal(JSON.stringify([
-            {text: "1_1", likesCount: 10},
-            {text: "1_2", likesCount: 10},
-            {text: "1_3", likesCount: 10},
-            {text: "1_4", likesCount: 10},
-            {text: "1_5", likesCount: 10},
+            {text: "1_1", likesCount: 10, author_id: ""},
+            {text: "1_2", likesCount: 10, author_id: ""},
+            {text: "1_3", likesCount: 10, author_id: ""},
+            {text: "1_4", likesCount: 10, author_id: ""},
+            {text: "1_5", likesCount: 10, author_id: ""},
         ]))
         expect(nextCursor).to.be.equal('cursor(1-5):1:5');
 
@@ -367,13 +407,13 @@ describe("GelatoW3F", function () {
 
 
         expect(JSON.stringify(filteredTweets2.get("2"))).to.be.equal(JSON.stringify([
-            {text: "2_1", likesCount: 20},
-            {text: "2_2", likesCount: 20},
-            {text: "2_3", likesCount: 20},
+            {text: "2_1", likesCount: 20, author_id: ""},
+            {text: "2_2", likesCount: 20, author_id: ""},
+            {text: "2_3", likesCount: 20, author_id: ""},
         ]));
         expect(JSON.stringify(filteredTweets2.get("3"))).to.be.equal(JSON.stringify([
-            {text: "3_1", likesCount: 20},
-            {text: "3_2", likesCount: 20},
+            {text: "3_1", likesCount: 20, author_id: ""},
+            {text: "3_2", likesCount: 20, author_id: ""},
         ]));
 
         expect(nextCursor2).to.be.equal('cursor(1-5):3:2');
@@ -386,8 +426,8 @@ describe("GelatoW3F", function () {
 
 
         expect(JSON.stringify(filteredTweets3.get("3"))).to.be.equal(JSON.stringify([
-            {text: "3_3", likesCount: 20},
-            {text: "3_4", likesCount: 20},
+            {text: "3_3", likesCount: 20, author_id: ""},
+            {text: "3_4", likesCount: 20, author_id: ""},
         ]));
 
         expect(nextCursor3).to.be.equal('');
@@ -412,6 +452,7 @@ describe("GelatoW3F", function () {
     interface Tweet {
         text: string;
         likesCount: number;
+        author_id: string;
     }
 
     const loadUserTweets = (filePath: string): UserTweetsMap => {
@@ -510,20 +551,25 @@ describe("GelatoW3F", function () {
             if (likesCount < 0) {
                 likesCount = 0;
             }
-            response.data.push({
+            const res = {
                 "id": `${tweetID}`,
                 "text": `${tweet.text}`,
+                "author_id": `${tweet.author_id}`,
                 "public_metrics": {
                     "like_count": likesCount,
                 }
-            });
+            };
+
+            console.log("lookupTweet", tweetID, res);
+
+            response.data.push(res);
         }
 
         return response;
     }
 
 
-    function generateResponse(userTweets: Map<string, Tweet[]>, tweetMap: Map<string, Tweet>, nextCursor: string, isFirstCursorReply: boolean): { response: any, tweetMap: Map<string, Tweet> } {
+    function generateResponse(userTweets: Map<string, Tweet[]>, tweetMap: Map<string, Tweet>, nextCursor: string, isFirstCursorReply: boolean): any {
         const randomString = (length: number) => Math.random().toString(36).substr(2, length);
         const randomNumber = (min: number, max: number) =>
             Math.floor(Math.random() * (max - min + 1)) + min;
@@ -537,6 +583,7 @@ describe("GelatoW3F", function () {
                 const userName = `${userId}`;
                 const userScreenName = `screen${userId}`;
 
+                console.log('setting tweetMap', tweetId, tweet);
                 tweetMap.set(tweetId, tweet);
 
                 const tweetObject = {
@@ -676,7 +723,7 @@ describe("GelatoW3F", function () {
             };
         }
 
-        return {response, tweetMap};
+        return response;
     }
 
     /*
