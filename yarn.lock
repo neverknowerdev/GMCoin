@@ -554,8 +554,9 @@
     ethers "^5.5.2"
     siwe "^1.1.6"
 
-"@gelatonetwork/web3-functions-sdk2@file:../web3-functions-sdk":
+"@gelatonetwork/web3-functions-sdk@git+https://github.com/neverknowerdev/web3-functions-sdk.git#hardfix_local":
   version "2.4.4"
+  resolved "git+https://github.com/neverknowerdev/web3-functions-sdk.git#e6f345c390227f93124b8af6fc9499ad5cd39a00"
   dependencies:
     "@ethersproject/address" "^5.7.0"
     "@ethersproject/contracts" "^5.7.0"

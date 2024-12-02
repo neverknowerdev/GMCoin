@@ -4,10 +4,11 @@ import {
     Web3FunctionEventContext,
     Web3FunctionStorage,
     Web3FunctionResult
-} from "@gelatonetwork/web3-functions-sdk2";
+} from "@gelatonetwork/web3-functions-sdk";
 import {Contract, ContractRunner, getBytes} from "ethers";
 import ky from "ky";
-import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk2/dist/lib/types/Web3FunctionResult";
+import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
+import {use} from "chai";
 
 const ContractABI = [
     {
@@ -198,6 +199,7 @@ const KEYWORD = "gm";
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
     // Get event log from Web3FunctionEventContext
+    console.log('running..');
     const {log, userArgs, multiChainProvider, storage} = context;
 
     const SearchURL = userArgs.searchURL as string;
@@ -234,7 +236,9 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             nextCursor: item.nextCursor
         }));
 
-        console.log('');
+        console.log(' ');
+        console.log(' ');
+        console.log(' ');
         console.log('onRun!', mintingDayTimestamp);
         console.log('received batches', batches);
 
@@ -245,7 +249,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             UserIDs,
             indexOffset
         } = await syncUserIDs(mintingDayTimestamp, smartContract, storage, batches, UserIDFetchLimit, CONCURRENCY_LIMIT)
-        console.log('indexOffset', indexOffset, "UserIDs", UserIDs.length);
+        // console.log('indexOffset', indexOffset, "UserIDs", UserIDs.length);
         let queryList: string[] = [];
         for (let i = 0; i < batches.length; i++) {
             const cur = batches[i];
@@ -258,7 +262,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
         if (batches.length < CONCURRENCY_LIMIT && UserIDs.length > 0) {
             console.log('generating new batches and queries..');
-            const maxEndIndex = initBatches.reduce((max, batch) => Math.max(max, batch.endIndex.toNumber()), 0);
+            const maxEndIndex = await getMaxEndIndex(mintingDayTimestamp, storage);
 
             const newCursorsCount = CONCURRENCY_LIMIT - batches.length;
 
@@ -281,6 +285,10 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                     nextCursor: ''
                 }
 
+                if(newBatch.endIndex > maxEndIndex) {
+                    await saveMaxEndIndex(mintingDayTimestamp, storage, newBatch.endIndex);
+                }
+
                 startIndex += lastIndexUsed + 1;
 
                 batches.push(newBatch);
@@ -289,11 +297,13 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                     break;
                 }
             }
+            console.log('newBatches', batches);
         }
 
 
-        const isMintingFinished = batches.length == 0
+        const isMintingFinished = batches.length == 0;
         if (isMintingFinished) {
+            console.log('mintingFinished');
             const transactions = await verifyMostLikedTweets(storage, mintingDayTimestamp, smartContract, userArgs.tweetLookupURL as string, bearerToken);
             transactions.push({
                 to: await smartContract.getAddress() as string,
@@ -320,6 +330,8 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
         let tweetsToVerify: Tweet[] = await getTweetsToVerify(mintingDayTimestamp, storage);
 
+        // console.log('generatedQuery', queryList, batches);
+
         let isNewTweetsToVerify = false;
         let errorBatches: any[] = [];
         const results = await Promise.all(
@@ -331,6 +343,9 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                         } = await fetchTweets(SearchURL, secretKey, queryList[index], cur.nextCursor);
 
                         console.log('tweets', tweets.length, 'cursor', nextCursor);
+                        if(cur.nextCursor == 'cursor(244-282):277:1') {
+                            console.log('response tweets', tweets);
+                        }
 
                         // we need to verify tweets with >100 likes through official Twitter API
                         let newi = 0;
@@ -397,8 +412,8 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         const flattenedResults = results.flat().filter((res): res is Result => res !== null);
         const sortedResults = flattenedResults.sort((a, b) => Number(a.userIndex - b.userIndex));
 
-        console.log('newBatches', batches);
-        console.log('sortedResults', sortedResults);
+        // console.log('newBatches', batches);
+        // console.log('sortedResults', sortedResults);
 
         let transactions: any[] = [];
         if (sortedResults.length > 0 || batches.length > 0) {
@@ -452,17 +467,17 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: number, smartContract: Contract, tweetLookupURL: string, bearerToken: string): Promise<Web3FunctionResultCallData[]> {
     const tweetsToVerify = await getTweetsToVerify(mintingDayTimestamp, storage)
     if (tweetsToVerify.length > 0) {
-        console.log('tweetsToVerify', tweetsToVerify);
+        // for(const tweet of tweetsToVerify) {
+        //     console.log('tweetToVerify', tweet);
+        // }
 
         const verifiedTweets = await fetchTweetsInBatches(tweetLookupURL, tweetsToVerify, bearerToken);
-        console.log('verifiedTweets response', verifiedTweets);
 
         let resultsByUser: Map<number, Result> = new Map();
         for (const vt of verifiedTweets) {
             resultsByUser.set(vt.userIndex, {...defaultResult});
         }
         for (let i = 0; i < verifiedTweets.length; i++) {
-            console.log('processing verified tweet', verifiedTweets[i].userIndex, verifiedTweets[i]);
             const result = resultsByUser.get(verifiedTweets[i].userIndex);
 
             const res = calculateTweet(result, verifiedTweets[i].tweetContent, verifiedTweets[i].likesCount);
@@ -478,7 +493,7 @@ async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: n
         const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
 
         if (sortedResults) {
-            console.log('verified sortedResults', sortedResults);
+            // console.log('verified sortedResults', sortedResults);
             return [
                 {
                     to: await smartContract.getAddress() as string,
@@ -503,7 +518,6 @@ async function saveTweetsToVerify(mintingDayTimestamp: number, storage: w3fStora
 }
 
 async function syncUserIDs(mintingDayTimestamp: number, smartContract: Contract, storage: w3fStorage, batches: Batch[], fetchLimit: number, concurrencyLimit: number): Promise<{ UserIDs: string[]; indexOffset: number }> {
-    console.log('syncUserIDs');
     const lowestStartIndex = batches.reduce((min, batch) => {
         return batch.startIndex < min ? batch.startIndex : min;
     }, 0);
@@ -523,7 +537,7 @@ async function syncUserIDs(mintingDayTimestamp: number, smartContract: Contract,
 
     let userIDs: string[];
 
-    console.log('cacheduserIndexStart', cachedUserIndexStart, "lowestStartIndex", lowestStartIndex, "highestEndIndex", highestEndIndex);
+    // console.log('cacheduserIndexStart', cachedUserIndexStart, "lowestStartIndex", lowestStartIndex, "highestEndIndex", highestEndIndex);
     if (cachedUserIndexStart == -1 || (!isFetchedLastUser && (cachedUserIndexEnd < highestEndIndex || cachedUserIndexEnd - highestEndIndex < minNeededSize))) {
         userIDs = await smartContract.getTwitterUsers(lowestStartIndex, fetchLimit);
 
@@ -649,7 +663,6 @@ function processTweets(indexOffset: number, userIDs: string[], foundTweets: Twee
 
     // Iterate through foundTweets and update the corresponding user's result
     for (const tweet of foundTweets) {
-        // console.log('userID', tweet.userID);
 
         const userIndex = userIDs.indexOf(tweet.userID);
 
@@ -788,7 +801,6 @@ async function fetchTweets(searchURL: string, secretKey: string, queryString: st
             }
         }).json<TwitterApiResponse>();
 
-        console.log('received response from server');
 
         const tweets: Tweet[] = [];
 
@@ -824,8 +836,6 @@ async function fetchTweets(searchURL: string, secretKey: string, queryString: st
             }
         }
 
-        console.log('after loop', tweets.length, nextCursor);
-
         return {tweets, nextCursor};
     } catch (error) {
         console.error('Error fetching tweets:', error);
@@ -849,10 +859,12 @@ async function fetchTweetsInBatches(
 
     let userIdToUserIndex = new Map<string, number>;
     for (const batch of batches) {
-        for (const b of batch) {
-            userIdToUserIndex.set(b.userID, b.userIndex);
+        for (const tweet of batch) {
+            // console.log('tweetToVerify', tweet.userID, tweet.userIndex, tweet.tweetID);
+            userIdToUserIndex.set(tweet.userID, tweet.userIndex);
         }
     }
+
 
     // Step 2: Prepare and send parallel requests
     const requests = batches.map(async (batch) => {
@@ -873,8 +885,9 @@ async function fetchTweetsInBatches(
             if (response.data) {
                 response.data.forEach((tweet: any) => {
                     const userIndex = userIdToUserIndex.get(tweet.author_id);
+                    // console.log('getUserIndex', userIndex, tweet);
 
-                    console.log('response verified tweet', tweet);
+                    // console.log('response verified tweet', tweet);
                     results.push({
                         userID: tweet.author_id,
                         tweetID: tweet.id,
@@ -910,8 +923,9 @@ function formatDay(timestamp: number, addDays: number): string {
 }
 
 
-function bytesStringToString(strBytes: string): string {
-    const cursorBytes = getBytes(strBytes);
-    let decoder = new TextDecoder("utf-8");
-    return decoder.decode(cursorBytes);
+async function saveMaxEndIndex(mintingDayTimestamp: number, storage: w3fStorage, maxIndex: number) {
+    await storage.set(`${mintingDayTimestamp}_maxEndIndex`, maxIndex.toString());
+}
+async function getMaxEndIndex(mintingDayTimestamp: number, storage: w3fStorage): Promise<number> {
+    return Promise.resolve(parseInt(await storage.get(`${mintingDayTimestamp}_maxEndIndex`) || '0'));
 }

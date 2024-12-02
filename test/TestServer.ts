@@ -2,8 +2,8 @@ import hre from "hardhat";
 
 const {w3f} = hre;
 import {createServer, IncomingMessage, ServerResponse} from "http";
-import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk2/dist/hardhat";
-import {Web3FunctionResultV2} from "@gelatonetwork/web3-functions-sdk2";
+import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk/dist/hardhat";
+import {Web3FunctionResultV2} from "@gelatonetwork/web3-functions-sdk";
 import {expect} from "chai";
 import HttpRequestMock from 'http-request-mock';
 

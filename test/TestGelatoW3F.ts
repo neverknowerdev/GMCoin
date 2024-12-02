@@ -6,8 +6,8 @@ const {ethers, w3f, upgrades} = hre;
 import {
     Web3FunctionUserArgs,
     Web3FunctionResultV2,
-} from "@gelatonetwork/web3-functions-sdk2";
-import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk2/hardhat-plugin";
+} from "@gelatonetwork/web3-functions-sdk";
+import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
 import {GMCoinExposed} from "../typechain";
 import {MockHttpServer} from './tools/mockServer';
 import {Provider, HDNodeWallet} from "ethers";
@@ -16,6 +16,7 @@ import {time} from "@nomicfoundation/hardhat-network-helpers";
 import * as url from 'url';
 import fs from "fs";
 import {max} from "hardhat/internal/util/bigint";
+import path from "path";
 
 describe("GelatoW3F", function () {
     let mockServer: MockHttpServer;
@@ -192,7 +193,9 @@ describe("GelatoW3F", function () {
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
-        const userLimit = 100;
+        const userLimit = 1000;
+        const userIDFetchLimit = 4000;
+        const concurrencyLimit = 10;
 
         const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
 
@@ -203,38 +206,32 @@ describe("GelatoW3F", function () {
             walletByUsername.set(username, generatedWallets[i].address);
         }
 
-        let allUserTweetsByUser = loadUserTweets("./test/files/user200Tweets.json");
-        // make it for 1000 users!
-        const maxUsersAlready = allUserTweetsByUser.size;
+        // let allUserTweetsByUser = loadUserTweets('./test/generatedUserTweets.json')
+        let allUserTweetsByUser = generateUserTweetsMap(userLimit);
 
-        let ii = 0;
-        for (let i = maxUsersAlready; i < userLimit; i++) {
-            const userTweets = allUserTweetsByUser.get(`${ii + 1}`);
-            allUserTweetsByUser.set(Number(i + 1).toString(), userTweets);
-
-            ii++;
-            if (ii > maxUsersAlready) {
-                ii = 0;
-            }
-        }
-
-        for (const [userID, tweets] of allUserTweetsByUser) {
-            for (const tweet of tweets) {
-                tweet.author_id = userID;
-            }
-            allUserTweetsByUser.set(userID, tweets);
-        }
+        saveUserTweetsToFile(allUserTweetsByUser, path.join(__dirname, 'generatedUserTweet2.json'));
 
         let tweetMap: Map<string, Tweet> = new Map();
+        for (let [userID, tweets] of allUserTweetsByUser) {
+            for (let tweet of tweets) {
+                tweetMap.set(tweet.tweet_id, tweet);
+            }
+        }
 
         mockServer.mockFunc('/Search', 'GET', (url: url.UrlWithParsedQuery) => {
             const q = url.query["q"] as string;
             const cursor = url.query["cursor"] as string;
             const userIDList = extractUserIDs(q);
 
+            console.log('query', q);
+            console.log('cursor', cursor);
+
             const {filteredTweets, nextCursor} = filterUserTweets(allUserTweetsByUser, userIDList, cursor, 20);
 
-            let response = generateResponse(filteredTweets, tweetMap, nextCursor, cursor == '');
+            console.log('nextCursor', nextCursor);
+            // console.log('generateResponse', 'nextCursor', nextCursor, userIDList, filteredTweets);
+
+            let response = generateResponse(filteredTweets, nextCursor, cursor == '');
             return response;
         });
 
@@ -257,8 +254,8 @@ describe("GelatoW3F", function () {
             contractAddress: verifierAddress,
             searchURL: "http://localhost:8118/Search",
             tweetLookupURL: "http://localhost:8118/tweet-lookup/",
-            concurrencyLimit: 3,
-            userIdFetchLimit: 300,
+            concurrencyLimit: concurrencyLimit,
+            userIdFetchLimit: userIDFetchLimit,
         };
 
 
@@ -368,22 +365,22 @@ describe("GelatoW3F", function () {
     it('filterUserTweets', async function () {
         let userTweetsMap: UserTweetsMap = new Map();
         userTweetsMap.set("1", [
-            {text: "1_1", likesCount: 10, author_id: ""},
-            {text: "1_2", likesCount: 10, author_id: ""},
-            {text: "1_3", likesCount: 10, author_id: ""},
-            {text: "1_4", likesCount: 10, author_id: ""},
-            {text: "1_5", likesCount: 10, author_id: ""},
+            {text: "1_1", likesCount: 10, author_id: "", tweet_id: ""},
+            {text: "1_2", likesCount: 10, author_id: "", tweet_id: ""},
+            {text: "1_3", likesCount: 10, author_id: "", tweet_id: ""},
+            {text: "1_4", likesCount: 10, author_id: "", tweet_id: ""},
+            {text: "1_5", likesCount: 10, author_id: "", tweet_id: ""},
         ])
         userTweetsMap.set("2", [
-            {text: "2_1", likesCount: 20, author_id: ""},
-            {text: "2_2", likesCount: 20, author_id: ""},
-            {text: "2_3", likesCount: 20, author_id: ""},
+            {text: "2_1", likesCount: 20, author_id: "", tweet_id: ""},
+            {text: "2_2", likesCount: 20, author_id: "", tweet_id: ""},
+            {text: "2_3", likesCount: 20, author_id: "", tweet_id: ""},
         ])
         userTweetsMap.set("3", [
-            {text: "3_1", likesCount: 20, author_id: ""},
-            {text: "3_2", likesCount: 20, author_id: ""},
-            {text: "3_3", likesCount: 20, author_id: ""},
-            {text: "3_4", likesCount: 20, author_id: ""},
+            {text: "3_1", likesCount: 20, author_id: "", tweet_id: ""},
+            {text: "3_2", likesCount: 20, author_id: "", tweet_id: ""},
+            {text: "3_3", likesCount: 20, author_id: "", tweet_id: ""},
+            {text: "3_4", likesCount: 20, author_id: "", tweet_id: ""},
         ])
         let userIDList = ["1", "2", "3", "4", "5"];
         let {filteredTweets, nextCursor} = filterUserTweets(userTweetsMap, userIDList, "", 5);
@@ -391,11 +388,11 @@ describe("GelatoW3F", function () {
         // expect(filteredUserIDs).to.be.equal(['1']);
 
         expect(JSON.stringify(filteredTweets.get("1"))).to.be.equal(JSON.stringify([
-            {text: "1_1", likesCount: 10, author_id: ""},
-            {text: "1_2", likesCount: 10, author_id: ""},
-            {text: "1_3", likesCount: 10, author_id: ""},
-            {text: "1_4", likesCount: 10, author_id: ""},
-            {text: "1_5", likesCount: 10, author_id: ""},
+            {text: "1_1", likesCount: 10, author_id: "", tweet_id: ""},
+            {text: "1_2", likesCount: 10, author_id: "", tweet_id: ""},
+            {text: "1_3", likesCount: 10, author_id: "", tweet_id: ""},
+            {text: "1_4", likesCount: 10, author_id: "", tweet_id: ""},
+            {text: "1_5", likesCount: 10, author_id: "", tweet_id: ""},
         ]))
         expect(nextCursor).to.be.equal('cursor(1-5):1:5');
 
@@ -407,13 +404,13 @@ describe("GelatoW3F", function () {
 
 
         expect(JSON.stringify(filteredTweets2.get("2"))).to.be.equal(JSON.stringify([
-            {text: "2_1", likesCount: 20, author_id: ""},
-            {text: "2_2", likesCount: 20, author_id: ""},
-            {text: "2_3", likesCount: 20, author_id: ""},
+            {text: "2_1", likesCount: 20, author_id: "", tweet_id: ""},
+            {text: "2_2", likesCount: 20, author_id: "", tweet_id: ""},
+            {text: "2_3", likesCount: 20, author_id: "", tweet_id: ""},
         ]));
         expect(JSON.stringify(filteredTweets2.get("3"))).to.be.equal(JSON.stringify([
-            {text: "3_1", likesCount: 20, author_id: ""},
-            {text: "3_2", likesCount: 20, author_id: ""},
+            {text: "3_1", likesCount: 20, author_id: "", tweet_id: ""},
+            {text: "3_2", likesCount: 20, author_id: "", tweet_id: ""},
         ]));
 
         expect(nextCursor2).to.be.equal('cursor(1-5):3:2');
@@ -426,8 +423,8 @@ describe("GelatoW3F", function () {
 
 
         expect(JSON.stringify(filteredTweets3.get("3"))).to.be.equal(JSON.stringify([
-            {text: "3_3", likesCount: 20, author_id: ""},
-            {text: "3_4", likesCount: 20, author_id: ""},
+            {text: "3_3", likesCount: 20, author_id: "", tweet_id: ""},
+            {text: "3_4", likesCount: 20, author_id: "", tweet_id: ""},
         ]));
 
         expect(nextCursor3).to.be.equal('');
@@ -444,15 +441,6 @@ describe("GelatoW3F", function () {
         }
 
         return userIDs;
-    }
-
-    type UserTweetsMap = Map<string, Tweet[]>;
-
-    // Define the types
-    interface Tweet {
-        text: string;
-        likesCount: number;
-        author_id: string;
     }
 
     const loadUserTweets = (filePath: string): UserTweetsMap => {
@@ -504,12 +492,12 @@ describe("GelatoW3F", function () {
                 }
             }
 
-            const tweets = userTweets.get(userID);
+            const tweets = userTweets.get(userID) as Tweet[];
             if (!tweets) {
                 continue;
             }
 
-            let tweetsToInsert = [];
+            let tweetsToInsert: Tweet[] = [];
             let ti: number = 0;
             for (; ti < tweets.length; ti++) {
                 if (tweetInserted + (ti + 1) > limit) {
@@ -530,7 +518,7 @@ describe("GelatoW3F", function () {
             }
 
             if (tweetInserted == limit) {
-                if (ti < tweets.length - 1 || i < userIDList.length - 1) {
+                if (ti < tweets.length || i < userIDList.length) {
                     // create new cursor
                     nextCursor = `cursor(${userIDList[0]}-${userIDList[userIDList.length - 1]}):${userID}:${ti}`
                 }
@@ -560,7 +548,7 @@ describe("GelatoW3F", function () {
                 }
             };
 
-            console.log("lookupTweet", tweetID, res);
+            console.log("lookupTweet", tweet.author_id, tweetID, res);
 
             response.data.push(res);
         }
@@ -569,7 +557,7 @@ describe("GelatoW3F", function () {
     }
 
 
-    function generateResponse(userTweets: Map<string, Tweet[]>, tweetMap: Map<string, Tweet>, nextCursor: string, isFirstCursorReply: boolean): any {
+    function generateResponse(userTweets: Map<string, Tweet[]>, nextCursor: string, isFirstCursorReply: boolean): any {
         const randomString = (length: number) => Math.random().toString(36).substr(2, length);
         const randomNumber = (min: number, max: number) =>
             Math.floor(Math.random() * (max - min + 1)) + min;
@@ -579,12 +567,9 @@ describe("GelatoW3F", function () {
         for (const [userId, tweets] of userTweets) {
             for (const tweet of tweets) {
 
-                const tweetId = randomString(16);
+                const tweetId = tweet.tweet_id;
                 const userName = `${userId}`;
                 const userScreenName = `screen${userId}`;
-
-                console.log('setting tweetMap', tweetId, tweet);
-                tweetMap.set(tweetId, tweet);
 
                 const tweetObject = {
                     content: {
@@ -754,6 +739,15 @@ describe("GelatoW3F", function () {
 
 })
 
+type UserTweetsMap = Map<string, Tweet[]>;
+
+// Define the types
+interface Tweet {
+    text: string;
+    likesCount: number;
+    author_id: string;
+    tweet_id: string;
+}
 
 function generateWallets(provider: Provider, count: number = 1000): HDNodeWallet[] {
     const wallets: HDNodeWallet[] = [];
@@ -765,6 +759,77 @@ function generateWallets(provider: Provider, count: number = 1000): HDNodeWallet
     }
 
     return wallets;
+}
+
+function generateRandomLikes(): number {
+    // Generate random likes with most values between 0-10
+    const isHighLikes = Math.random() < 0.05; // 5% chance for high likes
+    return isHighLikes ? Math.floor(Math.random() * 100000) : Math.floor(Math.random() * 11);
+}
+
+function generateRandomTweetText(): string {
+    const gmWords = ["gm", "#gm", "$gm"];
+    const otherGmWords = ["alignment", "fragmental", "judgment", "biomagnetic"];
+    const generalWords = [
+        "hello world",
+        "to the moon",
+        "crypto is life",
+        "stay positive",
+        "just chilling",
+        "time to grind",
+        "what a beautiful day",
+        "let's conquer today",
+        "rise and shine",
+    ];
+
+    // Decide if the tweet should include a gm-related word
+    const includeGm = Math.random() < 0.7; // 70% chance to include gm
+    const gmWord = includeGm ? gmWords.concat(otherGmWords)[Math.floor(Math.random() * (gmWords.length + otherGmWords.length))] : "";
+
+    // Create a tweet by combining random general words and possibly a gm-related word
+    const tweetParts = [gmWord, generalWords[Math.floor(Math.random() * generalWords.length)]];
+    return tweetParts.filter(Boolean).join(" ").trim();
+}
+
+function generateUserTweetsMap(limit: number): UserTweetsMap {
+    const userTweets: UserTweetsMap = new Map();
+
+    for (let userId = 1; userId <= limit; userId++) {
+        const numberOfTweets = Math.floor(Math.random() * 5) + 1; // Each user can have 1-5 tweets
+        const tweets: Tweet[] = [];
+
+        for (let i = 0; i < numberOfTweets; i++) {
+            const tweet: Tweet = {
+                text: generateRandomTweetText(),
+                likesCount: generateRandomLikes(),
+                author_id: userId.toString(),
+                tweet_id: `tweetId${userId}_${i}`,
+            };
+            tweets.push(tweet);
+        }
+
+        userTweets.set(userId.toString(), tweets);
+    }
+
+    return userTweets;
+}
+
+
+
+// Function to save userTweets map to a JSON file
+function saveUserTweetsToFile(userTweets: UserTweetsMap, filePath: string): void {
+    function mapToJson(map: UserTweetsMap): Record<string, Tweet[]> {
+        const obj: Record<string, Tweet[]> = {};
+        map.forEach((value, key) => {
+            obj[key] = value;
+        });
+        return obj;
+    }
+    const jsonObject = mapToJson(userTweets);
+    const jsonString = JSON.stringify(jsonObject, null, 2); // Pretty-print JSON with 2 spaces
+
+    fs.writeFileSync(filePath, jsonString, "utf8");
+    console.log(`UserTweets have been saved to ${filePath}`);
 }
 
 /*

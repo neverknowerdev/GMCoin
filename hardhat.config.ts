@@ -2,7 +2,7 @@ import "@nomicfoundation/hardhat-toolbox";
 import '@openzeppelin/hardhat-upgrades';
 import "hardhat-gas-reporter";
 import '@typechain/hardhat';
-import "@gelatonetwork/web3-functions-sdk2/hardhat-plugin";
+import "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
 
 // Process Env Variables
 import * as dotenv from "dotenv";

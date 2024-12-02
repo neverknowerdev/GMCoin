@@ -3,7 +3,7 @@ import {
     Web3Function,
     Web3FunctionEventContext,
     Web3FunctionResult
-} from "@gelatonetwork/web3-functions-sdk2";
+} from "@gelatonetwork/web3-functions-sdk";
 import {Contract} from "ethers";
 import ky, {HTTPError} from "ky";
 
