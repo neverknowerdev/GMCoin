@@ -193,9 +193,9 @@ describe("GelatoW3F", function () {
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
-        const userLimit = 1000;
-        const userIDFetchLimit = 4000;
-        const concurrencyLimit = 10;
+        const userLimit = 20000;
+        const userIDFetchLimit = 1000;
+        const concurrencyLimit = 30;
 
         const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
 
@@ -206,10 +206,10 @@ describe("GelatoW3F", function () {
             walletByUsername.set(username, generatedWallets[i].address);
         }
 
-        // let allUserTweetsByUser = loadUserTweets('./test/generatedUserTweets.json')
+        // let allUserTweetsByUser = loadUserTweets('./test/generatedUserTweets_err.json')
         let allUserTweetsByUser = generateUserTweetsMap(userLimit);
 
-        saveUserTweetsToFile(allUserTweetsByUser, path.join(__dirname, 'generatedUserTweet2.json'));
+        // saveUserTweetsToFile(allUserTweetsByUser, path.join(__dirname, 'generatedUserTweet2.json'));
 
         let tweetMap: Map<string, Tweet> = new Map();
         for (let [userID, tweets] of allUserTweetsByUser) {
