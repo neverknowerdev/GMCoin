@@ -193,8 +193,10 @@ describe("GelatoW3F", function () {
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
-        const userLimit = 20000;
-        const userIDFetchLimit = 1000;
+        const smartContractAddress = await smartContract.getAddress();
+
+        const userLimit = 10000;
+        const userIDFetchLimit = 3000;
         const concurrencyLimit = 30;
 
         const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
@@ -242,7 +244,6 @@ describe("GelatoW3F", function () {
             const expansionFields = (url.query["tweet.fields"] as string).split(",");
             expect(expansionFields.indexOf("public_metrics")).to.be.greaterThan(-1);
 
-
             return generateResponseForTweetLookup(tweetMap, tweetIDs, 0);
         });
 
@@ -267,6 +268,9 @@ describe("GelatoW3F", function () {
         let prevBatches: any = null;
         let actualStorage: any = {};
         let overrideLog: any = null;
+
+        let userTransferLogsCount = 0;
+        let feeTransferLogsCount = 0;
         while (hasLogsToProcess) {
             const oracleW3f: Web3FunctionHardhat = w3f.get("twitter-worker");
             let {result, storage} = await oracleW3f.run("onRun", {
@@ -293,6 +297,11 @@ describe("GelatoW3F", function () {
                         }
 
                         if (decodedLog.name == "Transfer") {
+                            if(decodedLog.args[1] == smartContractAddress) {
+                                feeTransferLogsCount++;
+                            } else {
+                                userTransferLogsCount++;
+                            }
                             continue;
                         }
 
@@ -322,6 +331,7 @@ describe("GelatoW3F", function () {
         }
 
         let userPoints: Map<string, number> = new Map();
+        let totalEligibleUsers: number = 0;
         allUserTweetsByUser.forEach((tweets, uid) => {
             const calculateTotalPoints = (tweets: Tweet[]): number => {
                 return tweets.reduce((totalPoints, tweet) => {
@@ -346,7 +356,11 @@ describe("GelatoW3F", function () {
                 }, 0);
             };
 
-            userPoints.set(uid, calculateTotalPoints(tweets));
+            const upoints = calculateTotalPoints(tweets);
+            if(upoints > 0) {
+                totalEligibleUsers++;
+            }
+            userPoints.set(uid, upoints);
         })
 
         for (const [uid, wallet] of walletByUsername) {
@@ -356,6 +370,9 @@ describe("GelatoW3F", function () {
             expect(balance / BigInt(coinsMultiplier) / 10n ** 18n, `userIndex ${parseInt(uid) - 1}`).to.be.equal(BigInt(points));
         }
         console.log('minting finished here!!');
+
+        expect(feeTransferLogsCount).to.be.equal(totalEligibleUsers);
+        expect(userTransferLogsCount).to.be.equal(totalEligibleUsers);
 
 
         // let resultWallet = await instance.getWalletByUserID("1796129942104657921");
@@ -813,7 +830,6 @@ function generateUserTweetsMap(limit: number): UserTweetsMap {
 
     return userTweets;
 }
-
 
 
 // Function to save userTweets map to a JSON file
