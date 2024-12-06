@@ -259,10 +259,11 @@ describe("GelatoW3F", function () {
             userIdFetchLimit: userIDFetchLimit,
         };
 
+        await gelatoContract.startMinting();
 
         const currentTimestamp = await time.latest();
-        const yesterday = currentTimestamp - (currentTimestamp % time.duration.days(1));
-        await generateEventLogFile('web3-functions/twitter-worker', 'twitterMintingProcessed', [yesterday, []]);
+        const mintingDay = currentTimestamp - (currentTimestamp % time.duration.days(1)) - time.duration.days(1);
+        await generateEventLogFile('web3-functions/twitter-worker', 'twitterMintingProcessed', [mintingDay, []]);
 
         let hasLogsToProcess = true;
         let prevBatches: any = null;
@@ -297,7 +298,7 @@ describe("GelatoW3F", function () {
                         }
 
                         if (decodedLog.name == "Transfer") {
-                            if(decodedLog.args[1] == smartContractAddress) {
+                            if (decodedLog.args[1] == smartContractAddress) {
                                 feeTransferLogsCount++;
                             } else {
                                 userTransferLogsCount++;
@@ -310,7 +311,7 @@ describe("GelatoW3F", function () {
                         }
 
                         expect(decodedLog.name).to.be.equal("twitterMintingProcessed");
-                        expect(decodedLog.args.mintingDayTimestamp).to.be.equal(yesterday);
+                        expect(decodedLog.args.mintingDayTimestamp).to.be.equal(mintingDay);
 
                         const isBatchesTheSame = isEqual(decodedLog.args.batches, prevBatches);
                         if (isBatchesTheSame) {
@@ -357,7 +358,7 @@ describe("GelatoW3F", function () {
             };
 
             const upoints = calculateTotalPoints(tweets);
-            if(upoints > 0) {
+            if (upoints > 0) {
                 totalEligibleUsers++;
             }
             userPoints.set(uid, upoints);
@@ -374,6 +375,7 @@ describe("GelatoW3F", function () {
         expect(feeTransferLogsCount).to.be.equal(totalEligibleUsers);
         expect(userTransferLogsCount).to.be.equal(totalEligibleUsers);
 
+        // to maintain log.json file the same for git
 
         // let resultWallet = await instance.getWalletByUserID("1796129942104657921");
         // expect(resultWallet.toLowerCase()).to.equal("0x6794a56583329794f184d50862019ecf7b6d8ba6");
@@ -831,7 +833,6 @@ function generateUserTweetsMap(limit: number): UserTweetsMap {
     return userTweets;
 }
 
-
 // Function to save userTweets map to a JSON file
 function saveUserTweetsToFile(userTweets: UserTweetsMap, filePath: string): void {
     function mapToJson(map: UserTweetsMap): Record<string, Tweet[]> {
@@ -841,6 +842,7 @@ function saveUserTweetsToFile(userTweets: UserTweetsMap, filePath: string): void
         });
         return obj;
     }
+
     const jsonObject = mapToJson(userTweets);
     const jsonString = JSON.stringify(jsonObject, null, 2); // Pretty-print JSON with 2 spaces
 

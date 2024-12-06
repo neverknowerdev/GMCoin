@@ -128,9 +128,16 @@ contract GMTwitterOracle is Initializable {
 
     uint256 internal mintingDayPointsFromUsers;
 
+    uint32 mintingInProgressForDay;
+
     function startMinting() public onlyGelato {
         uint32 dayToMint = lastMintedDay + 1 days;
+
+        require(dayToMint < block.timestamp - 1 days, "minting is already started for that day");
         require(lastMintedDay < dayToMint, "minting is already started for that day");
+        require(mintingInProgressForDay == 0, "minting process already started");
+
+        mintingInProgressForDay = dayToMint;
 
         mintingDayPointsFromUsers = 0;
 
@@ -158,14 +165,16 @@ contract GMTwitterOracle is Initializable {
     }
 
     function finishMinting(uint32 mintingDayTimestamp) public onlyGelato {
-        require(lastMintedDay < mintingDayTimestamp, "wring mintingDayTimestamp");
+        require(mintingDayTimestamp == mintingInProgressForDay, "wrong mintingDay");
+        require(lastMintedDay < mintingDayTimestamp, "wrong mintingDayTimestamp");
 
         currentEpochPoints += mintingDayPointsFromUsers;
         lastMintedDay = mintingDayTimestamp;
 
+        mintingInProgressForDay = 0;
+
         emit MintingFinished(mintingDayTimestamp);
     }
-
 
     // to be defined in main contract
     function _mintForUserByIndex(uint256 userIndex, uint256 amount) internal virtual {
@@ -177,16 +186,19 @@ contract GMTwitterOracle is Initializable {
     }
 
     function mintCoinsForTwitterUsers(UserTwitterData[] calldata userData, uint32 mintingDayTimestamp, Batch[] calldata batches) public onlyGelato {
+        require(mintingInProgressForDay != 0, "no ongoing minting process");
+        require(mintingDayTimestamp == mintingInProgressForDay, "wrong mintingDay");
+
         for (uint256 i = 0; i < userData.length; i++) {
             if (userData[i].userIndex > allTwitterUsers.length) {
                 revert("wrong userIndex");
             }
 
             uint256 points =
-            userData[i].simpleTweets * POINTS_MULTIPLICATOR_PER_TWEET
-            + userData[i].likes * POINTS_MULTIPLICATOR_PER_LIKE
-            + userData[i].hashtagTweets * POINTS_MULTIPLICATOR_PER_HASHTAG
-            + userData[i].cashtagTweets * POINTS_MULTIPLICATOR_PER_CASHTAG;
+                userData[i].simpleTweets * POINTS_MULTIPLICATOR_PER_TWEET
+                + userData[i].likes * POINTS_MULTIPLICATOR_PER_LIKE
+                + userData[i].hashtagTweets * POINTS_MULTIPLICATOR_PER_HASHTAG
+                + userData[i].cashtagTweets * POINTS_MULTIPLICATOR_PER_CASHTAG;
 
             if (points == 0) {
                 continue;
