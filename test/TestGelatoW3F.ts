@@ -17,6 +17,7 @@ import * as url from 'url';
 import fs from "fs";
 import {max} from "hardhat/internal/util/bigint";
 import path from "path";
+import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
 
 describe("GelatoW3F", function () {
     let mockServer: MockHttpServer;
@@ -187,13 +188,11 @@ describe("GelatoW3F", function () {
 
         const coinsMultiplier = 100_000;
         const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const smartContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, coinsMultiplier], {kind: "uups"}) as unknown as GMCoinExposed;
+        const smartContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, coinsMultiplier, 7], {kind: "uups"}) as unknown as GMCoinExposed;
 
         await smartContract.waitForDeployment();
 
         const gelatoContract = smartContract.connect(gelatoAddr);
-
-        const smartContractAddress = await smartContract.getAddress();
 
         const userLimit = 10000;
         const userIDFetchLimit = 3000;
@@ -258,78 +257,18 @@ describe("GelatoW3F", function () {
             concurrencyLimit: concurrencyLimit,
             userIdFetchLimit: userIDFetchLimit,
         };
+        //
+        // const currentTimestamp = await time.latest();
+        // const mintingDay = currentTimestamp - (currentTimestamp % time.duration.days(1)) - time.duration.days(1);
 
-        await gelatoContract.startMinting();
+        let today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const mintingDay = today.setDate(today.getDate() - 1) / 1000;
 
-        const currentTimestamp = await time.latest();
-        const mintingDay = currentTimestamp - (currentTimestamp % time.duration.days(1)) - time.duration.days(1);
-        await generateEventLogFile('web3-functions/twitter-worker', 'twitterMintingProcessed', [mintingDay, []]);
-
-        let hasLogsToProcess = true;
-        let prevBatches: any = null;
-        let actualStorage: any = {};
-        let overrideLog: any = null;
-
-        let userTransferLogsCount = 0;
-        let feeTransferLogsCount = 0;
-        while (hasLogsToProcess) {
-            const oracleW3f: Web3FunctionHardhat = w3f.get("twitter-worker");
-            let {result, storage} = await oracleW3f.run("onRun", {
-                userArgs: userArgs,
-                storage: actualStorage,
-                log: overrideLog,
-            });
-            actualStorage = storage.storage;
-
-            expect(result.canExec).to.equal(true);
-
-            if (result.canExec) {
-                expect(result.callData.length).to.be.greaterThan(0);
-
-                hasLogsToProcess = false;
-                for (let calldata of result.callData) {
-                    const tx = await gelatoAddr.sendTransaction({to: calldata.to, data: calldata.data});
-                    const receipt = await tx.wait();
-                    console.log('receipt.logs', receipt.logs.length);
-                    for (const log of receipt.logs) {
-                        const decodedLog = smartContract.interface.parseLog(log);
-                        if (decodedLog == null) {
-                            continue;
-                        }
-
-                        if (decodedLog.name == "Transfer") {
-                            if (decodedLog.args[1] == smartContractAddress) {
-                                feeTransferLogsCount++;
-                            } else {
-                                userTransferLogsCount++;
-                            }
-                            continue;
-                        }
-
-                        if (decodedLog.name == "MintingFinished") {
-                            break;
-                        }
-
-                        expect(decodedLog.name).to.be.equal("twitterMintingProcessed");
-                        expect(decodedLog.args.mintingDayTimestamp).to.be.equal(mintingDay);
-
-                        const isBatchesTheSame = isEqual(decodedLog.args.batches, prevBatches);
-                        if (isBatchesTheSame) {
-                            const batches = decodedLog.args.batches.map(result => {
-                                return `{${result[0]}-${result[1]},${result[2]}}`
-                            });
-
-                            expect(isBatchesTheSame, `current batch and prev are equals: ${batches}`).to.be.false;
-                        }
-
-                        hasLogsToProcess = true;
-                        prevBatches = decodedLog.args.batches;
-
-                        overrideLog = log;
-                    }
-                }
-            }
-        }
+        const {
+            userTransferCount,
+            feeTransferCount
+        } = await mintUntilEnd(smartContract, gelatoAddr, userArgs, mintingDay)
 
         let userPoints: Map<string, number> = new Map();
         let totalEligibleUsers: number = 0;
@@ -372,14 +311,85 @@ describe("GelatoW3F", function () {
         }
         console.log('minting finished here!!');
 
-        expect(feeTransferLogsCount).to.be.equal(totalEligibleUsers);
-        expect(userTransferLogsCount).to.be.equal(totalEligibleUsers);
+        expect(feeTransferCount).to.be.equal(totalEligibleUsers);
+        expect(userTransferCount).to.be.equal(totalEligibleUsers);
 
         // to maintain log.json file the same for git
 
         // let resultWallet = await instance.getWalletByUserID("1796129942104657921");
         // expect(resultWallet.toLowerCase()).to.equal("0x6794a56583329794f184d50862019ecf7b6d8ba6");
     });
+
+    it('twitter-worker real-world', async function () {
+        const [owner, feeAddr, otherAcc1, gelatoAddr] = await ethers.getSigners();
+
+        const coinsMultiplier = 100_000;
+        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
+        const smartContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, coinsMultiplier, 7], {kind: "uups"}) as unknown as GMCoinExposed;
+
+        await smartContract.waitForDeployment();
+
+        const gelatoContract = smartContract.connect(gelatoAddr);
+
+        const smartContractAddress = await smartContract.getAddress();
+
+        const userLimit = 10;
+        const userIDFetchLimit = 3000;
+        const concurrencyLimit = 30;
+
+        const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
+        const usernames: string[] = [
+            'coingecko',
+            '0xFigen',
+            'Jeremyybtc',
+            'SolAndrew_',
+            '1Kaiweb3',
+            'barkmeta',
+            'Zuriell',
+            'CenkCrypto',
+            'itstylersays',
+            'Chaser_Eth'
+        ];
+
+        let walletByUsername: Map<string, string> = new Map();
+        for (let i = 0; i < userLimit; i++) {
+            const username = usernames[i];
+            await gelatoContract.verifyTwitter(username as any, generatedWallets[i] as any);
+            walletByUsername.set(username, generatedWallets[i].address);
+        }
+
+
+        let today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const mintingDay = today.setDate(today.getDate() - 1) / 1000;
+
+        const userArgs = {
+            contractAddress: smartContractAddress,
+            searchURL: "https://twitter283.p.rapidapi.com/Search",
+            tweetLookupURL: "https://api.twitter.com/2/tweets",
+            concurrencyLimit: concurrencyLimit,
+            userIdFetchLimit: userIDFetchLimit,
+        };
+
+        const {
+            userTransferCount,
+            feeTransferCount
+        } = await mintUntilEnd(smartContract, gelatoAddr, userArgs, mintingDay)
+
+        expect(userTransferCount).to.be.greaterThan(0);
+        expect(feeTransferCount).to.be.greaterThan(0);
+
+        let totalBalance = 0n;
+        for (const [uid, wallet] of walletByUsername) {
+            const balance = await smartContract.balanceOf(wallet as any);
+            console.log('username', uid, 'balance', balance);
+
+            totalBalance += balance;
+        }
+
+        expect(totalBalance).to.be.greaterThan(0);
+
+    })
 
     it('filterUserTweets', async function () {
         let userTweetsMap: UserTweetsMap = new Map();
@@ -449,6 +459,86 @@ describe("GelatoW3F", function () {
         expect(nextCursor3).to.be.equal('');
 
     });
+
+    async function mintUntilEnd(smartContract: GMCoinExposed, gelatoAddr: HardhatEthersSigner, userArgs, mintingDay: number): Promise<{
+        userTransferCount: number,
+        feeTransferCount: number
+    }> {
+        const gelatoContract = smartContract.connect(gelatoAddr);
+        const smartContractAddress = await smartContract.getAddress();
+
+        await gelatoContract.startMinting();
+
+        await generateEventLogFile('web3-functions/twitter-worker', 'twitterMintingProcessed', [mintingDay, []]);
+
+        let hasLogsToProcess = true;
+        let prevBatches: any = null;
+        let actualStorage: any = {};
+        let overrideLog: any = null;
+
+        let userTransferLogsCount = 0;
+        let feeTransferLogsCount = 0;
+        while (hasLogsToProcess) {
+            const oracleW3f: Web3FunctionHardhat = w3f.get("twitter-worker");
+            let {result, storage} = await oracleW3f.run("onRun", {
+                userArgs: userArgs,
+                storage: actualStorage,
+                log: overrideLog,
+            });
+            actualStorage = storage.storage;
+
+            expect(result.canExec).to.equal(true);
+
+            if (result.canExec) {
+                expect(result.callData.length).to.be.greaterThan(0);
+
+                hasLogsToProcess = false;
+                for (let calldata of result.callData) {
+                    const tx = await gelatoAddr.sendTransaction({to: calldata.to, data: calldata.data});
+                    const receipt = await tx.wait();
+                    console.log('receipt.logs', receipt.logs.length);
+                    for (const log of receipt.logs) {
+                        const decodedLog = smartContract.interface.parseLog(log);
+                        if (decodedLog == null) {
+                            continue;
+                        }
+
+                        if (decodedLog.name == "Transfer") {
+                            if (decodedLog.args[1] == smartContractAddress) {
+                                feeTransferLogsCount++;
+                            } else {
+                                userTransferLogsCount++;
+                            }
+                            continue;
+                        }
+
+                        if (decodedLog.name == "MintingFinished") {
+                            break;
+                        }
+
+                        expect(decodedLog.name).to.be.equal("twitterMintingProcessed");
+                        expect(decodedLog.args.mintingDayTimestamp).to.be.equal(mintingDay);
+
+                        const isBatchesTheSame = isEqual(decodedLog.args.batches, prevBatches);
+                        if (isBatchesTheSame) {
+                            const batches = decodedLog.args.batches.map(result => {
+                                return `{${result[0]}-${result[1]},${result[2]}}`
+                            });
+
+                            expect(isBatchesTheSame, `current batch and prev are equals: ${batches}`).to.be.false;
+                        }
+
+                        hasLogsToProcess = true;
+                        prevBatches = decodedLog.args.batches;
+
+                        overrideLog = log;
+                    }
+                }
+            }
+        }
+
+        return {userTransferCount: userTransferLogsCount, feeTransferCount: feeTransferLogsCount};
+    }
 
     function extractUserIDs(query: string): string[] {
         const userIDs: string[] = [];
@@ -582,6 +672,21 @@ describe("GelatoW3F", function () {
             Math.floor(Math.random() * (max - min + 1)) + min;
 
         const resultTweets = [];
+
+        // sometimes RapidAPI returns not only tweet_results object
+        resultTweets.push({
+            content: {
+                __typename: "TimelineTimelineModule",
+                client_event_info: {
+                    "component": "user_module",
+                    "element": "module"
+                },
+                display_type: "Carousel",
+                header: {},
+                footer: {},
+                items: {}
+            }
+        })
 
         for (const [userId, tweets] of userTweets) {
             for (const tweet of tweets) {
@@ -849,6 +954,11 @@ function saveUserTweetsToFile(userTweets: UserTweetsMap, filePath: string): void
     fs.writeFileSync(filePath, jsonString, "utf8");
     console.log(`UserTweets have been saved to ${filePath}`);
 }
+
+/*
+Test cases:
+rapidapi Twitter returns cursor with no results 🫠
+ */
 
 /*
 Possible Twitter API responses:

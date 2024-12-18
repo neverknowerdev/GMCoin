@@ -11,11 +11,11 @@ import "./parts/TwitterOracle.sol";
 import "hardhat/console.sol";
 
 contract GMCoin is
-    Initializable,
-    OwnableUpgradeable,
-    ERC20Upgradeable,
-    UUPSUpgradeable,
-    GMTwitterOracle
+Initializable,
+OwnableUpgradeable,
+ERC20Upgradeable,
+UUPSUpgradeable,
+GMTwitterOracle
 {
 
     address plannedNewImplementation;
@@ -35,11 +35,12 @@ contract GMCoin is
 
     function initialize(
         address _owner,
-        address _feeAddress, 
-        uint256 _comissionPercentage, 
+        address _feeAddress,
+        uint256 _comissionPercentage,
         uint256 _initialSupply,
-        address _gelatoOracleAddress    ,
-        uint256 coinsMultiplicator
+        address _gelatoOracleAddress,
+        uint256 coinsMultiplicator,
+        uint _epochDays
     ) public initializer {
         feePercentage = _comissionPercentage;
         feeAddress = _feeAddress;
@@ -49,7 +50,7 @@ contract GMCoin is
         __Ownable_init(_owner);
         __UUPSUpgradeable_init();
         __ERC20_init("GM Coin", "GM");
-        __TwitterOracle__init(coinsMultiplicator, _gelatoOracleAddress);
+        __TwitterOracle__init(coinsMultiplicator, _gelatoOracleAddress, _epochDays);
 
         _mint(address(_owner), _initialSupply);
     }
@@ -60,10 +61,10 @@ contract GMCoin is
     function scheduleUpgrade(address newImplementation) public payable onlyOwner {
         require(newImplementation != address(0), "wrong newImplementation address");
         require(plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
-        
+
         plannedNewImplementation = newImplementation;
         plannedNewImplementationTime = block.timestamp + 1 days;
-        
+
     }
 
     function upgradeToAndCall(address newImplementation, bytes memory data) public override onlyOwner payable {
@@ -73,15 +74,15 @@ contract GMCoin is
 
         plannedNewImplementationTime = 0;
         plannedNewImplementation = address(0);
-        
+
         super.upgradeToAndCall(newImplementation, data);
     }
 
     function _update(address from, address to, uint256 value) internal override {
-        if(from != address(0) && to != address(0)) {
+        if (from != address(0) && to != address(0)) {
             // taking fee only for transfer operation
             uint256 feeAmount = (value * feePercentage) / 10000;
-            value = value - feeAmount; 
+            value = value - feeAmount;
 
             super._update(from, feeAddress, feeAmount);
         }
@@ -90,8 +91,8 @@ contract GMCoin is
 
         if (from != address(0) && balanceOf(from) == 0) { // --
             totalHolders--;
-        } 
-        if(to != address(0) && balanceOf(to)- value == 0) { // ++
+        }
+        if (to != address(0) && balanceOf(to) - value == 0) { // ++
             totalHolders++;
         }
     }

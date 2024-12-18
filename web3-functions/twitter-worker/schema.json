@@ -6,6 +6,10 @@
   "retries": 10,
   "retryDelay": 60,
   "userArgs": {
-    
+    "contractAddress": "string",
+    "searchURL": "string",
+    "tweetLookupURL": "string",
+    "concurrencyLimit": "number",
+    "userIdFetchLimit": "number"
   }
 }

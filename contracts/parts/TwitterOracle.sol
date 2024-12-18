@@ -13,8 +13,8 @@ contract GMTwitterOracle is Initializable {
     }
 
     // twitter users data
-    mapping(string => address) private wallets;
-    string[] private allTwitterUsers;
+    mapping(string => address) internal wallets;
+    string[] internal allTwitterUsers;
 
     uint256 public COINS_MULTIPLICATOR;
     uint256 public constant POINTS_MULTIPLICATOR_PER_TWEET = 2;
@@ -22,14 +22,13 @@ contract GMTwitterOracle is Initializable {
     uint256 public constant POINTS_MULTIPLICATOR_PER_HASHTAG = 4;
     uint256 public constant POINTS_MULTIPLICATOR_PER_CASHTAG = 10;
 
-    uint256 public constant SECONDS_IN_A_DAY = 60 * 60 * 24;
-    uint256 public constant EPOCH_DURATION = 7 * 1 days;
-
-    uint public constant EPOCH_DAYS = 7 days;
+    uint public EPOCH_DAYS;
 
     uint256[255] private __gap;
 
-    function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress) public initializer {
+    function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress, uint _epochDays) public initializer {
+        EPOCH_DAYS = _epochDays;
+
         gelatoAddress = _gelatoAddress;
 
         COINS_MULTIPLICATOR = coinsPerTweet * 10 ** 18;
@@ -139,6 +138,8 @@ contract GMTwitterOracle is Initializable {
 
         mintingInProgressForDay = dayToMint;
 
+        console.log('startMinting().mintingInProgressForDay', mintingInProgressForDay);
+
         mintingDayPointsFromUsers = 0;
 
         // complexity calculation
@@ -186,6 +187,7 @@ contract GMTwitterOracle is Initializable {
     }
 
     function mintCoinsForTwitterUsers(UserTwitterData[] calldata userData, uint32 mintingDayTimestamp, Batch[] calldata batches) public onlyGelato {
+        console.log('mintCoinsForTwitterUsers.mintingInProgressForDay', mintingInProgressForDay);
         require(mintingInProgressForDay != 0, "no ongoing minting process");
         require(mintingDayTimestamp == mintingInProgressForDay, "wrong mintingDay");
 

@@ -1,8 +1,11 @@
 import "@nomicfoundation/hardhat-toolbox";
+import "@nomicfoundation/hardhat-verify";
 import '@openzeppelin/hardhat-upgrades';
 import "hardhat-gas-reporter";
 import '@typechain/hardhat';
 import "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
+
+import "./tasks/addTwitterUser";
 
 // Process Env Variables
 import * as dotenv from "dotenv";
@@ -20,6 +23,10 @@ const config = {
             }
         }
     },
+    defender: {
+        apiKey: process.env.DEFENDER_API_KEY as string,
+        apiSecret: process.env.DEFENDER_SECRET as string,
+    },
     defaultNetwork: "hardhat",
     typechain: {
         outDir: "typechain", // Directory for TypeChain-generated files
@@ -30,10 +37,24 @@ const config = {
         debug: false,
         networks: ["hardhat"], //(multiChainProvider) injects provider for these networks
     },
+    etherscan: {
+        apiKey: {
+            baseSepolia: process.env.BASESCAN_KEY
+        }
+    },
     networks: {
         hardhat: {
-            chainId: 31337
-        }
+            chainId: 31337,
+            mining: {
+                auto: true,
+                interval: 1000 // 1 second
+            }
+        },
+        baseSepolia: {
+            url: "https://sepolia.base.org", // RPC URL for Base Sepolia
+            chainId: 84532, // Base Sepolia's chain ID
+            accounts: [process.env.BASE_TESTNET_PRIVATE_KEY], // Your wallet private key (from .env file)
+        },
     },
     gasReporter: {
         enabled: (process.env.REPORT_GAS == "true"),
