@@ -194,8 +194,7 @@ describe("GelatoW3F", function () {
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
-        const userLimit = 10000;
-        const userIDFetchLimit = 3000;
+        const userLimit = 3000;
         const concurrencyLimit = 30;
 
         const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
@@ -208,12 +207,12 @@ describe("GelatoW3F", function () {
         }
 
         // let allUserTweetsByUser = loadUserTweets('./test/generatedUserTweets_err.json')
-        let allUserTweetsByUser = generateUserTweetsMap(userLimit);
+        let allUserTweetsByUsername = generateUserTweetsMap(userLimit);
 
         // saveUserTweetsToFile(allUserTweetsByUser, path.join(__dirname, 'generatedUserTweet2.json'));
 
         let tweetMap: Map<string, Tweet> = new Map();
-        for (let [userID, tweets] of allUserTweetsByUser) {
+        for (let [userID, tweets] of allUserTweetsByUsername) {
             for (let tweet of tweets) {
                 tweetMap.set(tweet.tweet_id, tweet);
             }
@@ -222,12 +221,12 @@ describe("GelatoW3F", function () {
         mockServer.mockFunc('/Search', 'GET', (url: url.UrlWithParsedQuery) => {
             const q = url.query["q"] as string;
             const cursor = url.query["cursor"] as string;
-            const userIDList = extractUserIDs(q);
+            const usernamesList = extractUserIDs(q);
 
             console.log('query', q);
             console.log('cursor', cursor);
 
-            const {filteredTweets, nextCursor} = filterUserTweets(allUserTweetsByUser, userIDList, cursor, 20);
+            const {filteredTweets, nextCursor} = filterUserTweets(allUserTweetsByUsername, usernamesList, cursor, 20);
 
             console.log('nextCursor', nextCursor);
             // console.log('generateResponse', 'nextCursor', nextCursor, userIDList, filteredTweets);
@@ -246,6 +245,21 @@ describe("GelatoW3F", function () {
             return generateResponseForTweetLookup(tweetMap, tweetIDs, 0);
         });
 
+        mockServer.mockFunc('/convert-ids-to-usernames/', 'GET', (url: url.UrlWithParsedQuery) => {
+            const idList = url.query["ids"] as string;
+            const userIDs = idList.split(',');
+
+            let response = {data: []};
+            for (const userID of userIDs) {
+                response.data.push({
+                    id: userID,
+                    username: `user${userID}`
+                })
+            }
+
+            return response;
+        });
+
         const verifierAddress = await smartContract.getAddress();
         console.log(`deployed GMCoin to ${verifierAddress}`);
 
@@ -254,8 +268,8 @@ describe("GelatoW3F", function () {
             contractAddress: verifierAddress,
             searchURL: "http://localhost:8118/Search",
             tweetLookupURL: "http://localhost:8118/tweet-lookup/",
+            convertToUsernamesURL: "http://localhost:8118/convert-ids-to-usernames/",
             concurrencyLimit: concurrencyLimit,
-            userIdFetchLimit: userIDFetchLimit,
         };
         //
         // const currentTimestamp = await time.latest();
@@ -272,7 +286,7 @@ describe("GelatoW3F", function () {
 
         let userPoints: Map<string, number> = new Map();
         let totalEligibleUsers: number = 0;
-        allUserTweetsByUser.forEach((tweets, uid) => {
+        allUserTweetsByUsername.forEach((tweets, uid) => {
             const calculateTotalPoints = (tweets: Tweet[]): number => {
                 return tweets.reduce((totalPoints, tweet) => {
                     const gmCount = (tweet.text.match(/\bgm\b/gi) || []).length; // Matches whole "gm" words
@@ -304,7 +318,7 @@ describe("GelatoW3F", function () {
         })
 
         for (const [uid, wallet] of walletByUsername) {
-            const points = userPoints.get(uid);
+            const points = userPoints.get(`user${uid}`) || 0;
             const balance = await smartContract.balanceOf(wallet as any);
 
             expect(balance / BigInt(coinsMultiplier) / 10n ** 18n, `userIndex ${parseInt(uid) - 1}`).to.be.equal(BigInt(points));
@@ -365,8 +379,9 @@ describe("GelatoW3F", function () {
 
         const userArgs = {
             contractAddress: smartContractAddress,
-            searchURL: "https://twitter283.p.rapidapi.com/Search",
-            tweetLookupURL: "https://api.twitter.com/2/tweets",
+            searchURL: "/Search",
+            tweetLookupURL: "https://api.x.com/2/tweets",
+            convertToUsernamesURL: "https://api.x.com/2/users",
             concurrencyLimit: concurrencyLimit,
             userIdFetchLimit: userIDFetchLimit,
         };
@@ -574,34 +589,34 @@ describe("GelatoW3F", function () {
 
     function filterUserTweets(
         userTweets: UserTweetsMap,
-        userIDList: string[],
+        usernamesList: string[],
         cursor: string,
         limit: number,
     ): { filteredTweets: UserTweetsMap; nextCursor: string } {
         const filteredTweets: UserTweetsMap = new Map();
 
-        let startUserID = '';
+        let startUsername = '';
         let startTi = 0;
         if (cursor != "") {
             const cursorParts = cursor.split(':');
-            startUserID = cursorParts[1];
+            startUsername = cursorParts[1];
             startTi = parseInt(cursorParts[2]);
         }
         // Iterate through all user tweets
         let afterCursor: boolean = cursor == '';
         let nextCursor = '';
         let tweetInserted: number = 0;
-        for (let i = 0; i < userIDList.length; i++) {
-            const userID = userIDList[i];
+        for (let i = 0; i < usernamesList.length; i++) {
+            const username = usernamesList[i];
             if (!afterCursor) {
-                if (userID == startUserID) {
+                if (username == startUsername) {
                     afterCursor = true;
                 } else {
                     continue;
                 }
             }
 
-            const tweets = userTweets.get(userID) as Tweet[];
+            const tweets = userTweets.get(username) as Tweet[];
             if (!tweets) {
                 continue;
             }
@@ -612,7 +627,7 @@ describe("GelatoW3F", function () {
                 if (tweetInserted + (ti + 1) > limit) {
                     break
                 }
-                if (startUserID != '' && userID == startUserID) {
+                if (startUsername != '' && username == startUsername) {
                     if (ti >= startTi) {
                         tweetsToInsert.push(tweets[ti]);
                     }
@@ -622,14 +637,14 @@ describe("GelatoW3F", function () {
             }
 
             if (tweetsToInsert.length > 0) {
-                filteredTweets.set(userID, tweetsToInsert);
+                filteredTweets.set(username, tweetsToInsert);
                 tweetInserted += tweetsToInsert.length;
             }
 
             if (tweetInserted == limit) {
-                if (ti < tweets.length || i < userIDList.length) {
+                if (ti < tweets.length || i < usernamesList.length) {
                     // create new cursor
-                    nextCursor = `cursor(${userIDList[0]}-${userIDList[userIDList.length - 1]}):${userID}:${ti}`
+                    nextCursor = `cursor(${usernamesList[0]}-${usernamesList[usernamesList.length - 1]}):${username}:${ti}`
                 }
                 break;
             }
@@ -640,14 +655,22 @@ describe("GelatoW3F", function () {
 
     function generateResponseForTweetLookup(tweetMap: Map<string, Tweet>, tweetIDs: string[], likesDelta: number): any {
         let response: any = {
-            "data": []
+            "data": [],
+            "includes": {
+                "users": []
+            }
         }
+
+        let usersMap: Map<string, string> = new Map();
         for (const tweetID of tweetIDs) {
             const tweet = tweetMap.get(tweetID);
             let likesCount = tweet.likesCount - likesDelta;
             if (likesCount < 0) {
                 likesCount = 0;
             }
+
+            usersMap.set(tweet?.author_id as string, `user${tweet?.author_id}`);
+
             const res = {
                 "id": `${tweetID}`,
                 "text": `${tweet.text}`,
@@ -662,6 +685,14 @@ describe("GelatoW3F", function () {
             response.data.push(res);
         }
 
+        for (const [userID, username] of usersMap) {
+            response.includes.users.push({
+                id: userID,
+                username: username,
+                name: `UserName ${userID}`
+            })
+        }
+
         return response;
     }
 
@@ -673,7 +704,7 @@ describe("GelatoW3F", function () {
 
         const resultTweets = [];
 
-        // sometimes RapidAPI returns not only tweet_results object
+        // sometimes API returns not only tweet_results object
         resultTweets.push({
             content: {
                 __typename: "TimelineTimelineModule",
@@ -688,12 +719,12 @@ describe("GelatoW3F", function () {
             }
         })
 
-        for (const [userId, tweets] of userTweets) {
+        for (const [username, tweets] of userTweets) {
             for (const tweet of tweets) {
 
                 const tweetId = tweet.tweet_id;
-                const userName = `${userId}`;
-                const userScreenName = `screen${userId}`;
+                const userId = username.slice(4);
+                const userScreenName = `${username}`;
 
                 const tweetObject = {
                     content: {
@@ -720,9 +751,9 @@ describe("GelatoW3F", function () {
                                     __typename: "Tweet",
                                     core: {
                                         user_results: {
-                                            rest_id: userId,
+                                            rest_id: username,
                                             result: {
-                                                rest_id: userId,
+                                                rest_id: username,
                                                 __typename: "User",
                                                 profile_bio: {
                                                     description: "test description",
@@ -737,14 +768,14 @@ describe("GelatoW3F", function () {
                                                     )}.jpg`,
                                                 },
                                                 banner: {
-                                                    image_url: `https://picsum.photos/1000/300?random=${userId}`,
+                                                    image_url: `https://picsum.photos/1000/300?random=${username}`,
                                                 },
                                                 core: {
                                                     created_at: new Date(
                                                         Date.now() -
                                                         randomNumber(1, 365) * 24 * 60 * 60 * 1000
                                                     ).toUTCString(),
-                                                    name: userName,
+                                                    name: userId,
                                                     screen_name: userScreenName,
                                                 },
                                             },
@@ -759,7 +790,7 @@ describe("GelatoW3F", function () {
                                         full_text: tweet.text,
                                         lang: "en",
                                         retweet_count: randomNumber(0, 100),
-                                        user_id_str: userId,
+                                        user_id_str: username,
                                     },
                                 },
                             },
@@ -932,7 +963,7 @@ function generateUserTweetsMap(limit: number): UserTweetsMap {
             tweets.push(tweet);
         }
 
-        userTweets.set(userId.toString(), tweets);
+        userTweets.set(`user${userId}`, tweets);
     }
 
     return userTweets;
@@ -957,7 +988,7 @@ function saveUserTweetsToFile(userTweets: UserTweetsMap, filePath: string): void
 
 /*
 Test cases:
-rapidapi Twitter returns cursor with no results 🫠
+api Twitter returns cursor with no results 🫠
  */
 
 /*

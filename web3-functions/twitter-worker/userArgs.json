@@ -1,6 +1,7 @@
 {
   "contractAddress": "",
   "searchURL": "https://search-tweets.gmcoin.meme/Search",
+  "convertToUsernamesURL": "https://api.twitter.com/2/users",
   "tweetLookupURL": "https://api.twitter.com/2/tweets",
   "concurrencyLimit": 10,
   "userIdFetchLimit": 3000

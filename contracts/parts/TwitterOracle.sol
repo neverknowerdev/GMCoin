@@ -138,8 +138,6 @@ contract GMTwitterOracle is Initializable {
 
         mintingInProgressForDay = dayToMint;
 
-        console.log('startMinting().mintingInProgressForDay', mintingInProgressForDay);
-
         mintingDayPointsFromUsers = 0;
 
         // complexity calculation
@@ -187,7 +185,6 @@ contract GMTwitterOracle is Initializable {
     }
 
     function mintCoinsForTwitterUsers(UserTwitterData[] calldata userData, uint32 mintingDayTimestamp, Batch[] calldata batches) public onlyGelato {
-        console.log('mintCoinsForTwitterUsers.mintingInProgressForDay', mintingInProgressForDay);
         require(mintingInProgressForDay != 0, "no ongoing minting process");
         require(mintingDayTimestamp == mintingInProgressForDay, "wrong mintingDay");
 

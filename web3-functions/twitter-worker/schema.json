@@ -9,7 +9,7 @@
     "contractAddress": "string",
     "searchURL": "string",
     "tweetLookupURL": "string",
-    "concurrencyLimit": "number",
-    "userIdFetchLimit": "number"
+    "convertToUsernamesURL": "string",
+    "concurrencyLimit": "number"
   }
 }
