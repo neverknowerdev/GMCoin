@@ -9,6 +9,7 @@ import {Contract, ContractRunner, getBytes} from "ethers";
 import ky from "ky";
 import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
 import {use} from "chai";
+import {boolean} from "hardhat/internal/core/params/argumentTypes";
 
 const ContractABI = [
     {
@@ -267,7 +268,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             const maxEndIndex = await getMaxEndIndex(mintingDayTimestamp, storage);
             let startIndex = maxEndIndex;
 
-            let remainingUsernames = await getNextUsernames(storage, smartContract, ConvertToUsernamesURL, bearerToken, mintingDayTimestamp, startIndex, newCursorsCount * 50);
+            let remainingUsernames = await getNextUsernames(storage, smartContract, ConvertToUsernamesURL, secretKey, mintingDayTimestamp, startIndex, newCursorsCount * 50);
             for (let i = 0; i < newCursorsCount; i++) {
                 if (remainingUsernames.length == 0) {
                     break;
@@ -319,9 +320,19 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         if (isMintingFinished) {
             console.log('mintingFinished');
             let transactions: Web3FunctionResultCallData[] = [];
-            const verifyMostLikedTweetsTransactions = await verifyMostLikedTweets(storage, mintingDayTimestamp, UserResults, smartContract, userArgs.tweetLookupURL as string, bearerToken);
-            if (verifyMostLikedTweetsTransactions && verifyMostLikedTweetsTransactions.length > 0) {
-                transactions.push(...verifyMostLikedTweetsTransactions);
+            try {
+                const verifyMostLikedTweetsTransactions = await verifyMostLikedTweets(storage, mintingDayTimestamp, UserResults, smartContract, userArgs.tweetLookupURL as string, bearerToken);
+                if (verifyMostLikedTweetsTransactions && verifyMostLikedTweetsTransactions.length > 0) {
+                    transactions.push(...verifyMostLikedTweetsTransactions);
+                }
+            } catch (error) {
+                // Handle errors for this batch
+                console.error('Error fetching batch:', error);
+
+                return {
+                    canExec: false,
+                    message: `error during verifying tweets: ${error}`
+                }
             }
 
             transactions.push({
@@ -338,6 +349,8 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                     await storage.delete(keys[i]);
                 }
             }
+
+            console.log('return transactions', transactions.length);
 
             return {
                 canExec: true,
@@ -509,8 +522,11 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
 async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: number, userResults: Map<number, Result>, smartContract: Contract, tweetLookupURL: string, bearerToken: string): Promise<Web3FunctionResultCallData[]> {
     const tweetsToVerify = await getTweetsToVerify(mintingDayTimestamp, storage)
+    console.log('tweetsToVerify', tweetsToVerify.length);
+
     if (tweetsToVerify.length > 0) {
         const verifiedTweets = await verifyTweetsInBatches(tweetLookupURL, tweetsToVerify, bearerToken);
+        console.log('verifiedTweets', verifiedTweets.length);
 
         for (let i = 0; i < verifiedTweets.length; i++) {
             const result = userResults.get(verifiedTweets[i].userIndex) || {...defaultResult};
@@ -777,6 +793,8 @@ async function fetchTweets(searchURL: string, secretKey: string, queryString: st
 }> {
     try {
         // Perform the GET request using ky
+        console.log('query', queryString);
+        console.log('cursor', cursor);
         const response = await ky.get(searchURL, {
             timeout: 3000,
             headers: {
@@ -806,6 +824,10 @@ async function fetchTweets(searchURL: string, secretKey: string, queryString: st
                 nextCursor = instruction.entry?.content.value as string;
                 continue;
             }
+            if (!instruction.entries) {
+                continue;
+            }
+
             for (const entry of instruction.entries) {
                 if (entry.content?.cursor_type == "Bottom") {
                     nextCursor = entry.content?.value as string;
@@ -868,44 +890,39 @@ async function verifyTweetsInBatches(
         const url = `${twitterURL}?ids=${tweetIDs}&tweet.fields=public_metrics&expansions=author_id&user.fields=description`;
 
 
-        try {
-            const response = await ky
-                .get(url, {
-                    headers: {
-                        Authorization: `Bearer ${bearerToken}`,
-                    },
-                })
-                .json<any>();
+        const response = await ky
+            .get(url, {
+                headers: {
+                    Authorization: `Bearer ${bearerToken}`,
+                },
+            })
+            .json<any>();
 
-            let usernameByUserID: Map<string, string> = new Map();
-            let userDescriptionByUserID: Map<string, string> = new Map();
-            if (response.includes) {
-                response.includes.users.forEach((user: any) => {
-                    usernameByUserID.set(user.id, user.username);
-                    userDescriptionByUserID.set(user.id, user.description);
-                })
-            }
+        let usernameByUserID: Map<string, string> = new Map();
+        let userDescriptionByUserID: Map<string, string> = new Map();
+        if (response.includes) {
+            response.includes.users.forEach((user: any) => {
+                usernameByUserID.set(user.id, user.username);
+                userDescriptionByUserID.set(user.id, user.description);
+            })
+        }
 
-            // Step 3: Process the response and map to Tweet interface
-            if (response.data) {
-                response.data.forEach((tweet: any) => {
-                    const username = usernameByUserID.get(tweet.author_id) || '';
-                    const userIndex = usernameToUserIndex.get(username);
+        // Step 3: Process the response and map to Tweet interface
+        if (response.data) {
+            response.data.forEach((tweet: any) => {
+                const username = usernameByUserID.get(tweet.author_id) || '';
+                const userIndex = usernameToUserIndex.get(username);
 
-                    results.push({
-                        userID: tweet.author_id,
-                        username: username,
-                        tweetID: tweet.id,
-                        tweetContent: tweet.text,
-                        likesCount: tweet.public_metrics.like_count,
-                        userDescriptionText: userDescriptionByUserID.get(tweet.author_id) || '',
-                        userIndex: userIndex,
-                    });
+                results.push({
+                    userID: tweet.author_id,
+                    username: username,
+                    tweetID: tweet.id,
+                    tweetContent: tweet.text,
+                    likesCount: tweet.public_metrics.like_count,
+                    userDescriptionText: userDescriptionByUserID.get(tweet.author_id) || '',
+                    userIndex: userIndex,
                 });
-            }
-        } catch (error) {
-            // Handle errors for this batch
-            console.error('Error fetching batch:', error);
+            });
         }
     });
 
@@ -945,7 +962,7 @@ async function getUsernamesForBatch(storage: w3fStorage, mintingDayTimestamp: nu
     return Promise.resolve(res);
 }
 
-async function getNextUsernames(storage: w3fStorage, smartContract: Contract, convertToUsernamesURL: string, bearerToken: string, mintingDayTimestamp: number, startIndex: number, minGap: number): Promise<string[]> {
+async function getNextUsernames(storage: w3fStorage, smartContract: Contract, convertToUsernamesURL: string, secretKey: string, mintingDayTimestamp: number, startIndex: number, minGap: number): Promise<string[]> {
     let usernames = JSON.parse(await storage.get(`${mintingDayTimestamp}_nextUsernames`) || '[]')
 
     let newRecordsStartIndex = 0;
@@ -961,7 +978,7 @@ async function getNextUsernames(storage: w3fStorage, smartContract: Contract, co
         const userIDs = await smartContract.getTwitterUsers(startIndex, USER_ID_FETCH_LIMIT);
 
         console.log('userIDs', userIDs.length);
-        usernames = await convertUserIDsToUsernames(convertToUsernamesURL, bearerToken, userIDs);
+        usernames = await convertUserIDsToUsernames(convertToUsernamesURL, secretKey, userIDs);
         console.log('usernames', usernames.length);
 
         await saveRemainingUsernames(storage, mintingDayTimestamp, usernames)
@@ -974,7 +991,7 @@ async function getNextUsernames(storage: w3fStorage, smartContract: Contract, co
     return usernames;
 }
 
-async function convertUserIDsToUsernames(convertToUsernamesURL: string, bearerToken: string, userIDs: string[]): Promise<string[]> {
+async function convertUserIDsToUsernames(convertToUsernamesURL: string, secretKey: string, userIDs: string[]): Promise<string[]> {
     let batches: string[][] = [];
 
     const batchSize = 100;
@@ -984,22 +1001,22 @@ async function convertUserIDsToUsernames(convertToUsernamesURL: string, bearerTo
 
     let userIDtoUsername: Map<string, string> = new Map();
     const requests = batches.map(async (batch) => {
-        const url = `${convertToUsernamesURL}?ids=${batch.join(',')}`;
+        const url = `${convertToUsernamesURL}?user_ids=${batch.join(',')}`;
 
         try {
             const response = await ky
                 .get(url, {
                     headers: {
-                        Authorization: `Bearer ${bearerToken}`,
+                        'X-Rapidapi-Key': secretKey,
+                        'X-Rapidapi-Host': 'twitter283.p.rapidapi.com',
                     },
                 })
                 .json<any>();
 
-            if (response.data) {
-                response.data.forEach((user: any) => {
-                    userIDtoUsername.set(user.id, user.username);
-                });
-            }
+            response.data.users.forEach((user: any) => {
+                userIDtoUsername.set(user.rest_id, user.result.core.screen_name);
+            })
+
         } catch (error) {
             // Handle errors for this batch
             console.error('Error fetching batch:', error);

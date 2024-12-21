@@ -348,7 +348,6 @@ describe("GelatoW3F", function () {
         const smartContractAddress = await smartContract.getAddress();
 
         const userLimit = 10;
-        const userIDFetchLimit = 3000;
         const concurrencyLimit = 30;
 
         const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
@@ -364,12 +363,24 @@ describe("GelatoW3F", function () {
             'itstylersays',
             'Chaser_Eth'
         ];
+        const userIDs: string[] = [
+            "2412652615",
+            "1628431584905814016",
+            "1456163056829046785",
+            "1535589727583313921",
+            "1460211122263379969",
+            "336348053",
+            "1227430018445430784",
+            "2262884168",
+            "2289922827",
+            "1213721158450696194"
+        ];
 
         let walletByUsername: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
-            const username = usernames[i];
-            await gelatoContract.verifyTwitter(username as any, generatedWallets[i] as any);
-            walletByUsername.set(username, generatedWallets[i].address);
+            const userID = userIDs[i];
+            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any);
+            walletByUsername.set(userID, generatedWallets[i].address);
         }
 
 
@@ -381,9 +392,8 @@ describe("GelatoW3F", function () {
             contractAddress: smartContractAddress,
             searchURL: "/Search",
             tweetLookupURL: "https://api.x.com/2/tweets",
-            convertToUsernamesURL: "https://api.x.com/2/users",
-            concurrencyLimit: concurrencyLimit,
-            userIdFetchLimit: userIDFetchLimit,
+            convertToUsernamesURL: "https://twitter283.p.rapidapi.com/UserResultsByRestIds",
+            concurrencyLimit: concurrencyLimit
         };
 
         const {
@@ -502,7 +512,7 @@ describe("GelatoW3F", function () {
             });
             actualStorage = storage.storage;
 
-            expect(result.canExec).to.equal(true);
+            expect(result.canExec, result.message).to.equal(true);
 
             if (result.canExec) {
                 expect(result.callData.length).to.be.greaterThan(0);
