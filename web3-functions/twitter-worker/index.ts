@@ -520,12 +520,9 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: number, userResults: Map<number, Result>, smartContract: Contract, tweetLookupURL: string, bearerToken: string): Promise<Web3FunctionResultCallData[]> {
     const tweetsToVerify = await getTweetsToVerify(mintingDayTimestamp, storage)
     console.log('tweetsToVerify', tweetsToVerify.length);
-    console.log('tweetsToVerify', JSON.stringify(tweetsToVerify));
 
     if (tweetsToVerify.length > 0) {
         const verifiedTweets = await verifyTweetsInBatches(tweetLookupURL, tweetsToVerify, bearerToken);
-        console.log('verifiedTweets', verifiedTweets.length);
-        console.log('verifiedTweets', JSON.stringify(verifiedTweets));
 
         for (let i = 0; i < verifiedTweets.length; i++) {
             const result = userResults.get(verifiedTweets[i].userIndex) || {...defaultResult};
@@ -541,10 +538,8 @@ async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: n
             results.push(res);
         })
 
-        console.log(`mintingDayTimestamp ${mintingDayTimestamp}`);
 
         const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
-        console.log('sortedResults', JSON.stringify(sortedResults));
 
         if (sortedResults) {
             return [
@@ -911,7 +906,7 @@ async function verifyTweetsInBatches(
                 if (Math.abs(tweetToVerify.likesCount - tweet.public_metrics.like_count) > 10) {
                     console.warn('tweetToVerify likesCount diff > 10', JSON.stringify(tweetToVerify));
                 }
-                
+
                 tweetToVerify.likesCount = tweet.public_metrics.like_count;
                 tweetToVerify.tweetContent = tweet.text;
 
