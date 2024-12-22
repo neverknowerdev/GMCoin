@@ -2,14 +2,11 @@ import {Interface} from "@ethersproject/abi";
 import {
     Web3Function,
     Web3FunctionEventContext,
-    Web3FunctionStorage,
     Web3FunctionResult
 } from "@gelatonetwork/web3-functions-sdk";
-import {Contract, ContractRunner, getBytes} from "ethers";
+import {Contract, ContractRunner} from "ethers";
 import ky from "ky";
 import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
-import {use} from "chai";
-import {boolean} from "hardhat/internal/core/params/argumentTypes";
 
 const ContractABI = [
     {
@@ -327,7 +324,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 }
             } catch (error) {
                 // Handle errors for this batch
-                console.error('Error fetching batch:', error);
+                console.error('Error fetching batch for verifyTweets:', error);
 
                 return {
                     canExec: false,
@@ -338,7 +335,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             transactions.push({
                 to: await smartContract.getAddress() as string,
                 data: smartContract.interface.encodeFunctionData("finishMinting", [
-                    mintingDayTimestamp
+                    BigInt(mintingDayTimestamp)
                 ]),
             });
 
@@ -469,7 +466,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
 
         console.log('newBatches', batches);
-        // console.log('sortedResults', sortedResults);
+        console.log('sortedResults', sortedResults);
 
         let transactions: any[] = [];
         if (sortedResults.length > 0 || batches.length > 0) {
@@ -523,25 +520,31 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: number, userResults: Map<number, Result>, smartContract: Contract, tweetLookupURL: string, bearerToken: string): Promise<Web3FunctionResultCallData[]> {
     const tweetsToVerify = await getTweetsToVerify(mintingDayTimestamp, storage)
     console.log('tweetsToVerify', tweetsToVerify.length);
+    console.log('tweetsToVerify', JSON.stringify(tweetsToVerify));
 
     if (tweetsToVerify.length > 0) {
         const verifiedTweets = await verifyTweetsInBatches(tweetLookupURL, tweetsToVerify, bearerToken);
         console.log('verifiedTweets', verifiedTweets.length);
+        console.log('verifiedTweets', JSON.stringify(verifiedTweets));
 
         for (let i = 0; i < verifiedTweets.length; i++) {
             const result = userResults.get(verifiedTweets[i].userIndex) || {...defaultResult};
+            result.userIndex = verifiedTweets[i].userIndex;
 
-            const res = calculateTweet(result, verifiedTweets[i].tweetContent, verifiedTweets[i].likesCount);
+            let res = calculateTweet(result, verifiedTweets[i].tweetContent, verifiedTweets[i].likesCount);
             userResults.set(verifiedTweets[i].userIndex, res);
         }
 
         let results: Result[] = [];
-        for (let [userIndex, result] of userResults) {
-            result.userIndex = userIndex;
-            results.push(result);
-        }
+        userResults.forEach((res: Result, userIndex: number) => {
+            res.userIndex = userIndex;
+            results.push(res);
+        })
+
+        console.log(`mintingDayTimestamp ${mintingDayTimestamp}`);
 
         const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
+        console.log('sortedResults', JSON.stringify(sortedResults));
 
         if (sortedResults) {
             return [
@@ -549,7 +552,7 @@ async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: n
                     to: await smartContract.getAddress() as string,
                     data: smartContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
                         sortedResults,
-                        mintingDayTimestamp,
+                        BigInt(mintingDayTimestamp),
                         [],
                     ]),
                 },
@@ -871,16 +874,14 @@ async function verifyTweetsInBatches(
     const batches: Tweet[][] = [];
     const results: Tweet[] = [];
 
+    let tweetByID = new Map<string, Tweet>;
+    for (const tweet of tweets) {
+        tweetByID.set(tweet.tweetID, tweet);
+    }
+
     // Step 1: Group tweets into batches of 100
     for (let i = 0; i < tweets.length; i += batchSize) {
         batches.push(tweets.slice(i, i + batchSize));
-    }
-
-    let usernameToUserIndex = new Map<string, number>;
-    for (const batch of batches) {
-        for (const tweet of batch) {
-            usernameToUserIndex.set(tweet.userID, tweet.userIndex);
-        }
     }
 
 
@@ -898,30 +899,23 @@ async function verifyTweetsInBatches(
             })
             .json<any>();
 
-        let usernameByUserID: Map<string, string> = new Map();
-        let userDescriptionByUserID: Map<string, string> = new Map();
-        if (response.includes) {
-            response.includes.users.forEach((user: any) => {
-                usernameByUserID.set(user.id, user.username);
-                userDescriptionByUserID.set(user.id, user.description);
-            })
-        }
 
         // Step 3: Process the response and map to Tweet interface
         if (response.data) {
             response.data.forEach((tweet: any) => {
-                const username = usernameByUserID.get(tweet.author_id) || '';
-                const userIndex = usernameToUserIndex.get(username);
+                let tweetToVerify: Tweet = tweetByID.get(tweet.id);
+                if (!tweetToVerify) {
+                    return;
+                }
 
-                results.push({
-                    userID: tweet.author_id,
-                    username: username,
-                    tweetID: tweet.id,
-                    tweetContent: tweet.text,
-                    likesCount: tweet.public_metrics.like_count,
-                    userDescriptionText: userDescriptionByUserID.get(tweet.author_id) || '',
-                    userIndex: userIndex,
-                });
+                if (Math.abs(tweetToVerify.likesCount - tweet.public_metrics.like_count) > 10) {
+                    console.warn('tweetToVerify likesCount diff > 10', JSON.stringify(tweetToVerify));
+                }
+                
+                tweetToVerify.likesCount = tweet.public_metrics.like_count;
+                tweetToVerify.tweetContent = tweet.text;
+
+                results.push(tweetToVerify);
             });
         }
     });
@@ -1014,7 +1008,9 @@ async function convertUserIDsToUsernames(convertToUsernamesURL: string, secretKe
                 .json<any>();
 
             response.data.users.forEach((user: any) => {
-                userIDtoUsername.set(user.rest_id, user.result.core.screen_name);
+                if (user.result?.core?.screen_name) {
+                    userIDtoUsername.set(user.rest_id, user.result.core.screen_name);
+                }
             })
 
         } catch (error) {
