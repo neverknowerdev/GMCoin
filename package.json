@@ -30,18 +30,26 @@
     "lodash": "^4.17.21",
     "solidity-coverage": "^0.8.13",
     "ts-node": "^10.9.2",
+    "twitter-api-v2": "^1.19.0",
     "typechain": "^8.3.2",
     "typescript": "^5.6.2"
   },
   "dependencies": {
+    "@3id/connect": "^0.4.1",
+    "@ceramicnetwork/http-client": "^6.4.0",
+    "@ceramicnetwork/stream-tile": "^6.4.0",
     "@gelatonetwork/automate-sdk": "^3.0.2",
     "@gelatonetwork/web3-functions-sdk": "git+https://github.com/neverknowerdev/web3-functions-sdk.git#hardfix_local",
+    "@noble/ciphers": "1.2.0",
     "@openzeppelin/contracts": "^5.0.2",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
     "@openzeppelin/hardhat-upgrades": "^3.2.1",
+    "axios": "^1.7.9",
     "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
     "ethers": "6",
     "ky": "^0.33.3",
-    "p-limit": "^3.1.0"
+    "p-limit": "^3.1.0",
+    "siwe": "^2.3.2"
   }
 }

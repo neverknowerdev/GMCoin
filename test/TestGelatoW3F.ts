@@ -1,6 +1,9 @@
 import {expect, use} from "chai";
 import hre from "hardhat";
 import isEqual from 'lodash/isEqual';
+import {gcm} from '@noble/ciphers/aes';
+import {utf8ToBytes, bytesToUtf8, bytesToHex, hexToBytes} from "@noble/ciphers/utils";
+import {randomBytes} from '@noble/ciphers/webcrypto';
 
 const {ethers, w3f, upgrades} = hre;
 import {
@@ -10,7 +13,7 @@ import {
 import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
 import {GMCoinExposed} from "../typechain";
 import {MockHttpServer} from './tools/mockServer';
-import {Provider, HDNodeWallet} from "ethers";
+import {Provider, HDNodeWallet, EventLog} from "ethers";
 import {generateEventLogFile, writeEventLogFile} from './tools/helpers';
 import {time} from "@nomicfoundation/hardhat-network-helpers";
 import * as url from 'url';
@@ -18,6 +21,7 @@ import fs from "fs";
 import {max} from "hardhat/internal/util/bigint";
 import path from "path";
 import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
+import {IncomingHttpHeaders} from "http";
 
 describe("GelatoW3F", function () {
     let mockServer: MockHttpServer;
@@ -73,7 +77,7 @@ describe("GelatoW3F", function () {
         const [owner, feeAddr, otherAcc1, gelatoAddr] = await ethers.getSigners();
 
         const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const instance: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, 100_000], {kind: "uups"}) as GMCoinExposed;
+        const instance: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, 100_000, 2], {kind: "uups"}) as GMCoinExposed;
 
         await instance.waitForDeployment();
 
@@ -89,6 +93,8 @@ describe("GelatoW3F", function () {
         const verifierAddress = await instance.getAddress();
         console.log(`deployed GMCoin to ${verifierAddress}`);
 
+        await generateEventLogFile('web3-functions/twitter-verification', 'VerifyTwitterRequested', ['authCodeTest', 'verifierCode', '0x6794a56583329794f184d50862019ecf7b6d8ba6', true]);
+
         let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification");
 
         let {result} = await oracleW3f.run("onRun", {
@@ -99,8 +105,40 @@ describe("GelatoW3F", function () {
         });
         result = result as Web3FunctionResultV2;
 
-        console.log('result', result);
-        expect(result.canExec).to.equal(false);
+        expect(result.canExec).to.equal(true);
+
+        if (result.canExec) {
+            let eventWallet = '';
+            let eventErrorMsg = '';
+            for (let calldata of result.callData) {
+                const tx = await gelatoAddr.sendTransaction({to: calldata.to, data: calldata.data});
+                const receipt = await tx.wait();
+
+                // 4. Parse each log in the receipt
+                for (const log of receipt?.logs) {
+                    try {
+                        // Ethers v6 parseLog expects an object with { topics, data }
+                        const parsedLog = instance.interface.parseLog({
+                            topics: log.topics,
+                            data: log.data
+                        });
+
+                        if (parsedLog?.name === "TwitterConnectError") {
+                            // Extract the event args (e.g. user, error)
+                            eventWallet = parsedLog.args[0];
+                            eventErrorMsg = parsedLog.args[1];
+                            break;
+                        }
+                    } catch (err) {
+
+                    }
+                }
+            }
+
+            expect(eventWallet).to.be.equal('0x6794a56583329794f184d50862019Ecf7b6d8BA6');
+            expect(eventErrorMsg).to.be.equal('Failed to retrieve access token: {"error":"invalid_request","error_description":"Value passed for the authorization code was invalid."}');
+        }
+
         if (!(result.canExec)) {
             expect(result.message).to.equal('Failed to retrieve access token: {"error":"invalid_request","error_description":"Value passed for the authorization code was invalid."}');
         }
@@ -111,7 +149,7 @@ describe("GelatoW3F", function () {
         const [owner, feeAddr, otherAcc1, gelatoAddr] = await ethers.getSigners();
 
         const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const instance: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, 100_000], {kind: "uups"}) as unknown as GMCoinExposed;
+        const instance: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, 100_000, 2], {kind: "uups"}) as unknown as GMCoinExposed;
 
         await instance.waitForDeployment();
 
@@ -152,7 +190,82 @@ describe("GelatoW3F", function () {
         const verifierAddress = await instance.getAddress();
         console.log(`deployed GMCoin to ${verifierAddress}`);
 
+        await generateEventLogFile('web3-functions/twitter-verification', 'VerifyTwitterRequested', ['authCodeTest', 'verifierCode', "0x6794a56583329794f184d50862019ecf7b6d8ba6", false]);
+
         let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification");
+
+        let {result} = await oracleW3f.run("onRun", {
+            userArgs: {
+                verifierContractAddress: verifierAddress,
+                twitterHost: "http://localhost:8118",
+            }
+        });
+        result = result as Web3FunctionResultV2;
+
+        console.log('result', result);
+        expect(result.canExec).to.equal(true);
+
+        if (result.canExec) {
+            for (let calldata of result.callData) {
+                await gelatoAddr.sendTransaction({to: calldata.to, data: calldata.data});
+            }
+        }
+
+        let resultWallet = await instance.getWalletByUserID("1796129942104657921" as any);
+        expect(resultWallet.toLowerCase()).to.equal("0x6794a56583329794f184d50862019ecf7b6d8ba6");
+    });
+
+    it('twitter-verification relayer', async function () {
+        const [owner, feeAddr, relayerServerAddr, gelatoAddr] = await ethers.getSigners();
+
+        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
+        const instance: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, relayerServerAddr.address, 100_000, 2], {kind: "uups"}) as unknown as GMCoinExposed;
+
+        await instance.waitForDeployment();
+
+        const accessKey = bytesToHex(randomBytes(20));
+
+        mockServer.mockFunc('/2/users/me', 'GET', function (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders) {
+            const headerAccessCode = headers.authorization?.slice(7);
+
+            expect(headerAccessCode).to.be.equal(accessKey);
+            
+            return {
+                "data": {
+                    "id": "1796129942104657921",
+                    "name": "NeverKnower",
+                    "username": "neverknower_dev"
+                }
+            }
+        })
+
+        mockServer.mock('/2/oauth2/revoke', 'POST',
+            {
+                "revoked": true
+            }
+        )
+
+        const userID = '1796129942104657921';
+        const secretKey = '1d301612428be037c255ea8b4d1f1b3951f7cb227fcdb318d6b02c84c6bca0a4';
+        console.log('encoding access_token', accessKey);
+
+        const encryptDataFunc = function encryptData(data: string, key: string): string {
+            const nonce = randomBytes(24);
+            const aes = gcm(hexToBytes(key), nonce);
+            const ciphertext = aes.encrypt(hexToBytes(data));
+            return bytesToHex(nonce) + bytesToHex(ciphertext);
+        };
+
+        const encryptedAccessKey = encryptDataFunc(accessKey, secretKey);
+
+        console.log('encrypted access_token', encryptedAccessKey);
+
+        const verifierAddress = await instance.getAddress();
+        console.log(`deployed GMCoin to ${verifierAddress}`);
+
+        await generateEventLogFile('web3-functions/twitter-verification-relayer', 'VerifyTwitterRequestedRelayer', [encryptedAccessKey, userID, "0x6794a56583329794f184d50862019ecf7b6d8ba6"]);
+
+        let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification-relayer");
 
         let {result} = await oracleW3f.run("onRun", {
             userArgs: {

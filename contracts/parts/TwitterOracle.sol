@@ -2,13 +2,24 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+
 import "hardhat/console.sol";
 
 contract GMTwitterOracle is Initializable {
+    using ECDSA for bytes32;
+
     address gelatoAddress;
+    address serverRelayerAddress;
 
     modifier onlyGelato() {
         require(msg.sender == gelatoAddress, "only Gelato can call this function");
+        _;
+    }
+
+    modifier onlyServerRelayer() {
+        require(msg.sender == serverRelayerAddress, "only relay server can call this function");
         _;
     }
 
@@ -24,12 +35,16 @@ contract GMTwitterOracle is Initializable {
 
     uint public EPOCH_DAYS;
 
-    uint256[255] private __gap;
+    mapping(address => string) internal usersByWallets;
+    mapping(address => bool) internal registeredWallets;
 
-    function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress, uint _epochDays) public initializer {
+    uint256[254] private __gap;
+
+    function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress, address _relayServerAddress, uint _epochDays) public initializer {
         EPOCH_DAYS = _epochDays;
 
         gelatoAddress = _gelatoAddress;
+        serverRelayerAddress = _relayServerAddress;
 
         COINS_MULTIPLICATOR = coinsPerTweet * 10 ** 18;
 
@@ -49,6 +64,12 @@ contract GMTwitterOracle is Initializable {
 
     function walletByTwitterUser(string calldata username) internal view returns (address) {
         return wallets[username];
+    }
+
+    function userByWallet(address wallet) public view returns (string memory) {
+        require(msg.sender == wallet, "only wallet owner could call this function");
+
+        return usersByWallets[wallet];
     }
 
     function walletByTwitterUserIndex(uint256 userIndex) internal view returns (address) {
@@ -84,15 +105,38 @@ contract GMTwitterOracle is Initializable {
     }
 
     event VerifyTwitterRequested(string authCode, string verifier, address indexed wallet, bool autoFollow);
-    event TwitterConnected(string userID, address indexed wallet);
+    event VerifyTwitterRequestedRelayer(string accessCodeEncrypted, string userID, address indexed wallet);
+
+    event TwitterConnected(string indexed userID, address indexed wallet);
+    event TwitterConnectError(address indexed wallet, string errorMsg);
+    event TwitterVerificationResult(string indexed userID, address indexed wallet, bool isSuccess, string errorMsg);
 
     function requestTwitterVerification(string calldata authCode, string calldata verifier, bool autoFollow) public {
         emit VerifyTwitterRequested(authCode, verifier, msg.sender, autoFollow);
     }
 
+    function requestTwitterVerificationFromRelayer(string calldata userID, bytes calldata signature, string calldata accessTokenEncrypted) public onlyServerRelayer {
+        bytes32 messageHash = keccak256(abi.encodePacked("gmcoin.meme twitter-verification"));
+
+        address signer = MessageHashUtils.toEthSignedMessageHash(messageHash).recover(signature);
+
+        require(signer != address(0), "wrong signer");
+        require(wallets[userID] == address(0), "wallet already linked for that user");
+        require(!registeredWallets[signer], "wallet already verified and linked to Twitter");
+
+        emit VerifyTwitterRequestedRelayer(accessTokenEncrypted, userID, signer);
+    }
+
+    function twitterVerificationError(address wallet, string calldata errorMsg) public onlyGelato {
+        emit TwitterConnectError(wallet, errorMsg);
+    }
+
     function verifyTwitter(string calldata userID, address wallet) public onlyGelato {
+        usersByWallets[wallet] = userID;
+        registeredWallets[wallet] = true;
+        wallets[userID] = wallet;
+
         if (wallets[userID] == address(0)) {
-            wallets[userID] = wallet;
             allTwitterUsers.push(userID);
             emit TwitterConnected(userID, wallet);
         }

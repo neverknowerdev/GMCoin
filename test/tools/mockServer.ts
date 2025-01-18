@@ -1,4 +1,4 @@
-import {createServer, IncomingMessage, ServerResponse} from 'http';
+import {createServer, IncomingHttpHeaders, IncomingMessage, ServerResponse} from 'http';
 import * as url from 'url';
 import * as querystring from 'querystring';
 
@@ -22,7 +22,10 @@ export class MockHttpServer {
     private server;
     private mockData: MockData = {};
     private calledUrls: CalledUrlData[] = [];
-    private routes: Map<string, { method: string; callback?: (url: url.UrlWithParsedQuery) => any }> = new Map();
+    private routes: Map<string, {
+        method: string;
+        callback?: (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders) => any
+    }> = new Map();
 
     constructor(private port: number) {
         this.server = createServer(this.requestHandler.bind(this));
@@ -67,7 +70,7 @@ export class MockHttpServer {
             try {
                 if (route.callback) {
                     // Use callback to generate the response
-                    responseData = route.callback(parsedUrl);
+                    responseData = route.callback(parsedUrl, req.headers);
                 } else {
                     responseData = {message: 'No callback provided'};
                 }
@@ -132,7 +135,7 @@ export class MockHttpServer {
         console.log(`Mocked ${method} ${url} with status ${statusCode} and content type ${contentType}`);
     }
 
-    public mockFunc(route: string, method: string, callback: (url: url.UrlWithParsedQuery) => any) {
+    public mockFunc(route: string, method: string, callback: (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders) => any) {
         const routeKey = `${method}:${route}`;
         this.routes.set(routeKey, {method, callback});
     }

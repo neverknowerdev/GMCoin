@@ -10,12 +10,7 @@ import "./parts/TwitterOracle.sol";
 // Uncomment this line to use console.log
 import "hardhat/console.sol";
 
-contract GMCoin is
-Initializable,
-OwnableUpgradeable,
-ERC20Upgradeable,
-UUPSUpgradeable,
-GMTwitterOracle
+contract GMCoin is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracle
 {
 
     address plannedNewImplementation;
@@ -39,6 +34,7 @@ GMTwitterOracle
         uint256 _comissionPercentage,
         uint256 _initialSupply,
         address _gelatoOracleAddress,
+        address _relayServerAddress,
         uint256 coinsMultiplicator,
         uint _epochDays
     ) public initializer {
@@ -50,33 +46,32 @@ GMTwitterOracle
         __Ownable_init(_owner);
         __UUPSUpgradeable_init();
         __ERC20_init("GM Coin", "GM");
-        __TwitterOracle__init(coinsMultiplicator, _gelatoOracleAddress, _epochDays);
-
+        __TwitterOracle__init(coinsMultiplicator, _gelatoOracleAddress, _relayServerAddress, _epochDays);
+        
         _mint(address(_owner), _initialSupply);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
     }
 
-    function scheduleUpgrade(address newImplementation) public payable onlyOwner {
-        require(newImplementation != address(0), "wrong newImplementation address");
-        require(plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
-
-        plannedNewImplementation = newImplementation;
-        plannedNewImplementationTime = block.timestamp + 1 days;
-
-    }
-
-    function upgradeToAndCall(address newImplementation, bytes memory data) public override onlyOwner payable {
-        require(newImplementation != address(0), "wrong newImplementation address");
-        require(newImplementation == plannedNewImplementation, "you should schedule upgrade first");
-        require(block.timestamp > plannedNewImplementationTime, "timeDelay is not passed to make an upgrade");
-
-        plannedNewImplementationTime = 0;
-        plannedNewImplementation = address(0);
-
-        super.upgradeToAndCall(newImplementation, data);
-    }
+//    function scheduleUpgrade(address newImplementation) public onlyOwner {
+//        require(newImplementation != address(0), "wrong newImplementation address");
+//        require(plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
+//
+//        plannedNewImplementation = newImplementation;
+//        plannedNewImplementationTime = block.timestamp + 1 days;
+//    }
+//
+//    function upgradeToAndCall(address newImplementation, bytes memory data) public override onlyOwner {
+//        require(newImplementation != address(0), "wrong newImplementation address");
+//        require(newImplementation == plannedNewImplementation, "you should schedule upgrade first");
+//        require(block.timestamp > plannedNewImplementationTime, "timeDelay is not passed to make an upgrade");
+//
+//        plannedNewImplementationTime = 0;
+//        plannedNewImplementation = address(0);
+//
+//        super.upgradeToAndCall(newImplementation, data);
+//    }
 
     function _update(address from, address to, uint256 value) internal override {
         if (from != address(0) && to != address(0)) {

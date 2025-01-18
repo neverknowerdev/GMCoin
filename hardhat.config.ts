@@ -6,6 +6,7 @@ import '@typechain/hardhat';
 import "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
 
 import "./tasks/addTwitterUser";
+import "./tasks/tweetCountStat";
 
 // Process Env Variables
 import * as dotenv from "dotenv";
@@ -20,7 +21,12 @@ const config = {
             optimizer: {
                 enabled: true,
                 runs: 200
-            }
+            },
+            outputSelection: {
+                "*": {
+                    "*": ["storageLayout"],
+                },
+            },
         }
     },
     defender: {
@@ -39,7 +45,8 @@ const config = {
     },
     etherscan: {
         apiKey: {
-            baseSepolia: process.env.BASESCAN_KEY
+            baseSepolia: process.env.BASESCAN_KEY,
+            base: process.env.BASESCAN_KEY,
         }
     },
     networks: {
@@ -48,13 +55,21 @@ const config = {
             mining: {
                 auto: true,
                 interval: 1000 // 1 second
-            }
+            },
+            // accounts: {
+            //     mnemonic: "gm1 gm2 gm3 gm4 gm5 gm6 gm7 gm8 gm9 gm10 gm11 gm12"
+            // }
         },
         baseSepolia: {
             url: "https://sepolia.base.org", // RPC URL for Base Sepolia
             chainId: 84532, // Base Sepolia's chain ID
-            accounts: [process.env.BASE_TESTNET_PRIVATE_KEY], // Your wallet private key (from .env file)
+            accounts: [process.env.BASE_TESTNET_LEARNING_PRIVATE_KEY], // Your wallet private key (from .env file)
         },
+        base: {
+            url: "https://mainnet.base.org",
+            chainId: 8453,
+            accounts: [process.env.BASE_PROD_PRIVATE_KEY],
+        }
     },
     gasReporter: {
         enabled: (process.env.REPORT_GAS == "true"),
