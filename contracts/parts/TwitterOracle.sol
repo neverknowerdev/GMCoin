@@ -104,15 +104,13 @@ contract GMTwitterOracle is Initializable {
         return batchArr;
     }
 
-    event VerifyTwitterRequested(string authCode, string verifier, address indexed wallet, bool autoFollow);
-    event VerifyTwitterRequestedRelayer(string accessCodeEncrypted, string userID, address indexed wallet);
-
-    event TwitterConnected(string indexed userID, address indexed wallet);
-    event TwitterConnectError(address indexed wallet, string errorMsg);
+    event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet);
     event TwitterVerificationResult(string indexed userID, address indexed wallet, bool isSuccess, string errorMsg);
 
-    function requestTwitterVerification(string calldata authCode, string calldata verifier, bool autoFollow) public {
-        emit VerifyTwitterRequested(authCode, verifier, msg.sender, autoFollow);
+    function requestTwitterVerification(string calldata accessCodeEncrypted, string calldata userID) public {
+        require(wallets[userID] == address(0), "wallet already linked for that user");
+
+        emit VerifyTwitterRequested(accessCodeEncrypted, userID, msg.sender);
     }
 
     function requestTwitterVerificationFromRelayer(string calldata userID, bytes calldata signature, string calldata accessTokenEncrypted) public onlyServerRelayer {
@@ -124,21 +122,24 @@ contract GMTwitterOracle is Initializable {
         require(wallets[userID] == address(0), "wallet already linked for that user");
         require(!registeredWallets[signer], "wallet already verified and linked to Twitter");
 
-        emit VerifyTwitterRequestedRelayer(accessTokenEncrypted, userID, signer);
+        emit VerifyTwitterRequested(accessTokenEncrypted, userID, signer);
     }
 
-    function twitterVerificationError(address wallet, string calldata errorMsg) public onlyGelato {
-        emit TwitterConnectError(wallet, errorMsg);
+    function twitterVerificationError(address wallet, string calldata userID, string calldata errorMsg) public onlyGelato {
+        emit TwitterVerificationResult(userID, wallet, false, errorMsg);
     }
 
-    function verifyTwitter(string calldata userID, address wallet) public onlyGelato {
+    function verifyTwitter(string calldata userID, address wallet, bool isSubscribed) public onlyGelato {
         usersByWallets[wallet] = userID;
         registeredWallets[wallet] = true;
-        wallets[userID] = wallet;
 
         if (wallets[userID] == address(0)) {
+            wallets[userID] = wallet;
             allTwitterUsers.push(userID);
-            emit TwitterConnected(userID, wallet);
+            if (isSubscribed) {
+                _mintForUserByIndex(allTwitterUsers.length, 1 * COINS_MULTIPLICATOR); // mint welcome coins
+            }
+            emit TwitterVerificationResult(userID, wallet, true, "");
         }
     }
 
@@ -172,6 +173,8 @@ contract GMTwitterOracle is Initializable {
     uint256 internal mintingDayPointsFromUsers;
 
     uint32 mintingInProgressForDay;
+
+    uint256[254] private __gap2;
 
     function startMinting() public onlyGelato {
         uint32 dayToMint = lastMintedDay + 1 days;

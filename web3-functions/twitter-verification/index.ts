@@ -7,17 +7,16 @@ import {
 import {Contract} from "ethers";
 import ky, {HTTPError} from "ky";
 
-// Define Twitter API endpoint
-const TWITTER_TOKEN_URL = '/2/oauth2/token';
-const TWITTER_ME_URL = '/2/users/me';
-const TWITTER_FOLLOW_URL = '/2/users/:id/following';
-const TWITTER_REVOKE_URL = '/2/oauth2/revoke';
+import {gcm} from '@noble/ciphers/aes';
+import {bytesToHex, hexToBytes} from '@noble/ciphers/utils';
 
+// Define Twitter API endpoint
+const TWITTER_ME_URL = '/2/users/me';
 
 const VerifierContractABI = [
-    "event VerifyTwitterRequested(string authCode, string verifier, address indexed wallet, bool autoFollow)",
+    "event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet)",
     "function verifyTwitter(string calldata userID, address wallet)",
-    "function twitterVerificationError(address wallet, string calldata errorMsg)"
+    "function twitterVerificationError(address wallet, string userID, string calldata errorMsg)"
 ];
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
@@ -26,19 +25,10 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
     const TwitterApiURL = userArgs.twitterHost;
 
-    const twitterClientID = await context.secrets.get("TWITTER_CLIENT_ID");
-    if (!twitterClientID)
-        return {canExec: false, message: `TWITTER_CLIENT_ID not set in secrets`};
-
-    const twitterSecret = await context.secrets.get("TWITTER_SECRET");
-    if (!twitterSecret) {
-        return {canExec: false, message: `TWITTER_SECRET not set in secrets`};
+    const decryptionKey = await context.secrets.get("DECRYPTION_KEY");
+    if (!decryptionKey) {
+        return {canExec: false, message: `DECRYPTION_KEY not set in secrets`};
     }
-
-    const twitterAuthRedirectURL = await context.secrets.get("TWITTER_AUTH_REDIRECT_URL");
-    if (!twitterAuthRedirectURL)
-        return {canExec: false, message: `TWITTER_AUTH_REDIRECT_URL not set in secrets`};
-
 
     console.log(`verifier address is ${userArgs.verifierContractAddress}`);
 
@@ -54,36 +44,16 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     const event = contract.parseLog(log);
 
     // Handle event data
-    const {authCode, verifier, wallet, autoFollow} = event.args;
-    console.log('authCode', authCode);
-    console.log('verifier', verifier);
+    const {accessCodeEncrypted, userID, wallet} = event.args;
+    console.log('authCode', accessCodeEncrypted);
+    console.log('userID', userID);
     console.log(`Veryfing Twitter for address ${wallet}..`);
 
+    console.log('before decryptData');
+    const accessToken = decryptData(accessCodeEncrypted, decryptionKey);
+    console.log('after decryptData', accessToken);
+
     try {
-        const basicAuthEncoded = btoa(`${twitterClientID}:${twitterSecret}`);
-
-        const tokenResponse = await ky.post(
-            `${TwitterApiURL}${TWITTER_TOKEN_URL}`,
-            {
-                headers: {
-                    'Authorization': `Basic ${basicAuthEncoded}`,
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                    client_id: twitterClientID, // Ensure client ID is set in env
-                    redirect_uri: twitterAuthRedirectURL, // Ensure redirect URI is set in env
-                    grant_type: 'authorization_code',
-                    code: authCode,
-                    code_verifier: verifier, // OAuth code verifier, not the contract object
-                }).toString(),
-            }
-        ).json();
-
-        const accessToken = (tokenResponse as any).access_token;
-
-        if (!accessToken) {
-            return await returnError(verifierContract, wallet, 'Failed to retrieve access token: ' + JSON.stringify(tokenResponse));
-        }
 
         // Step 2: Use access token to call the users/me endpoint
         const userResponse = await ky.get(TwitterApiURL + TWITTER_ME_URL, {
@@ -93,44 +63,15 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         }).json();
 
         const twitterUser = userResponse as any;
-        const userID = twitterUser.data.id;
+        const twitterUserID = twitterUser.data.id;
 
-        if (!userID) {
-            return await returnError(verifierContract, wallet, `Failed to retrieve user from Twitter`);
+        if (!twitterUserID) {
+            return await returnError(verifierContract, userID, wallet, `Failed to retrieve user from Twitter`);
+        }
+        if (twitterUserID != userID) {
+            return await returnError(verifierContract, userID, wallet, 'userID returned by Twitter is different');
         }
 
-        if (autoFollow) {
-            console.log('request3');
-            // Step 4: follow GM account
-            await ky.post(
-                TwitterApiURL + TWITTER_FOLLOW_URL.replace(':id', userID),
-                {
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        target_user_id: '1830701284288028673'
-                    }),
-                }
-            );
-        }
-
-        // Step 5: Revoke the access token after successful validation
-        await ky.post(
-            TwitterApiURL + TWITTER_REVOKE_URL,
-            {
-                headers: {
-                    'Authorization': `Basic ${basicAuthEncoded}`,
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                    token: accessToken,
-                    client_id: twitterClientID,
-                    token_type_hint: 'access_token'
-                }).toString(),
-            }
-        );
 
         return {
             canExec: true,
@@ -149,14 +90,22 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             // Attempt to read the error response as JSON
             const errorBody = await error.response.json().catch(() => error.response.text());
 
-            return await returnError(verifierContract, wallet, `Failed to retrieve access token: ${JSON.stringify(errorBody)}`);
+            return await returnError(verifierContract, userID, wallet, `Failed to retrieve access token: ${JSON.stringify(errorBody)}`);
         } else {
-            return await returnError(verifierContract, wallet, `An unexpected error occurred: ${error.message}`);
+            return await returnError(verifierContract, userID, wallet, `An unexpected error occurred: ${error.message}`);
         }
     }
 });
 
-async function returnError(contract: Contract, userWallet: string, errorMsg: string): Promise<Web3FunctionResult> {
+function decryptData(encryptedData: string, decryptionKey: string): string {
+    const nonce = hexToBytes(encryptedData.slice(0, 48));
+    const data = hexToBytes(encryptedData.slice(48));
+    const aes = gcm(hexToBytes(decryptionKey), nonce);
+    const data_ = aes.decrypt(data);
+    return bytesToHex(data_);
+}
+
+async function returnError(contract: Contract, userID: string, userWallet: string, errorMsg: string): Promise<Web3FunctionResult> {
     const contractAddress = await contract.getAddress()
     console.log('returnError here', contractAddress, errorMsg);
     return {
@@ -166,6 +115,7 @@ async function returnError(contract: Contract, userWallet: string, errorMsg: str
                 to: contractAddress,
                 data: contract.interface.encodeFunctionData("twitterVerificationError", [
                     userWallet,
+                    userID,
                     errorMsg
                 ]),
             },

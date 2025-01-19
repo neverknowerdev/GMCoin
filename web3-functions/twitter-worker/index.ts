@@ -1,4 +1,5 @@
 import {Interface} from "@ethersproject/abi";
+import {Storage} from './storage';
 import {
     Web3Function,
     Web3FunctionEventContext,
@@ -7,190 +8,7 @@ import {
 import {Contract, ContractRunner} from "ethers";
 import ky from "ky";
 import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
-
-const ContractABI = [
-    {
-        "inputs": [
-            {
-                "components": [
-                    {
-                        "internalType": "uint64",
-                        "name": "userIndex",
-                        "type": "uint64"
-                    },
-                    {
-                        "internalType": "uint16",
-                        "name": "tweets",
-                        "type": "uint16"
-                    },
-                    {
-                        "internalType": "uint16",
-                        "name": "hashtagTweets",
-                        "type": "uint16"
-                    },
-                    {
-                        "internalType": "uint16",
-                        "name": "cashtagTweets",
-                        "type": "uint16"
-                    },
-                    {
-                        "internalType": "uint16",
-                        "name": "simpleTweets",
-                        "type": "uint16"
-                    },
-                    {
-                        "internalType": "uint32",
-                        "name": "likes",
-                        "type": "uint32"
-                    }
-                ],
-                "internalType": "struct GMTwitterOracle.UserTwitterData[]",
-                "name": "userData",
-                "type": "tuple[]"
-            },
-            {
-                "internalType": "uint32",
-                "name": "mintingDayTimestamp",
-                "type": "uint32"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "uint64",
-                        "name": "startIndex",
-                        "type": "uint64"
-                    },
-                    {
-                        "internalType": "uint64",
-                        "name": "endIndex",
-                        "type": "uint64"
-                    },
-                    {
-                        "internalType": "string",
-                        "name": "nextCursor",
-                        "type": "string"
-                    }
-                ],
-                "internalType": "struct GMTwitterOracle.Batch[]",
-                "name": "batches",
-                "type": "tuple[]"
-            }
-        ],
-        "name": "mintCoinsForTwitterUsers",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint64",
-                "name": "start",
-                "type": "uint64"
-            },
-            {
-                "internalType": "uint16",
-                "name": "count",
-                "type": "uint16"
-            }
-        ],
-        "name": "getTwitterUsers",
-        "outputs": [
-            {
-                "internalType": "string[]",
-                "name": "",
-                "type": "string[]"
-            }
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "anonymous": false,
-        "inputs": [
-            {
-                "indexed": false,
-                "internalType": "uint32",
-                "name": "mintingDayTimestamp",
-                "type": "uint32"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "uint64",
-                        "name": "startIndex",
-                        "type": "uint64"
-                    },
-                    {
-                        "internalType": "uint64",
-                        "name": "endIndex",
-                        "type": "uint64"
-                    },
-                    {
-                        "internalType": "string",
-                        "name": "nextCursor",
-                        "type": "string"
-                    }
-                ],
-                "indexed": false,
-                "internalType": "struct GMTwitterOracle.Batch[]",
-                "name": "batches",
-                "type": "tuple[]"
-            }
-        ],
-        "name": "twitterMintingProcessed",
-        "type": "event"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint32",
-                "name": "mintingDayTimestamp",
-                "type": "uint32"
-            },
-            {
-                "components": [
-                    {
-                        "internalType": "uint64",
-                        "name": "startIndex",
-                        "type": "uint64"
-                    },
-                    {
-                        "internalType": "uint64",
-                        "name": "endIndex",
-                        "type": "uint64"
-                    },
-                    {
-                        "internalType": "string",
-                        "name": "nextCursor",
-                        "type": "string"
-                    }
-                ],
-                "internalType": "struct GMTwitterOracle.Batch[]",
-                "name": "batches",
-                "type": "tuple[]"
-            }
-        ],
-        "name": "logErrorBatches",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {
-                "internalType": "uint32",
-                "name": "mintingDayTimestamp",
-                "type": "uint32"
-            }
-        ],
-        "name": "finishMinting",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-
-];
+import {ContractABI, Result, Tweet, Batch, TwitterApiResponse, defaultResult, w3fStorage} from "./consts";
 
 const MAX_TWITTER_SEARCH_QUERY_LENGTH = 512;
 const USER_ID_FETCH_LIMIT = 1000;
@@ -199,7 +17,7 @@ const KEYWORD = "gm";
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
     // Get event log from Web3FunctionEventContext
     console.log('running..');
-    const {log, userArgs, multiChainProvider, storage} = context;
+    const {log, userArgs, multiChainProvider, storage: w3fStorage} = context;
 
     const SearchURL = userArgs.searchURL as string;
     const CONCURRENCY_LIMIT = userArgs.concurrencyLimit as number;
@@ -225,8 +43,14 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         const contract = new Interface(ContractABI);
         const event = contract.parseLog(log);
 
+        // BatchManager.receivedBatches(batches)
+        // BatchManager.newBatchesToProcess(): []Batch
+        // BatchManager.isFinishedProcessing(): boolean
+
 
         const {mintingDayTimestamp, batches: initBatches} = event.args;
+
+        let storage = new Storage(w3fStorage, mintingDayTimestamp);
 
         let batches = initBatches.map(item => ({
             startIndex: item.startIndex.toNumber(),
@@ -252,7 +76,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
             // cache userIDs for batches
             // fetch them here
-            const batchUsernames = await getUsernamesForBatch(storage, mintingDayTimestamp, cur.startIndex, cur.endIndex);
+            const batchUsernames = await storage.getUsernamesForBatch(cur.startIndex, cur.endIndex);
             const generatedQuery = createUserQueryStringStatic(batchUsernames, mintingDayTimestamp, KEYWORD);
             queryList.push(generatedQuery);
             fillUserIndexByUsernames(userIndexByUsername, batchUsernames, cur.startIndex);
@@ -262,7 +86,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             console.log('generating new batches and queries..');
             const newCursorsCount = CONCURRENCY_LIMIT - batches.length;
 
-            const maxEndIndex = await getMaxEndIndex(mintingDayTimestamp, storage);
+            const maxEndIndex = await storage.getMaxEndIndex();
             let startIndex = maxEndIndex;
 
             let remainingUsernames = await getNextUsernames(storage, smartContract, ConvertToUsernamesURL, secretKey, mintingDayTimestamp, startIndex, newCursorsCount * 50);
@@ -289,7 +113,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 }
 
                 if (newBatch.endIndex > maxEndIndex) {
-                    await saveMaxEndIndex(mintingDayTimestamp, storage, newBatch.endIndex);
+                    await storage.saveMaxEndIndex(newBatch.endIndex);
                 }
 
                 startIndex += recordInsertedCount;
@@ -301,17 +125,16 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
                 await fillUserIndexByUsernames(userIndexByUsername, batchUsernames, newBatch.startIndex);
 
-                await setUsernamesForBatch(storage, mintingDayTimestamp, newBatch.startIndex, newBatch.endIndex, batchUsernames);
+                await storage.setUsernamesForBatch(newBatch.startIndex, newBatch.endIndex, batchUsernames);
 
                 remainingUsernames = remainingUsernames.slice(recordInsertedCount);
             }
 
-
-            await saveRemainingUsernames(storage, mintingDayTimestamp, remainingUsernames);
+            await storage.saveRemainingUsernames(remainingUsernames);
             console.log('newBatches', batches);
         }
 
-        let UserResults = await loadUserResults(storage, mintingDayTimestamp);
+        let UserResults = await storage.loadUserResults();
 
         const isMintingFinished = batches.length == 0;
         if (isMintingFinished) {
@@ -340,12 +163,8 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             });
 
             // finish minting at all
-            const keys = await storage.getKeys();
-            for (let i = 0; i < keys.length; i++) {
-                if (keys[i].startsWith(`${mintingDayTimestamp}`)) {
-                    await storage.delete(keys[i]);
-                }
-            }
+            await storage.clearAll();
+
 
             console.log('return transactions', transactions.length);
 
@@ -355,7 +174,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             }
         }
 
-        let tweetsToVerify: Tweet[] = await getTweetsToVerify(mintingDayTimestamp, storage);
+        let tweetsToVerify: Tweet[] = await storage.getTweetsToVerify();
 
         let isNewTweetsToVerify = false;
         let errorBatches: any[] = [];
@@ -421,7 +240,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         );
 
         if (isNewTweetsToVerify) {
-            await saveTweetsToVerify(mintingDayTimestamp, storage, tweetsToVerify);
+            await storage.saveTweetsToVerify(tweetsToVerify);
         }
 
         let ongoingBatches = batches.filter((b) => b.nextCursor != '');
@@ -459,10 +278,10 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
         let finishedBatches = batches.filter((b) => b.nextCursor == '');
         for (const finishedBatch of finishedBatches) {
-            await clearBatchData(storage, mintingDayTimestamp, finishedBatch);
+            await storage.clearBatchData(finishedBatch);
         }
 
-        await saveUserResults(storage, mintingDayTimestamp, UserResults);
+        await storage.saveUserResults(UserResults);
         const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
 
         console.log('newBatches', batches);
@@ -517,8 +336,8 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     }
 });
 
-async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: number, userResults: Map<number, Result>, smartContract: Contract, tweetLookupURL: string, bearerToken: string): Promise<Web3FunctionResultCallData[]> {
-    const tweetsToVerify = await getTweetsToVerify(mintingDayTimestamp, storage)
+async function verifyMostLikedTweets(storage: Storage, mintingDayTimestamp: number, userResults: Map<number, Result>, smartContract: Contract, tweetLookupURL: string, bearerToken: string): Promise<Web3FunctionResultCallData[]> {
+    const tweetsToVerify = await storage.getTweetsToVerify();
     console.log('tweetsToVerify', tweetsToVerify.length);
 
     if (tweetsToVerify.length > 0) {
@@ -556,15 +375,6 @@ async function verifyMostLikedTweets(storage: w3fStorage, mintingDayTimestamp: n
 
     }
 }
-
-async function getTweetsToVerify(mintingDayTimestamp: number, storage: w3fStorage): Promise<Tweet[]> {
-    return JSON.parse(await storage.get(`${mintingDayTimestamp}_tweetsToVerify`) || '[]') as Tweet[];
-}
-
-async function saveTweetsToVerify(mintingDayTimestamp: number, storage: w3fStorage, tweets: Tweet[]) {
-    await storage.set(`${mintingDayTimestamp}_tweetsToVerify`, JSON.stringify(tweets));
-}
-
 
 function createUserQueryStringStatic(userIDs: string[], mintingDayTimestamp: number, queryPrefix: string): string {
     const untilDayStr = formatDay(mintingDayTimestamp, 1);
@@ -622,42 +432,6 @@ function createUserQueryString(userIDs: string[], mintingDayTimestamp: number, m
     return {queryString, recordInsertedCount};
 }
 
-interface w3fStorage {
-    get(key: string): Promise<string | undefined>;
-
-    set(key: string, value: string): Promise<void>;
-
-    delete(key: string): Promise<void>;
-
-    getKeys(): Promise<string[]>;
-
-    getSize(): Promise<number>;
-}
-
-interface Batch {
-    startIndex: number;
-    endIndex: number;
-    nextCursor: string;
-}
-
-// Define the result structure
-interface Result {
-    userIndex: number;
-    hashtagTweets: number;
-    cashtagTweets: number;
-    simpleTweets: number;
-    tweets: number;
-    likes: number;
-}
-
-const defaultResult: Result = {
-    userIndex: 0,
-    hashtagTweets: 0,
-    cashtagTweets: 0,
-    simpleTweets: 0,
-    tweets: 0,
-    likes: 0,
-};
 
 // Function to process tweets and create the result array
 function processTweets(userResults: Map<number, Result>, startIndex: number, endIndex: number, foundTweets: Tweet[]) {
@@ -716,73 +490,6 @@ function findKeywordWithPrefix(text: string): string {
 
     return foundWord;
 }
-
-
-// Define the schema of the tweet result
-interface Tweet {
-    userIndex: number;
-    userID: string;
-    username: string;
-    tweetID: string;
-    tweetContent: string;
-    likesCount: number;
-    userDescriptionText: string;
-}
-
-// Define the response structure from the Twitter API
-interface TwitterApiResponse {
-    data: {
-        search_by_raw_query: {
-            search_timeline: {
-                timeline: {
-                    instructions: Array<{
-                        entry?: {
-                            content: {
-                                cursor_type?: string,
-                                value?: string
-                            }
-                        },
-                        entries?: Array<{
-                            content: {
-                                cursor_type?: string,
-                                value?: string,
-
-                                content?: {
-                                    tweet_results?: {
-                                        rest_id: string; // This is the tweetID
-                                        result: {
-                                            rest_id: string; // This
-                                            core: {
-                                                user_results: {
-                                                    result: {
-                                                        rest_id: string; // This is the userID
-                                                        profile_bio: {
-                                                            description: string;
-                                                        };
-                                                        core: {
-                                                            name: string;
-                                                            screen_name: string;
-                                                        }
-                                                    };
-                                                };
-                                            };
-                                            legacy: {
-                                                full_text: string; // The tweet content
-                                                favorite_count: number; // The number of likes
-                                                created_at: string;
-                                            };
-                                        };
-                                    };
-                                };
-                            };
-                        }>;
-                    }>;
-                };
-            };
-        };
-    };
-}
-
 
 // Function to fetch tweets based on a query
 async function fetchTweets(searchURL: string, secretKey: string, queryString: string, cursor: string): Promise<{
@@ -933,31 +640,14 @@ function formatDay(timestamp: number, addDays: number): string {
     return formatter.format(date);
 }
 
-
-async function saveMaxEndIndex(mintingDayTimestamp: number, storage: w3fStorage, maxIndex: number) {
-    await storage.set(`${mintingDayTimestamp}_maxEndIndex`, maxIndex.toString());
-}
-
-async function getMaxEndIndex(mintingDayTimestamp: number, storage: w3fStorage): Promise<number> {
-    return Promise.resolve(parseInt(await storage.get(`${mintingDayTimestamp}_maxEndIndex`) || '0'));
-}
-
-async function setUsernamesForBatch(storage: w3fStorage, mintingDayTimestamp: number, startIndex: number, endIndex: number, userIDs: string[]) {
-    await storage.set(`${mintingDayTimestamp}_usernamesForBatch_${startIndex}:${endIndex}`, JSON.stringify(userIDs));
-}
-
-async function getUsernamesForBatch(storage: w3fStorage, mintingDayTimestamp: number, startIndex: number, endIndex: number): Promise<string[]> {
-    const res: string[] = JSON.parse(await storage.get(`${mintingDayTimestamp}_usernamesForBatch_${startIndex}:${endIndex}`) || '[]');
-    return Promise.resolve(res);
-}
-
-async function getNextUsernames(storage: w3fStorage, smartContract: Contract, convertToUsernamesURL: string, secretKey: string, mintingDayTimestamp: number, startIndex: number, minGap: number): Promise<string[]> {
-    let usernames = JSON.parse(await storage.get(`${mintingDayTimestamp}_nextUsernames`) || '[]')
+async function getNextUsernames(storage: Storage, smartContract: Contract, convertToUsernamesURL: string, secretKey: string, mintingDayTimestamp: number, startIndex: number, minGap: number): Promise<string[]> {
+    let usernames = await storage.getRemainingUsernames();
 
     let newRecordsStartIndex = 0;
     if (usernames.length < minGap) {
         // fetch new userIDs
-        let isFetchedLastUser = await storage.get(`${mintingDayTimestamp}_isFetchedLastUserIndex`) == 'true';
+
+        let isFetchedLastUser = await storage.getIsFetchedLastUserIndex();
         if (isFetchedLastUser) {
             return usernames;
         }
@@ -970,10 +660,10 @@ async function getNextUsernames(storage: w3fStorage, smartContract: Contract, co
         usernames = await convertUserIDsToUsernames(convertToUsernamesURL, secretKey, userIDs);
         console.log('usernames', usernames.length);
 
-        await saveRemainingUsernames(storage, mintingDayTimestamp, usernames)
+        await storage.saveRemainingUsernames(usernames);
 
         if (usernames.length < USER_ID_FETCH_LIMIT) {
-            await storage.set(`${mintingDayTimestamp}_isFetchedLastUserIndex`, 'true');
+            await storage.setIsFetchedLastUserIndex(true);
         }
     }
 
@@ -1029,27 +719,8 @@ async function convertUserIDsToUsernames(convertToUsernamesURL: string, secretKe
     return results;
 }
 
-async function saveRemainingUsernames(storage: w3fStorage, mintingDayTimestamp: number, userIDs: string[]) {
-    await storage.set(`${mintingDayTimestamp}_nextUsernames`, JSON.stringify(userIDs));
-}
-
 function fillUserIndexByUsernames(userIndexByUsernames: Map<string, number>, batchUsernames: string[], startIndex: number) {
     for (let i = 0; i < batchUsernames.length; i++) {
         userIndexByUsernames.set(batchUsernames[i], startIndex + i);
     }
-}
-
-
-async function loadUserResults(storage: w3fStorage, mintingDayTimestamp: number): Promise<Map<number, Result>> {
-    const array = JSON.parse(await storage.get(`${mintingDayTimestamp}_userResults`) || '[]');
-    return new Map<number, Result>(array)
-}
-
-async function saveUserResults(storage: w3fStorage, mintingDayTimestamp: number, userResults: Map<number, Result>) {
-    const array = Array.from(userResults.entries()); // Convert Map to array of key-value pairs
-    await storage.set(`${mintingDayTimestamp}_userResults`, JSON.stringify(array));
-}
-
-async function clearBatchData(storage: w3fStorage, mintingDayTimestamp: number, batch: Batch) {
-    await storage.delete(`${mintingDayTimestamp}_userIDForBatch_${batch.startIndex}:${batch.endIndex}`);
 }

@@ -8,7 +8,7 @@ contract GMCoinTestnet is GMCoin
     function addTwitterUsername(string calldata userID, address walletAddress) public {
         wallets[userID] = walletAddress;
         allTwitterUsers.push(userID);
-        emit TwitterConnected(userID, walletAddress);
+        emit TwitterVerificationResult(userID, walletAddress, true, "");
     }
 
     function getWalletByUserID(string calldata username) public view returns (address) {

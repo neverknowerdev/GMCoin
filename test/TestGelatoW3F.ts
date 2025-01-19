@@ -15,7 +15,7 @@ import {GMCoinExposed} from "../typechain";
 import {MockHttpServer} from './tools/mockServer';
 import {Provider, HDNodeWallet, EventLog} from "ethers";
 import {generateEventLogFile, writeEventLogFile} from './tools/helpers';
-import {time} from "@nomicfoundation/hardhat-network-helpers";
+import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers";
 import * as url from 'url';
 import fs from "fs";
 import {max} from "hardhat/internal/util/bigint";
@@ -41,6 +41,34 @@ describe("GelatoW3F", function () {
         // Reset mocks before each test
         mockServer.resetMocks();
     });
+
+    async function deployGMCoinWithProxy() {
+        // Contracts are deployed using the first signer/account by default
+        const [owner, feeAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2] = await hre.ethers.getSigners();
+
+        const coinsMultiplicator = 1_000_000;
+
+        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
+        const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
+            [owner.address, feeAddr.address, 45, 1_000_000, gelatoAddr.address, relayerServerAcc.address, coinsMultiplicator, 2],
+            {
+                kind: "uups",
+            }) as unknown as GMCoinExposed;
+
+        await coinContract.waitForDeployment();
+
+        const deployedAddress = await coinContract.getAddress();
+
+        console.log('contract deployed at ', deployedAddress);
+
+        // const tx = await owner.sendTransaction({
+        //   to: deployedAddress,
+        //   value: ethers.parseEther("1.0"),
+        // });
+        // await tx.wait();
+
+        return {coinContract, owner, feeAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2, coinsMultiplicator};
+    }
 
     it('should post to the mock server and validate the response', async function () {
         mockServer.mock('/api/test', 'GET', {message: 'Mocked GET response'}, 200, 'application/json');
@@ -229,7 +257,7 @@ describe("GelatoW3F", function () {
             const headerAccessCode = headers.authorization?.slice(7);
 
             expect(headerAccessCode).to.be.equal(accessKey);
-            
+
             return {
                 "data": {
                     "id": "1796129942104657921",
@@ -263,9 +291,9 @@ describe("GelatoW3F", function () {
         const verifierAddress = await instance.getAddress();
         console.log(`deployed GMCoin to ${verifierAddress}`);
 
-        await generateEventLogFile('web3-functions/twitter-verification-relayer', 'VerifyTwitterRequestedRelayer', [encryptedAccessKey, userID, "0x6794a56583329794f184d50862019ecf7b6d8ba6"]);
+        await generateEventLogFile('web3-functions/twitter-verification', 'VerifyTwitterRequested', [encryptedAccessKey, userID, "0x6794a56583329794f184d50862019ecf7b6d8ba6"]);
 
-        let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification-relayer");
+        let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification");
 
         let {result} = await oracleW3f.run("onRun", {
             userArgs: {
@@ -297,13 +325,13 @@ describe("GelatoW3F", function () {
           finish minting
         */
 
-        const [owner, feeAddr, otherAcc1, gelatoAddr] = await ethers.getSigners();
-
-        const coinsMultiplier = 100_000;
-        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const smartContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, coinsMultiplier, 7], {kind: "uups"}) as unknown as GMCoinExposed;
-
-        await smartContract.waitForDeployment();
+        const {
+            coinContract: smartContract,
+            owner,
+            feeAddr,
+            gelatoAddr,
+            coinsMultiplicator
+        } = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
@@ -314,15 +342,16 @@ describe("GelatoW3F", function () {
 
         let walletByUsername: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
-            const username = String(i + 1)
-            await gelatoContract.verifyTwitter(username as any, generatedWallets[i] as any);
-            walletByUsername.set(username, generatedWallets[i].address);
+            const userID = String(i + 1)
+            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any, false as any);
+            walletByUsername.set(userID, generatedWallets[i].address);
+
+            expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);
         }
 
         // let allUserTweetsByUser = loadUserTweets('./test/generatedUserTweets_err.json')
         let allUserTweetsByUsername = generateUserTweetsMap(userLimit);
 
-        // saveUserTweetsToFile(allUserTweetsByUser, path.join(__dirname, 'generatedUserTweet2.json'));
 
         let tweetMap: Map<string, Tweet> = new Map();
         for (let [userID, tweets] of allUserTweetsByUsername) {
@@ -359,14 +388,18 @@ describe("GelatoW3F", function () {
         });
 
         mockServer.mockFunc('/convert-ids-to-usernames/', 'GET', (url: url.UrlWithParsedQuery) => {
-            const idList = url.query["ids"] as string;
+            const idList = url.query["user_ids"] as string;
             const userIDs = idList.split(',');
 
-            let response = {data: []};
+            let response = {data: {users: []}};
             for (const userID of userIDs) {
-                response.data.push({
-                    id: userID,
-                    username: `user${userID}`
+                response.data.users.push({
+                    result: {
+                        core: {
+                            screen_name: `user${userID}`
+                        },
+                    },
+                    rest_id: userID,
                 })
             }
 
@@ -434,7 +467,7 @@ describe("GelatoW3F", function () {
             const points = userPoints.get(`user${uid}`) || 0;
             const balance = await smartContract.balanceOf(wallet as any);
 
-            expect(balance / BigInt(coinsMultiplier) / 10n ** 18n, `userIndex ${parseInt(uid) - 1}`).to.be.equal(BigInt(points));
+            expect(balance / BigInt(coinsMultiplicator) / 10n ** 18n, `userIndex ${parseInt(uid) - 1}`).to.be.equal(BigInt(points));
         }
         console.log('minting finished here!!');
 
@@ -448,13 +481,7 @@ describe("GelatoW3F", function () {
     });
 
     it('twitter-worker real-world', async function () {
-        const [owner, feeAddr, otherAcc1, gelatoAddr] = await ethers.getSigners();
-
-        const coinsMultiplier = 100_000;
-        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const smartContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, coinsMultiplier, 7], {kind: "uups"}) as unknown as GMCoinExposed;
-
-        await smartContract.waitForDeployment();
+        const {coinContract: smartContract, owner, feeAddr, gelatoAddr} = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
@@ -494,6 +521,8 @@ describe("GelatoW3F", function () {
             const userID = userIDs[i];
             await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any);
             walletByUsername.set(userID, generatedWallets[i].address);
+
+            expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);
         }
 
 
