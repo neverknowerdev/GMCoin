@@ -184,7 +184,7 @@ describe("GM", function () {
         const signature = await userAddr.signMessage(ethers.getBytes(rawMessage));
         const serverRelayContract = instance.connect(relayServerAddr);
 
-        await expect(serverRelayContract.requestTwitterVerificationFromRelayer(userID, signature, accessTokenEncrypted)).to.emit(serverRelayContract, 'VerifyTwitterRequestedRelayer').withArgs(accessTokenEncrypted, userID, userAddr.address);
+        await expect(serverRelayContract.requestTwitterVerificationFromRelayer(userID, signature, accessTokenEncrypted)).to.emit(serverRelayContract, 'VerifyTwitterRequested').withArgs(accessTokenEncrypted, userID, userAddr.address);
     })
 
 //   it('updating twitter data bulk', async() => {

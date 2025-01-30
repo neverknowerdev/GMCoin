@@ -6,13 +6,15 @@ import {
     Web3FunctionResult
 } from "@gelatonetwork/web3-functions-sdk";
 import {Contract, ContractRunner} from "ethers";
-import ky from "ky";
 import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
 import {ContractABI, Result, Tweet, Batch, TwitterApiResponse, defaultResult, w3fStorage} from "./consts";
+import {BatchManager} from "./batchManager";
+import {TwitterRequester, TwitterSecrets} from "./twitterRequester";
+import {SmartContractConnector} from "./smartContractConnector";
+import {createIPFSBatchUploader} from "./IPFSBatchUploader";
 
-const MAX_TWITTER_SEARCH_QUERY_LENGTH = 512;
-const USER_ID_FETCH_LIMIT = 1000;
 const KEYWORD = "gm";
+const verifyTweetBatchSize = 300;
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
     // Get event log from Web3FunctionEventContext
@@ -32,6 +34,16 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         throw new Error('Missing TWITTER_RAPIDAPI_KEY environment variable');
     }
 
+    const w3spaceDelegationKey = await context.secrets.get("W3SPACE_DELEGATION_KEY");
+    if (!w3spaceDelegationKey) {
+        throw new Error('Missing W3SPACE_DELEGATION_KEY environment variable');
+    }
+
+    const w3spaceDelegationProof = await context.secrets.get("W3SPACE_DELEGATION_PROOF");
+    if (!w3spaceDelegationProof) {
+        throw new Error('Missing W3SPACE_DELEGATION_PROOF environment variable');
+    }
+
     try {
         const provider = multiChainProvider.default() as ContractRunner;
         const smartContract = new Contract(
@@ -43,107 +55,216 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         const contract = new Interface(ContractABI);
         const event = contract.parseLog(log);
 
-        // BatchManager.receivedBatches(batches)
-        // BatchManager.newBatchesToProcess(): []Batch
-        // BatchManager.isFinishedProcessing(): boolean
 
-
-        const {mintingDayTimestamp, batches: initBatches} = event.args;
+        const {mintingDayTimestamp, batches: eventBatches} = event.args;
 
         let storage = new Storage(w3fStorage, mintingDayTimestamp);
 
-        let batches = initBatches.map(item => ({
+        let twitterRequester = new TwitterRequester({
+            OptimizedAPISecretKey: secretKey,
+            OfficialBearerToken: bearerToken,
+        }, {
+            convertToUsernamesURL: ConvertToUsernamesURL,
+            twitterLookupURL: userArgs.tweetLookupURL as string,
+            twitterSearchByQueryURL: SearchURL
+        });
+
+        let contractConnector = new SmartContractConnector(provider, smartContract, storage);
+
+        let batchManager = new BatchManager(storage, contractConnector, mintingDayTimestamp, CONCURRENCY_LIMIT);
+
+        const initBatches = eventBatches.map(item => ({
             startIndex: item.startIndex.toNumber(),
             endIndex: item.endIndex.toNumber(),
             nextCursor: item.nextCursor
         }));
 
+        let ipfsBatchUploader = await createIPFSBatchUploader(storage, mintingDayTimestamp, w3spaceDelegationKey, w3spaceDelegationProof, 1000);
+
         console.log(' ');
         console.log(' ');
         console.log(' ');
         console.log('onRun!', mintingDayTimestamp);
-        console.log('received batches', batches);
+        console.log('received batches', initBatches);
 
-        batches = batches.filter(batch => batch.nextCursor != '')
-            .sort((a, b) => Number(a.startIndex - b.startIndex));
+        let {
+            batchesToProcess,
+            queryList,
+            userIndexByUsername
+        } = await batchManager.generateNewBatches(twitterRequester, mintingDayTimestamp, initBatches);
 
-        // let userIndexByUserID: Map<string, number> = new Map();
-        let userIndexByUsername: Map<string, number> = new Map();
+        console.log('batchesToProcess', batchesToProcess.length, batchesToProcess);
 
-        let queryList: string[] = [];
-        for (let i = 0; i < batches.length; i++) {
-            const cur = batches[i];
-
-            // cache userIDs for batches
-            // fetch them here
-            const batchUsernames = await storage.getUsernamesForBatch(cur.startIndex, cur.endIndex);
-            const generatedQuery = createUserQueryStringStatic(batchUsernames, mintingDayTimestamp, KEYWORD);
-            queryList.push(generatedQuery);
-            fillUserIndexByUsernames(userIndexByUsername, batchUsernames, cur.startIndex);
-        }
-
-        if (batches.length < CONCURRENCY_LIMIT) {
-            console.log('generating new batches and queries..');
-            const newCursorsCount = CONCURRENCY_LIMIT - batches.length;
-
-            const maxEndIndex = await storage.getMaxEndIndex();
-            let startIndex = maxEndIndex;
-
-            let remainingUsernames = await getNextUsernames(storage, smartContract, ConvertToUsernamesURL, secretKey, mintingDayTimestamp, startIndex, newCursorsCount * 50);
-            for (let i = 0; i < newCursorsCount; i++) {
-                if (remainingUsernames.length == 0) {
-                    break;
-                }
-
-                const {
-                    queryString,
-                    recordInsertedCount
-                } = createUserQueryString(remainingUsernames, mintingDayTimestamp, MAX_TWITTER_SEARCH_QUERY_LENGTH, KEYWORD);
-
-                if (recordInsertedCount == 0) {
-                    break;
-                }
-
-                queryList.push(queryString);
-
-                const newBatch: Batch = {
-                    startIndex: startIndex,
-                    endIndex: startIndex + recordInsertedCount,
-                    nextCursor: ''
-                }
-
-                if (newBatch.endIndex > maxEndIndex) {
-                    await storage.saveMaxEndIndex(newBatch.endIndex);
-                }
-
-                startIndex += recordInsertedCount;
-
-                batches.push(newBatch);
-
-
-                const batchUsernames = remainingUsernames.slice(0, recordInsertedCount);
-
-                await fillUserIndexByUsernames(userIndexByUsername, batchUsernames, newBatch.startIndex);
-
-                await storage.setUsernamesForBatch(newBatch.startIndex, newBatch.endIndex, batchUsernames);
-
-                remainingUsernames = remainingUsernames.slice(recordInsertedCount);
-            }
-
-            await storage.saveRemainingUsernames(remainingUsernames);
-            console.log('newBatches', batches);
-        }
+        let transactions: any[] = [];
 
         let UserResults = await storage.loadUserResults();
 
-        const isMintingFinished = batches.length == 0;
-        if (isMintingFinished) {
+        let tweetsToVerify: Tweet[] = await storage.getTweetsToVerify();
+
+        if (batchesToProcess.length > 0) { // process batches
+            // Processing tweets here..
+            const {
+                tweets,
+                batches,
+                errorBatches
+            } = await twitterRequester.fetchTweetsInBatches(batchesToProcess, queryList, userIndexByUsername);
+
+            batchesToProcess = batches;
+
+            console.log('batchesToProcess', batchesToProcess.length);
+            console.log('tweets fetched', tweets.length);
+
+            let minLikesCount = tweetsToVerify.length > 0 ? tweetsToVerify[tweetsToVerify.length - 1].likesCount : 0;
+            let isNewTweetsToVerify = false;
+            for (let i = 0; i < tweets.length; i++) {
+                const foundKeyword = findKeywordWithPrefix(tweets[i].tweetContent)
+                if (foundKeyword == "") {
+                    continue;
+                }
+
+                // add to verifyTweets only tweets with more that 100 likes and more that the last element(with least likes) in tweetsToVerify array
+                if (tweets[i].likesCount > 100 && tweets[i].likesCount > minLikesCount) {
+                    tweetsToVerify.push(tweets[i]);
+                    isNewTweetsToVerify = true;
+
+                    tweetsToVerify.sort((a, b) => b.likesCount - a.likesCount);
+                    if (tweetsToVerify.length > verifyTweetBatchSize) {
+                        tweets.push(...tweetsToVerify.slice(verifyTweetBatchSize));
+                        tweetsToVerify = tweetsToVerify.slice(0, verifyTweetBatchSize);
+                    }
+                    minLikesCount = tweetsToVerify[tweetsToVerify.length - 1].likesCount;
+                    continue;
+                }
+
+                let result = UserResults.get(tweets[i].userIndex) || {...defaultResult};
+                result.userIndex = tweets[i].userIndex;
+                const newResult = calculateTweetByKeyword(result, tweets[i].likesCount, foundKeyword);
+                console.log(`newResult for userIndex ${tweets[i].userIndex} userID ${tweets[i].username}`);
+                UserResults.set(tweets[i].userIndex, newResult);
+
+                ipfsBatchUploader.add(tweets[i], 0);
+            }
+
+            if (isNewTweetsToVerify) {
+                await storage.saveTweetsToVerify(tweetsToVerify);
+            }
+
+            let results: Result[] = [];
+
+            let userIndexesUnderVerification: Map<number, boolean> = new Map();
+            for (const tweet of tweetsToVerify) {
+                userIndexesUnderVerification.set(tweet.userIndex, true);
+            }
+
+            let allUserIndexes = Array.from(UserResults.keys()).sort((a, b) => a - b);
+
+            const ongoingBatches = batchesToProcess.filter((b) => b.nextCursor != '');
+            for (const userIndex of allUserIndexes) {
+                if (userIndexesUnderVerification.get(userIndex) === true) {
+                    continue;
+                }
+
+                let isOngoingBatch = false;
+                for (const batch of ongoingBatches) {
+                    if (batch.startIndex < userIndex && userIndex < batch.endIndex) {
+                        isOngoingBatch = true;
+                        break;
+                    }
+                }
+
+                if (isOngoingBatch) {
+                    continue;
+                }
+
+                const res = UserResults.get(userIndex) as Result;
+                if (res.tweets < 1000) {
+                    results.push(res);
+                }
+                UserResults.delete(userIndex);
+            }
+
+            const finishedBatches = batchesToProcess.filter((b) => b.nextCursor == '');
+            for (const finishedBatch of finishedBatches) {
+                await storage.clearBatchData(finishedBatch);
+            }
+
+            await storage.saveUserResults(UserResults);
+            const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
+
+            console.log('waiting for ipfsBatchUploader..');
+            await ipfsBatchUploader.wait();
+            await ipfsBatchUploader.saveToStorage();
+
+            console.log('newBatches', batchesToProcess);
+            console.log('sortedResults', sortedResults.length);
+
+            if (sortedResults.length > 0 || batchesToProcess.length > 0) {
+                transactions.push({
+                    to: userArgs.contractAddress as string,
+                    data: smartContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
+                        sortedResults,
+                        BigInt(mintingDayTimestamp),
+                        batchesToProcess,
+                    ]),
+                })
+            }
+
+            if (errorBatches.length > 0) {
+                transactions.push({
+                    to: userArgs.contractAddress as string,
+                    data: smartContract.interface.encodeFunctionData("logErrorBatches", [
+                        BigInt(mintingDayTimestamp),
+                        errorBatches,
+                    ]),
+                })
+            }
+
+            console.log('sending txs..', transactions.length);
+            if (transactions.length > 0) {
+                return {
+                    canExec: true,
+                    callData: transactions,
+                };
+            }
+
+            return {
+                canExec: false,
+                message: 'unexpected behavior',
+            };
+        }
+        // minting finished
+        if (batchesToProcess.length == 0) {
             console.log('mintingFinished');
+
             let transactions: Web3FunctionResultCallData[] = [];
             try {
-                const verifyMostLikedTweetsTransactions = await verifyMostLikedTweets(storage, mintingDayTimestamp, UserResults, smartContract, userArgs.tweetLookupURL as string, bearerToken);
-                if (verifyMostLikedTweetsTransactions && verifyMostLikedTweetsTransactions.length > 0) {
-                    transactions.push(...verifyMostLikedTweetsTransactions);
+                const verifiedTweets = await twitterRequester.fetchTweetsByIDs(tweetsToVerify);
+                console.log('verifiedTweets', verifiedTweets.length);
+                console.log('userResults before', UserResults);
+                for (let i = 0; i < verifiedTweets.length; i++) {
+                    const result = UserResults.get(verifiedTweets[i].userIndex) || {...defaultResult};
+
+                    let res = calculateTweetByKeyword(result, verifiedTweets[i].likesCount, findKeywordWithPrefix(verifiedTweets[i].tweetContent));
+                    res.userIndex = verifiedTweets[i].userIndex;
+                    UserResults.set(verifiedTweets[i].userIndex, res);
+
+                    ipfsBatchUploader.add(verifiedTweets[i], 0);
+                }
+                console.log('userResults after', UserResults);
+
+                const results = [...UserResults.values()].sort((a, b) => Number(a.userIndex - b.userIndex));
+
+                if (results && results.length > 0) {
+                    transactions.push(
+                        {
+                            to: await smartContract.getAddress() as string,
+                            data: smartContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
+                                results,
+                                BigInt(mintingDayTimestamp),
+                                [],
+                            ]),
+                        },
+                    )
                 }
             } catch (error) {
                 // Handle errors for this batch
@@ -155,10 +276,13 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 }
             }
 
+            const finalCID = await ipfsBatchUploader.uploadFinalFileToIPFS(10);
+
             transactions.push({
                 to: await smartContract.getAddress() as string,
                 data: smartContract.interface.encodeFunctionData("finishMinting", [
-                    BigInt(mintingDayTimestamp)
+                    BigInt(mintingDayTimestamp),
+                    finalCID
                 ]),
             });
 
@@ -174,154 +298,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             }
         }
 
-        let tweetsToVerify: Tweet[] = await storage.getTweetsToVerify();
-
-        let isNewTweetsToVerify = false;
-        let errorBatches: any[] = [];
-        await Promise.all(
-            batches.map(async (cur, index) => {
-                    try {
-                        let {
-                            tweets,
-                            nextCursor
-                        } = await fetchTweets(SearchURL, secretKey, queryList[index], cur.nextCursor);
-
-                        console.log('tweets', tweets.length, 'cursor', nextCursor);
-
-                        batches[index].nextCursor = '';
-                        if (tweets.length > 0 && nextCursor != '') {
-                            batches[index].nextCursor = nextCursor
-                        }
-
-                        // we need to verify tweets with >100 likes through official Twitter API
-                        let newi = 0;
-                        let minLikesCount = tweetsToVerify.length > 0 ? tweetsToVerify[tweetsToVerify.length - 1].likesCount : 0;
-                        for (let i = 0; i < tweets.length; i++) {
-                            const foundKeyword = findKeywordWithPrefix(tweets[i].tweetContent)
-                            if (foundKeyword == "") {
-                                continue;
-                            }
-
-                            const userIndex = tweets[i].userIndex || userIndexByUsername.get(tweets[i].username);
-                            if (userIndex === undefined) {
-                                console.error("not found username!!", userIndex, tweets[i].username);
-                                continue;
-                            }
-
-                            tweets[i].userIndex = userIndex;
-
-                            if (tweets[i].likesCount > 100 && tweets[i].likesCount > minLikesCount) {
-                                tweetsToVerify.push(tweets[i]);
-                                isNewTweetsToVerify = true;
-
-                                tweetsToVerify.sort((a, b) => b.likesCount - a.likesCount);
-                                if (tweetsToVerify.length > 300) {
-                                    tweets.push(...tweetsToVerify.slice(300));
-                                    tweetsToVerify = tweetsToVerify.slice(0, 300);
-                                }
-                                minLikesCount = tweetsToVerify[tweetsToVerify.length - 1].likesCount;
-                                continue;
-                            }
-
-                            tweets[newi] = tweets[i];
-                            newi++;
-                        }
-
-                        tweets = tweets.slice(0, newi);
-
-                        processTweets(UserResults, cur.startIndex, cur.endIndex, tweets);
-                    } catch (error) {
-                        errorBatches.push(cur);
-                        console.error('error fetching and processing tweets: ', error);
-                        return null;
-                    }
-                }
-            )
-        );
-
-        if (isNewTweetsToVerify) {
-            await storage.saveTweetsToVerify(tweetsToVerify);
-        }
-
-        let ongoingBatches = batches.filter((b) => b.nextCursor != '');
-        let results: Result[] = [];
-
-        let userIndexesUnderVerification: Map<number, boolean> = new Map();
-        for (const tweet of tweetsToVerify) {
-            userIndexesUnderVerification.set(tweet.userIndex, true);
-        }
-
-        let allUserIndexes = Array.from(UserResults.keys()).sort((a, b) => a - b);
-        for (const userIndex of allUserIndexes) {
-            if (userIndexesUnderVerification.get(userIndex) === true) {
-                continue;
-            }
-
-            let isOngoingBatch = false;
-            for (const batch of ongoingBatches) {
-                if (batch.startIndex < userIndex && userIndex < batch.endIndex) {
-                    isOngoingBatch = true;
-                    break;
-                }
-            }
-
-            if (isOngoingBatch) {
-                continue;
-            }
-
-            const res = UserResults.get(userIndex) as Result;
-            if (res.tweets < 1000) {
-                results.push(res);
-            }
-            UserResults.delete(userIndex);
-        }
-
-        let finishedBatches = batches.filter((b) => b.nextCursor == '');
-        for (const finishedBatch of finishedBatches) {
-            await storage.clearBatchData(finishedBatch);
-        }
-
-        await storage.saveUserResults(UserResults);
-        const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
-
-        console.log('newBatches', batches);
-        console.log('sortedResults', sortedResults);
-
-        let transactions: any[] = [];
-        if (sortedResults.length > 0 || batches.length > 0) {
-            transactions.push({
-                to: userArgs.contractAddress as string,
-                data: smartContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
-                    sortedResults,
-                    BigInt(mintingDayTimestamp),
-                    batches,
-                ]),
-            })
-        }
-
-        if (errorBatches.length > 0) {
-            transactions.push({
-                to: userArgs.contractAddress as string,
-                data: smartContract.interface.encodeFunctionData("logErrorBatches", [
-                    BigInt(mintingDayTimestamp),
-                    errorBatches,
-                ]),
-            })
-        }
-
-        console.log('sending txs..', transactions.length);
-        if (transactions.length > 0) {
-            return {
-                canExec: true,
-                callData: transactions,
-            };
-        }
-
-        return {
-            canExec: false,
-            message: 'unexpected behavior',
-        };
-
     } catch (error: any) {
         if (error.code === 'CALL_EXCEPTION' && error.reason) {
             console.log(error);
@@ -336,127 +312,17 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     }
 });
 
-async function verifyMostLikedTweets(storage: Storage, mintingDayTimestamp: number, userResults: Map<number, Result>, smartContract: Contract, tweetLookupURL: string, bearerToken: string): Promise<Web3FunctionResultCallData[]> {
-    const tweetsToVerify = await storage.getTweetsToVerify();
-    console.log('tweetsToVerify', tweetsToVerify.length);
-
-    if (tweetsToVerify.length > 0) {
-        const verifiedTweets = await verifyTweetsInBatches(tweetLookupURL, tweetsToVerify, bearerToken);
-
-        for (let i = 0; i < verifiedTweets.length; i++) {
-            const result = userResults.get(verifiedTweets[i].userIndex) || {...defaultResult};
-            result.userIndex = verifiedTweets[i].userIndex;
-
-            let res = calculateTweet(result, verifiedTweets[i].tweetContent, verifiedTweets[i].likesCount);
-            userResults.set(verifiedTweets[i].userIndex, res);
-        }
-
-        let results: Result[] = [];
-        userResults.forEach((res: Result, userIndex: number) => {
-            res.userIndex = userIndex;
-            results.push(res);
-        })
-
-
-        const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
-
-        if (sortedResults) {
-            return [
-                {
-                    to: await smartContract.getAddress() as string,
-                    data: smartContract.interface.encodeFunctionData("mintCoinsForTwitterUsers", [
-                        sortedResults,
-                        BigInt(mintingDayTimestamp),
-                        [],
-                    ]),
-                },
-            ]
-        }
-
-    }
-}
-
-function createUserQueryStringStatic(userIDs: string[], mintingDayTimestamp: number, queryPrefix: string): string {
-    const untilDayStr = formatDay(mintingDayTimestamp, 1);
-    const sinceDayStr = formatDay(mintingDayTimestamp, 0);
-    let queryString = `${queryPrefix} since:${sinceDayStr} until:${untilDayStr} AND (`;
-    for (let i = 0; i < userIDs.length; i++) {
-        if (i > 0) {
-            queryString += ` OR `;
-        }
-        queryString += `from:${userIDs[i]}`;
-    }
-
-    queryString += `)`;
-
-    return queryString;
-}
-
-
-/**
- * Function to create a query string from an array of user IDs.
- * @param {string[]} userIDs - Array of user IDs.
- * @param {number} maxLength - Maximum allowed length for the query string (e.g., 512 characters).
- * @param {string} queryPrefix - The initial part of the query string.
- * @returns {string} - The formatted string in the format `(queryPrefix) AND (from:[userID] OR from:[userID])`.
- */
-function createUserQueryString(userIDs: string[], mintingDayTimestamp: number, maxLength: number, queryPrefix: string): {
-    queryString: string;
-    recordInsertedCount: number
-} {
-    const untilDayStr = formatDay(mintingDayTimestamp, 1);
-    const sinceDayStr = formatDay(mintingDayTimestamp, 0);
-    let queryString = `${queryPrefix} since:${sinceDayStr} until:${untilDayStr} AND (`;
-    let recordInsertedCount = 0;
-
-    for (let i = 0; i < userIDs.length; i++) {
-        const userID = userIDs[i];
-        const nextPart = `from:${userID}`;
-
-        if (queryString.length + nextPart.length + 1 + 4 > maxLength) {
-            break;
-        }
-
-        if (i > 0) {
-            queryString += ` OR `;
-        }
-
-        queryString += nextPart;
-        recordInsertedCount++;
-
-    }
-
-    queryString += ')';
-
-    // Close the final query string with parentheses
-    return {queryString, recordInsertedCount};
-}
-
-
-// Function to process tweets and create the result array
-function processTweets(userResults: Map<number, Result>, startIndex: number, endIndex: number, foundTweets: Tweet[]) {
-    // let resultsByUserIndex: Map<number, Result> = new Map();
-
-    // Iterate through foundTweets and update the corresponding user's result
-    for (const tweet of foundTweets) {
-        let result = userResults.get(tweet.userIndex) || {...defaultResult};
-        result.userIndex = tweet.userIndex;
-        const newResult = calculateTweet(result, tweet.tweetContent, tweet.likesCount);
-        userResults.set(tweet.userIndex, newResult);
-    }
-}
-
-function calculateTweet(result: Result, tweetContent: string, likesCount: number): Result {
-    const foundKeyword = findKeywordWithPrefix(tweetContent);
-    if (foundKeyword == "") {
+function calculateTweetByKeyword(result: Result, likesCount: number, keyword: string): Result {
+    if (keyword == "") {
         return result;
     }
 
-    if (foundKeyword == "$" + KEYWORD) {
+    // limit 10 hashtag/cashtag per day per user
+    if (keyword == "$" + KEYWORD && result.cashtagTweets < 10) {
         result.cashtagTweets++;
-    } else if (foundKeyword == "#" + KEYWORD) {
+    } else if (keyword == "#" + KEYWORD && result.hashtagTweets < 10) {
         result.hashtagTweets++;
-    } else if (foundKeyword == KEYWORD) {
+    } else if (keyword == KEYWORD) {
         result.simpleTweets++;
     }
 
@@ -489,238 +355,4 @@ function findKeywordWithPrefix(text: string): string {
     }
 
     return foundWord;
-}
-
-// Function to fetch tweets based on a query
-async function fetchTweets(searchURL: string, secretKey: string, queryString: string, cursor: string): Promise<{
-    tweets: Tweet[];
-    nextCursor?: string
-}> {
-    try {
-        // Perform the GET request using ky
-        console.log('query', queryString);
-        console.log('cursor', cursor);
-        const response = await ky.get(searchURL, {
-            timeout: 3000,
-            headers: {
-                'X-Rapidapi-Key': secretKey,
-                'X-Rapidapi-Host': 'twitter283.p.rapidapi.com',
-            },
-            searchParams: {
-                q: queryString,
-                type: 'Latest',
-                count: '20',
-                cursor: cursor,
-                safe_search: 'false',
-            }
-        }).json<TwitterApiResponse>();
-
-        // console.log('fetchTweets queryString', queryString);
-        // console.log('fetchTweets response', JSON.stringify(response));
-
-
-        const tweets: Tweet[] = [];
-
-        let nextCursor = '';
-        // Navigate the response and extract the required tweet information
-        const instructions = response.data.search_by_raw_query.search_timeline.timeline.instructions;
-        for (const instruction of instructions) {
-            if (instruction.entry?.content.cursor_type == "Bottom") {
-                nextCursor = instruction.entry?.content.value as string;
-                continue;
-            }
-            if (!instruction.entries) {
-                continue;
-            }
-
-            for (const entry of instruction.entries) {
-                if (entry.content?.cursor_type == "Bottom") {
-                    nextCursor = entry.content?.value as string;
-                    continue;
-                }
-
-                if (entry.content.content?.tweet_results) {
-                    const tweetData = entry.content.content.tweet_results?.result;
-                    if (tweetData) {
-                        const user = tweetData.core.user_results.result;
-                        const legacy = tweetData.legacy;
-
-                        const tweet: Tweet = {
-                            tweetID: tweetData.rest_id,  // Extract tweetID from rest_id
-                            userID: user.rest_id, // Extract userID from user_results
-                            username: user.core.screen_name,
-                            tweetContent: legacy.full_text,  // Extract tweet content
-                            likesCount: legacy.favorite_count, // Extract likes count
-                            userDescriptionText: user.profile_bio?.description || '', // Extract user bio
-                            userIndex: 0,
-                        };
-                        tweets.push(tweet);
-                    }
-                }
-            }
-        }
-
-        return {tweets, nextCursor};
-    } catch (error) {
-        console.error('Error fetching tweets:', error);
-        throw error;
-    }
-}
-
-async function verifyTweetsInBatches(
-    twitterURL: string,
-    tweets: Tweet[],
-    bearerToken: string
-): Promise<Tweet[]> {
-    const batchSize = 100;
-    const batches: Tweet[][] = [];
-    const results: Tweet[] = [];
-
-    let tweetByID = new Map<string, Tweet>;
-    for (const tweet of tweets) {
-        tweetByID.set(tweet.tweetID, tweet);
-    }
-
-    // Step 1: Group tweets into batches of 100
-    for (let i = 0; i < tweets.length; i += batchSize) {
-        batches.push(tweets.slice(i, i + batchSize));
-    }
-
-
-    // Step 2: Prepare and send parallel requests
-    const requests = batches.map(async (batch) => {
-        const tweetIDs = batch.map((tweet) => tweet.tweetID).join(',');
-        const url = `${twitterURL}?ids=${tweetIDs}&tweet.fields=public_metrics&expansions=author_id&user.fields=description`;
-
-
-        const response = await ky
-            .get(url, {
-                headers: {
-                    Authorization: `Bearer ${bearerToken}`,
-                },
-            })
-            .json<any>();
-
-
-        // Step 3: Process the response and map to Tweet interface
-        if (response.data) {
-            response.data.forEach((tweet: any) => {
-                let tweetToVerify: Tweet = tweetByID.get(tweet.id);
-                if (!tweetToVerify) {
-                    return;
-                }
-
-                if (Math.abs(tweetToVerify.likesCount - tweet.public_metrics.like_count) > 10) {
-                    console.warn('tweetToVerify likesCount diff > 10', JSON.stringify(tweetToVerify));
-                }
-
-                tweetToVerify.likesCount = tweet.public_metrics.like_count;
-                tweetToVerify.tweetContent = tweet.text;
-
-                results.push(tweetToVerify);
-            });
-        }
-    });
-
-    // Step 4: Execute all requests in parallel
-    await Promise.all(requests);
-
-    return results;
-}
-
-function formatDay(timestamp: number, addDays: number): string {
-    // Create a Date object from the timestamp
-    const date = new Date(timestamp * 1000);
-    if (addDays != 0) {
-        date.setDate(date.getDate() + addDays);
-    }
-
-    // Use Intl.DateTimeFormat to format the date as "YYYY-MM-DD"
-    const formatter = new Intl.DateTimeFormat('en-CA'); // 'en-CA' ensures "YYYY-MM-DD" format
-    return formatter.format(date);
-}
-
-async function getNextUsernames(storage: Storage, smartContract: Contract, convertToUsernamesURL: string, secretKey: string, mintingDayTimestamp: number, startIndex: number, minGap: number): Promise<string[]> {
-    let usernames = await storage.getRemainingUsernames();
-
-    let newRecordsStartIndex = 0;
-    if (usernames.length < minGap) {
-        // fetch new userIDs
-
-        let isFetchedLastUser = await storage.getIsFetchedLastUserIndex();
-        if (isFetchedLastUser) {
-            return usernames;
-        }
-
-        console.log('fetching new UserIDs from smart-contract..', startIndex, USER_ID_FETCH_LIMIT);
-
-        const userIDs = await smartContract.getTwitterUsers(startIndex, USER_ID_FETCH_LIMIT);
-
-        console.log('userIDs', userIDs.length);
-        usernames = await convertUserIDsToUsernames(convertToUsernamesURL, secretKey, userIDs);
-        console.log('usernames', usernames.length);
-
-        await storage.saveRemainingUsernames(usernames);
-
-        if (usernames.length < USER_ID_FETCH_LIMIT) {
-            await storage.setIsFetchedLastUserIndex(true);
-        }
-    }
-
-    return usernames;
-}
-
-async function convertUserIDsToUsernames(convertToUsernamesURL: string, secretKey: string, userIDs: string[]): Promise<string[]> {
-    let batches: string[][] = [];
-
-    const batchSize = 100;
-    for (let i = 0; i < userIDs.length; i += batchSize) {
-        batches.push(userIDs.slice(i, i + batchSize));
-    }
-
-    let userIDtoUsername: Map<string, string> = new Map();
-    const requests = batches.map(async (batch) => {
-        const url = `${convertToUsernamesURL}?user_ids=${batch.join(',')}`;
-
-        try {
-            const response = await ky
-                .get(url, {
-                    headers: {
-                        'X-Rapidapi-Key': secretKey,
-                        'X-Rapidapi-Host': 'twitter283.p.rapidapi.com',
-                    },
-                })
-                .json<any>();
-
-            response.data.users.forEach((user: any) => {
-                if (user.result?.core?.screen_name) {
-                    userIDtoUsername.set(user.rest_id, user.result.core.screen_name);
-                }
-            })
-
-        } catch (error) {
-            // Handle errors for this batch
-            console.error('Error fetching batch:', error);
-        }
-    });
-
-    await Promise.all(requests);
-
-    let results: string[] = [];
-    for (const userID of userIDs) {
-        const username = userIDtoUsername.get(userID);
-        if (!username) {
-            continue;
-        }
-
-        results.push(username);
-    }
-
-    return results;
-}
-
-function fillUserIndexByUsernames(userIndexByUsernames: Map<string, number>, batchUsernames: string[], startIndex: number) {
-    for (let i = 0; i < batchUsernames.length; i++) {
-        userIndexByUsernames.set(batchUsernames[i], startIndex + i);
-    }
 }

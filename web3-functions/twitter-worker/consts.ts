@@ -172,6 +172,11 @@ export const ContractABI = [
                 "internalType": "uint32",
                 "name": "mintingDayTimestamp",
                 "type": "uint32"
+            },
+            {
+                "internalType": "string",
+                "name": "finalCID",
+                "type": "string"
             }
         ],
         "name": "finishMinting",
@@ -182,6 +187,9 @@ export const ContractABI = [
 
 ];
 
+// tweetID, userID, tweetContent, likesCount, points
+export type TweetTuple = [tweetID: number, userID: number, tweetContent: string, likesCount: number, points: number];
+
 export interface Batch {
     startIndex: number;
     endIndex: number;
@@ -190,9 +198,9 @@ export interface Batch {
 
 export interface Tweet {
     userIndex: number;
-    userID: string;
+    userID: number;
     username: string;
-    tweetID: string;
+    tweetID: number;
     tweetContent: string;
     likesCount: number;
     userDescriptionText: string;

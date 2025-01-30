@@ -1,4 +1,4 @@
-import {Batch, Result, Tweet, w3fStorage} from "./consts";
+import {Batch, Result, Tweet, TweetTuple, w3fStorage} from "./consts";
 
 export class Storage {
     private storage: w3fStorage;
@@ -72,6 +72,22 @@ export class Storage {
 
     async saveTweetsToVerify(tweets: Tweet[]) {
         await this.storage.set(`${this.mintingDayTimestamp}_tweetsToVerify`, JSON.stringify(tweets));
+    }
+
+    async saveIPFSTweets(tweets: TweetTuple[]) {
+        await this.storage.set(`${this.mintingDayTimestamp}_tweetsToIPFS`, JSON.stringify(tweets));
+    }
+
+    async getIPFSTweets(): Promise<TweetTuple[]> {
+        return JSON.parse(await this.storage.get(`${this.mintingDayTimestamp}_tweetsToIPDS`) || '[]')
+    }
+
+    async saveIPFSCids(cids: string[]) {
+        await this.storage.set(`${this.mintingDayTimestamp}_cids`, JSON.stringify(cids));
+    }
+
+    async getIPFSCids(): Promise<string[]> {
+        return JSON.parse(await this.storage.get(`${this.mintingDayTimestamp}_cids`) || '[]')
     }
 
 }

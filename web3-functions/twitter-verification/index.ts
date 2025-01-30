@@ -15,7 +15,7 @@ const TWITTER_ME_URL = '/2/users/me';
 
 const VerifierContractABI = [
     "event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet)",
-    "function verifyTwitter(string calldata userID, address wallet)",
+    "function verifyTwitter(string calldata userID, address wallet, bool isSubscribed) public",
     "function twitterVerificationError(address wallet, string userID, string calldata errorMsg)"
 ];
 
@@ -65,12 +65,16 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         const twitterUser = userResponse as any;
         const twitterUserID = twitterUser.data.id;
 
+        console.log(`twitterUser ${twitterUser} twitterUserID ${twitterUserID}`);
+
         if (!twitterUserID) {
             return await returnError(verifierContract, userID, wallet, `Failed to retrieve user from Twitter`);
         }
         if (twitterUserID != userID) {
             return await returnError(verifierContract, userID, wallet, 'userID returned by Twitter is different');
         }
+
+        const isSubscribed = false;
 
 
         return {
@@ -81,6 +85,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                     data: verifierContract.interface.encodeFunctionData("verifyTwitter", [
                         userID,
                         wallet,
+                        isSubscribed
                     ]),
                 },
             ],
@@ -88,7 +93,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     } catch (error: any) {
         if (error instanceof HTTPError) {
             // Attempt to read the error response as JSON
-            const errorBody = await error.response.json().catch(() => error.response.text());
+            const errorBody = await error.response.json();
 
             return await returnError(verifierContract, userID, wallet, `Failed to retrieve access token: ${JSON.stringify(errorBody)}`);
         } else {
@@ -102,8 +107,18 @@ function decryptData(encryptedData: string, decryptionKey: string): string {
     const data = hexToBytes(encryptedData.slice(48));
     const aes = gcm(hexToBytes(decryptionKey), nonce);
     const data_ = aes.decrypt(data);
-    return bytesToHex(data_);
+    return hexToUtf8(bytesToHex(data_));
 }
+
+const hexToUtf8 = (hex: string): string => {
+    // Convert hex string to a Uint8Array (byte array)
+    const bytes = new Uint8Array(
+        hex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16))
+    );
+
+    // Decode the byte array into a UTF-8 string
+    return new TextDecoder("utf-8").decode(bytes);
+};
 
 async function returnError(contract: Contract, userID: string, userWallet: string, errorMsg: string): Promise<Web3FunctionResult> {
     const contractAddress = await contract.getAddress()

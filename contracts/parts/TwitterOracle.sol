@@ -161,7 +161,7 @@ contract GMTwitterOracle is Initializable {
     event twitterMintingProcessed(uint32 mintingDayTimestamp, Batch[] batches);
     event twitterMintingErrored(uint32 mintingDayTimestamp, Batch[] errorBatches);
     event MintingStarted(uint32 mintingDay);
-    event MintingFinished(uint32 mintingDayTimestamp);
+    event MintingFinished(uint32 mintingDayTimestamp, string finalCID);
     event changedComplexity(uint256 newMultiplicator);
 
     uint32 internal lastMintedDay;
@@ -210,7 +210,7 @@ contract GMTwitterOracle is Initializable {
         emit twitterMintingProcessed(dayToMint, emptyArray);
     }
 
-    function finishMinting(uint32 mintingDayTimestamp) public onlyGelato {
+    function finishMinting(uint32 mintingDayTimestamp, string calldata finalCID) public onlyGelato {
         require(mintingDayTimestamp == mintingInProgressForDay, "wrong mintingDay");
         require(lastMintedDay < mintingDayTimestamp, "wrong mintingDayTimestamp");
 
@@ -219,7 +219,7 @@ contract GMTwitterOracle is Initializable {
 
         mintingInProgressForDay = 0;
 
-        emit MintingFinished(mintingDayTimestamp);
+        emit MintingFinished(mintingDayTimestamp, finalCID);
     }
 
     // to be defined in main contract
