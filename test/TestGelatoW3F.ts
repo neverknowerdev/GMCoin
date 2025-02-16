@@ -5,6 +5,8 @@ import {gcm} from '@noble/ciphers/aes';
 import {utf8ToBytes, bytesToUtf8, bytesToHex, hexToBytes} from "@noble/ciphers/utils";
 import {randomBytes} from '@noble/ciphers/webcrypto';
 
+import dotenv from 'dotenv';
+
 const {ethers, w3f, upgrades} = hre;
 import {
     Web3FunctionUserArgs,
@@ -14,14 +16,15 @@ import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk/hardhat-plu
 import {GMCoinExposed} from "../typechain";
 import {MockHttpServer} from './tools/mockServer';
 import {Provider, HDNodeWallet, EventLog} from "ethers";
-import {generateEventLogFile, writeEventLogFile} from './tools/helpers';
+import {generateEventLog, writeEventLogFile} from './tools/helpers';
 import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers";
+import {FakeContract, smock} from '@neverknowerdev/smock';
 import * as url from 'url';
 import fs from "fs";
-import {max} from "hardhat/internal/util/bigint";
-import path from "path";
 import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
 import {IncomingHttpHeaders} from "http";
+import {blake2b} from "blakejs";
+import axios from "axios";
 
 describe("GelatoW3F", function () {
     let mockServer: MockHttpServer;
@@ -46,11 +49,38 @@ describe("GelatoW3F", function () {
         // Contracts are deployed using the first signer/account by default
         const [owner, feeAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2] = await hre.ethers.getSigners();
 
+
+        let gelatoIAutomate = await smock.fake('IAutomate', {
+            address: "0x2A6C106ae13B558BB9E2Ec64Bd2f1f7BEFF3A5E0",
+        });
+        gelatoIAutomate.gelato.returns('0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30001');
+        gelatoIAutomate.taskModuleAddresses.returns('0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30002');
+
+        let gelatoIGelato = await smock.fake('IGelato', {
+            address: "0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30001",
+        });
+        gelatoIGelato.feeCollector.returns();
+
+        let gelatoIProxyModule = await smock.fake('IProxyModule', {
+            address: "0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30002",
+        });
+        gelatoIProxyModule.opsProxyFactory.returns('0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30003');
+
+        let gelatoIOpsProxyFactory = await smock.fake('IOpsProxyFactory', {
+            address: "0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30003",
+        })
+
+        gelatoIOpsProxyFactory.getProxyOf.returns([gelatoAddr.address, true]);
+
+
         const coinsMultiplicator = 1_000_000;
+
+        // const gelatoAutomateMockContract = await ethers.getContractFactory("GelatoAutomateTaskCreatorMock");
+        // const gelatoAutomateMockDeployed = await gelatoAutomateMockContract.deploy();
 
         const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
         const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
-            [owner.address, feeAddr.address, 45, 1_000_000, gelatoAddr.address, relayerServerAcc.address, coinsMultiplicator, 2],
+            [owner.address, feeAddr.address, 45, 1_000_000, relayerServerAcc.address, coinsMultiplicator, 2],
             {
                 kind: "uups",
             }) as unknown as GMCoinExposed;
@@ -104,19 +134,25 @@ describe("GelatoW3F", function () {
     it("twitter-verification error /oauth2/token", async function () {
         const {coinContract: smartContract, owner, feeAddr, gelatoAddr} = await loadFixture(deployGMCoinWithProxy);
 
-        mockServer.mock('/2/oauth2/token', 'POST',
+        const accessToken = "authCodeTest";
+        const userID = "1796129942104657002";
+        const walletAddress = "0x6794a56583329794f184d50862019ecf7b6d8ba6";
+
+        mockServer.mock('/2/users/me', 'GET',
             {
                 "error": "invalid_request",
-                "error_description": "Value passed for the authorization code was invalid."
+                "error_description": "Something went wrong."
             },
             400
         );
 
-
         const verifierAddress = await smartContract.getAddress();
         console.log(`deployed GMCoin to ${verifierAddress}`);
 
-        await generateEventLogFile('web3-functions/twitter-verification', 'VerifyTwitterRequested', ['authCodeTest', 'verifierCode', '0x6794a56583329794f184d50862019ecf7b6d8ba6']);
+        const secretKey = '1d301612428be037c255ea8b4d1f1b3951f7cb227fcdb318d6b02c84c6bca0a4';
+        const accessTokenEncrypted = encryptData(accessToken, secretKey);
+
+        const log = await generateEventLog('VerifyTwitterRequested', [accessTokenEncrypted, userID, walletAddress]);
 
         let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification");
 
@@ -124,7 +160,8 @@ describe("GelatoW3F", function () {
             userArgs: {
                 verifierContractAddress: verifierAddress,
                 twitterHost: "http://localhost:8118",
-            }
+            },
+            log: log,
         });
         result = result as Web3FunctionResultV2;
 
@@ -133,6 +170,8 @@ describe("GelatoW3F", function () {
         if (result.canExec) {
             let eventWallet = '';
             let eventErrorMsg = '';
+            let eventIsSuccess = false;
+            let eventUserId = '';
             for (let calldata of result.callData) {
                 const tx = await gelatoAddr.sendTransaction({to: calldata.to, data: calldata.data});
                 const receipt = await tx.wait();
@@ -141,15 +180,17 @@ describe("GelatoW3F", function () {
                 for (const log of receipt?.logs) {
                     try {
                         // Ethers v6 parseLog expects an object with { topics, data }
-                        const parsedLog = instance.interface.parseLog({
+                        const parsedLog = smartContract.interface.parseLog({
                             topics: log.topics,
                             data: log.data
                         });
 
-                        if (parsedLog?.name === "TwitterConnectError") {
+                        if (parsedLog?.name === "TwitterVerificationResult") {
                             // Extract the event args (e.g. user, error)
-                            eventWallet = parsedLog.args[0];
-                            eventErrorMsg = parsedLog.args[1];
+                            eventUserId = parsedLog.args[0];
+                            eventWallet = parsedLog.args[1];
+                            eventIsSuccess = parsedLog.args[2];
+                            eventErrorMsg = parsedLog.args[3];
                             break;
                         }
                     } catch (err) {
@@ -158,12 +199,14 @@ describe("GelatoW3F", function () {
                 }
             }
 
-            expect(eventWallet).to.be.equal('0x6794a56583329794f184d50862019Ecf7b6d8BA6');
-            expect(eventErrorMsg).to.be.equal('Failed to retrieve access token: {"error":"invalid_request","error_description":"Value passed for the authorization code was invalid."}');
+            expect(eventWallet.toLowerCase()).to.be.equal(walletAddress);
+            expect(eventErrorMsg).to.be.equal('Failed to retrieve access token: {"error":"invalid_request","error_description":"Something went wrong."}');
+            expect(eventUserId).to.be.equal(userID);
+            expect(eventIsSuccess).to.be.false;
         }
 
         if (!(result.canExec)) {
-            expect(result.message).to.equal('Failed to retrieve access token: {"error":"invalid_request","error_description":"Value passed for the authorization code was invalid."}');
+            expect(result.message).to.equal('Failed to retrieve access token: {"error":"invalid_request","error_description":"Something went wrong."}');
         }
 
     });
@@ -178,11 +221,12 @@ describe("GelatoW3F", function () {
         } = await loadFixture(deployGMCoinWithProxy);
 
 
-        const userID = "1796129942104657921";
+        const userID = "1796129942104657002";
+        const walletAddress = "0x6794a56583329794f184d50862019ecf7b6d8aa2";
         const secretKey = '1d301612428be037c255ea8b4d1f1b3951f7cb227fcdb318d6b02c84c6bca0a4';
         const accessToken = "SFJBUTV3aGstZXZLbENDbWtLbnExcmxoeFRraVM0ejQta2Y2Wi1hYXJkeXA1OjE3Mzc0MDgxNjY5NzY6MTowOmF0OjE";
 
-        mockServer.mockFunc('/2/users/me', 'GET', function (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders) {
+        mockServer.mockFunc('/success/2/users/me', 'GET', function (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders) {
             const headerAccessCode = headers.authorization?.slice(7);
 
             expect(headerAccessCode).to.be.equal(accessToken);
@@ -202,15 +246,15 @@ describe("GelatoW3F", function () {
 
         const accessTokenEncrypted = encryptData(accessToken, secretKey);
 
-        await generateEventLogFile('web3-functions/twitter-verification', 'VerifyTwitterRequested', [accessTokenEncrypted, userID, "0x6794a56583329794f184d50862019ecf7b6d8ba6"]);
-
+        const log = await generateEventLog('VerifyTwitterRequested', [accessTokenEncrypted, userID, walletAddress]);
         let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification");
 
         let {result} = await oracleW3f.run("onRun", {
             userArgs: {
                 verifierContractAddress: verifierAddress,
-                twitterHost: "http://localhost:8118",
+                twitterHost: "http://localhost:8118/success",
             },
+            log: log
 
         });
         result = result as Web3FunctionResultV2;
@@ -224,8 +268,8 @@ describe("GelatoW3F", function () {
             }
         }
 
-        let resultWallet = await smartContract.getWalletByUserID("1796129942104657921" as any);
-        expect(resultWallet.toLowerCase()).to.equal("0x6794a56583329794f184d50862019ecf7b6d8ba6");
+        let resultWallet = await smartContract.getWalletByUserID(userID as any);
+        expect(resultWallet.toLowerCase()).to.equal(walletAddress);
     });
 
     it('twitter-worker success', async function () {
@@ -247,7 +291,7 @@ describe("GelatoW3F", function () {
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
-        const userLimit = 300;
+        const userLimit = 3000;
         const concurrencyLimit = 10;
 
         const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
@@ -263,7 +307,7 @@ describe("GelatoW3F", function () {
 
         // let allUserTweetsByUsername = loadUserTweets('./test/generatedUserTweets_err.json')
         let allUserTweetsByUsername = generateUserTweetsMap(userLimit);
-        // saveUserTweetsToFile(allUserTweetsByUsername, './test/generatedUserTweets_err.json');
+        // saveUserTweetsToFile(allUserTweetsByUsername, './test/generatedUserTweets1.json');
 
         let tweetMap: Map<string, Tweet> = new Map();
         for (let [userID, tweets] of allUserTweetsByUsername) {
@@ -318,6 +362,13 @@ describe("GelatoW3F", function () {
             return response;
         });
 
+        mockServer.mockFunc('/save-tweets/', 'POST', (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => {
+            return {
+                success: true
+            }
+        });
+        // mockServer.mock('/save-tweets/', 'POST', {success: true});
+
         const verifierAddress = await smartContract.getAddress();
         console.log(`deployed GMCoin to ${verifierAddress}`);
 
@@ -328,6 +379,7 @@ describe("GelatoW3F", function () {
             tweetLookupURL: "http://localhost:8118/tweet-lookup/",
             convertToUsernamesURL: "http://localhost:8118/convert-ids-to-usernames/",
             concurrencyLimit: concurrencyLimit,
+            serverSaveTweetsURL: "http://localhost:8118/save-tweets/"
         };
         //
         // const currentTimestamp = await time.latest();
@@ -339,11 +391,13 @@ describe("GelatoW3F", function () {
 
         const {
             userTransferCount,
-            feeTransferCount
+            feeTransferCount,
+            finalRunningHash
         } = await mintUntilEnd(smartContract, gelatoAddr, userArgs, mintingDay)
 
         let userPoints: Map<string, number> = new Map();
         let totalEligibleUsers: number = 0;
+
         allUserTweetsByUsername.forEach((tweets, uid) => {
             const calculateTotalPoints = (tweets: Tweet[]): number => {
                 return tweets.reduce((totalPoints, tweet) => {
@@ -386,10 +440,146 @@ describe("GelatoW3F", function () {
         expect(feeTransferCount).to.be.equal(totalEligibleUsers);
         expect(userTransferCount).to.be.equal(totalEligibleUsers);
 
+
         // to maintain log.json file the same for git
 
         // let resultWallet = await instance.getWalletByUserID("1796129942104657921");
         // expect(resultWallet.toLowerCase()).to.equal("0x6794a56583329794f184d50862019ecf7b6d8ba6");
+    });
+
+    it('twitter-worker runningHash', async function () {
+        const {
+            coinContract: smartContract,
+            owner,
+            feeAddr,
+            gelatoAddr,
+            coinsMultiplicator
+        } = await loadFixture(deployGMCoinWithProxy);
+
+        const gelatoContract = smartContract.connect(gelatoAddr);
+
+        const userLimit = 100;
+        const concurrencyLimit = 5;
+
+        const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
+
+        let walletByUsername: Map<string, string> = new Map();
+        for (let i = 0; i < userLimit; i++) {
+            const userID = String(i + 1)
+            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any, false as any);
+            walletByUsername.set(userID, generatedWallets[i].address);
+
+            expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);
+        }
+
+        // let allUserTweetsByUsername = loadUserTweets('./test/generatedUserTweets_err.json')
+        let allUserTweetsByUsername = generateUserTweetsMap(userLimit);
+
+        let tweetMap: Map<string, Tweet> = new Map();
+        for (let [userID, tweets] of allUserTweetsByUsername) {
+            for (let tweet of tweets) {
+                if (tweet.likesCount > 100) {
+                    tweet.likesCount = 99;
+                }
+                tweetMap.set(tweet.tweet_id, tweet);
+            }
+        }
+
+
+        mockServer.mockFunc('/Search', 'GET', (url: url.UrlWithParsedQuery) => {
+            const q = url.query["q"] as string;
+            const cursor = url.query["cursor"] as string;
+            const usernamesList = extractUserIDs(q);
+
+            const {filteredTweets, nextCursor} = filterUserTweets(allUserTweetsByUsername, usernamesList, cursor, 20);
+
+            let response = generateResponse(filteredTweets, nextCursor, cursor == '');
+            return response;
+        });
+
+        mockServer.mockFunc('/tweet-lookup/', 'GET', (url: url.UrlWithParsedQuery) => {
+            const idList = url.query["ids"] as string;
+            const tweetIDs = idList.split(',');
+
+            const expansionFields = (url.query["tweet.fields"] as string).split(",");
+            expect(expansionFields.indexOf("public_metrics")).to.be.greaterThan(-1);
+
+            return generateResponseForTweetLookup(tweetMap, tweetIDs, 0);
+        });
+
+        mockServer.mockFunc('/convert-ids-to-usernames/', 'GET', (url: url.UrlWithParsedQuery) => {
+            const idList = url.query["user_ids"] as string;
+            const userIDs = idList.split(',');
+
+            let response = {data: {users: []}};
+            for (const userID of userIDs) {
+                response.data.users.push({
+                    result: {
+                        core: {
+                            screen_name: `user${userID}`
+                        },
+                    },
+                    rest_id: userID,
+                })
+            }
+
+            return response;
+        });
+
+        let savedTweets = [];
+        mockServer.mockFunc('/save-tweets/', 'POST', (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => {
+            const receivedJSON = JSON.parse(body);
+            const apiKey = headers.authorization;
+            expect(apiKey?.indexOf('sN') === 0).to.be.true;
+
+            expect(receivedJSON.mintingDayTimestamp).to.be.equal(mintingDay);
+            savedTweets.push(...receivedJSON.tweets);
+
+            return {
+                success: true
+            }
+        });
+
+
+        const verifierAddress = await smartContract.getAddress();
+        console.log(`deployed GMCoin to ${verifierAddress}`);
+
+
+        const userArgs = {
+            contractAddress: verifierAddress,
+            searchURL: "http://localhost:8118/Search",
+            tweetLookupURL: "http://localhost:8118/tweet-lookup/",
+            convertToUsernamesURL: "http://localhost:8118/convert-ids-to-usernames/",
+            concurrencyLimit: concurrencyLimit,
+            serverSaveTweetsURL: "http://localhost:8118/save-tweets/"
+        };
+        //
+        // const currentTimestamp = await time.latest();
+        // const mintingDay = currentTimestamp - (currentTimestamp % time.duration.days(1)) - time.duration.days(1);
+
+        let today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
+        const mintingDay = today.setDate(today.getDate() - 1) / 1000;
+
+        const {
+            userTransferCount,
+            feeTransferCount,
+            finalRunningHash
+        } = await mintUntilEnd(smartContract, gelatoAddr, userArgs, mintingDay)
+
+        let runningHash = '';
+
+
+        for (let i = 0; i < savedTweets.length; i++) {
+            if (savedTweets[i].tweetContent.indexOf('gm') === -1) {
+                continue;
+            }
+            runningHash = calculateRunningHash(runningHash, savedTweets[i]);
+        }
+        console.log('calculated runningHash', runningHash);
+
+        expect(finalRunningHash).to.be.equal(runningHash);
+
     });
 
     it('twitter-worker real-world', async function () {
@@ -431,7 +621,7 @@ describe("GelatoW3F", function () {
         let walletByUsername: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
             const userID = userIDs[i];
-            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any);
+            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any, false as any);
             walletByUsername.set(userID, generatedWallets[i].address);
 
             expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);
@@ -447,12 +637,35 @@ describe("GelatoW3F", function () {
             searchURL: "/Search",
             tweetLookupURL: "https://api.x.com/2/tweets",
             convertToUsernamesURL: "https://twitter283.p.rapidapi.com/UserResultsByRestIds",
-            concurrencyLimit: concurrencyLimit
+            concurrencyLimit: concurrencyLimit,
+            serverSaveTweetsURL: "https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/SaveTweets"
         };
+
+        dotenv.config({
+            path: './test/.env'
+        });
+
+        console.log('apikey', process.env.DELETE_TWEETS_SERVER_API)
+
+        const response = await axios.post(
+            'https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/DeleteDevTweets',
+            null, // No data to send in the body
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': process.env.SERVER_API,
+                },
+            }
+        );
+
+        // Assuming the API returns { success: true } in its JSON body
+        expect(response.data.success).to.be.true;
+
 
         const {
             userTransferCount,
-            feeTransferCount
+            feeTransferCount,
+            finalRunningHash
         } = await mintUntilEnd(smartContract, gelatoAddr, userArgs, mintingDay)
 
         expect(userTransferCount).to.be.greaterThan(0);
@@ -468,6 +681,47 @@ describe("GelatoW3F", function () {
 
         expect(totalBalance).to.be.greaterThan(0);
 
+        console.log('mintingDay', mintingDay);
+        console.log('finalHash', finalRunningHash);
+
+        console.log('uploading to IPFS..');
+        const uploadResponse = await axios.post(
+            'https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/UploadTweetsToIPFS',
+            {
+                mintingDayTimestamp: mintingDay,
+                finalHash: finalRunningHash
+            }, // No data to send in the body
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': process.env.SERVER_API,
+                },
+            }
+        );
+
+        const cid = uploadResponse.data.cid;
+        console.log('cid', cid);
+
+        const url = `https://${cid}.ipfs.w3s.link/`;
+
+        // Make an HTTP GET request using Axios.
+        const ipfsResponse = await axios.get(url, {responseType: 'text'});
+
+        const ipfsContent = JSON.parse(ipfsResponse.data);
+        expect(ipfsContent.finalHash).to.be.equal(finalRunningHash);
+        expect(ipfsContent.tweets.length).to.be.greaterThan(0);
+
+        let actualRunningHash = '';
+        for (let i = 0; i < ipfsContent.tweets.length; i++) {
+            const tweet = ipfsContent.tweets[i];
+            actualRunningHash = calculateRunningHash(actualRunningHash, {
+                tweetID: tweet[2],
+                likesCount: tweet[3],
+                tweetContent: tweet[4]
+            });
+        }
+
+        expect(actualRunningHash).to.be.equal(finalRunningHash);
     })
 
     it('filterUserTweets', async function () {
@@ -541,19 +795,22 @@ describe("GelatoW3F", function () {
 
     async function mintUntilEnd(smartContract: GMCoinExposed, gelatoAddr: HardhatEthersSigner, userArgs, mintingDay: number): Promise<{
         userTransferCount: number,
-        feeTransferCount: number
+        feeTransferCount: number,
+        finalRunningHash: string
     }> {
         const gelatoContract = smartContract.connect(gelatoAddr);
         const smartContractAddress = await smartContract.getAddress();
 
         await gelatoContract.startMinting();
 
-        await generateEventLogFile('web3-functions/twitter-worker', 'twitterMintingProcessed', [mintingDay, []]);
+        let overrideLog = await generateEventLog('twitterMintingProcessed', [mintingDay, []])
+        // await writeEventLogFile('web3-functions/twitter-worker', 'twitterMintingProcessed', [mintingDay, []]);
 
         let hasLogsToProcess = true;
         let prevBatches: any = null;
         let actualStorage: any = {};
-        let overrideLog: any = null;
+
+        let finalRunningHash = '';
 
         let userTransferLogsCount = 0;
         let feeTransferLogsCount = 0;
@@ -592,6 +849,8 @@ describe("GelatoW3F", function () {
                         }
 
                         if (decodedLog.name == "MintingFinished") {
+                            expect(decodedLog.args.mintingDayTimestamp).to.be.equal(mintingDay);
+                            finalRunningHash = decodedLog.args.runningHash;
                             break;
                         }
 
@@ -616,7 +875,11 @@ describe("GelatoW3F", function () {
             }
         }
 
-        return {userTransferCount: userTransferLogsCount, feeTransferCount: feeTransferLogsCount};
+        return {
+            userTransferCount: userTransferLogsCount,
+            feeTransferCount: feeTransferLogsCount,
+            finalRunningHash: finalRunningHash
+        };
     }
 
     function extractUserIDs(query: string): string[] {
@@ -979,6 +1242,51 @@ function generateWallets(provider: Provider, count: number = 1000): HDNodeWallet
 
     return wallets;
 }
+
+
+function calculateRunningHash(prevHash: string, tweet: any): string {
+    const prevHashBytes = base64ToArrayBuffer(prevHash);
+    const runningHashLength = prevHashBytes.length;
+    const encodedTweet = stringToUint8Array(toTweetKey(tweet));
+    const combinedArray = new Uint8Array(runningHashLength + encodedTweet.length);
+    if (runningHashLength > 0) {
+        combinedArray.set(prevHashBytes);
+    }
+    combinedArray.set(encodedTweet, runningHashLength);
+
+    return arrayBufferToBase64(blake2b(combinedArray, undefined, 20));
+}
+
+function toTweetKey(tweet: any): string {
+    return `${tweet.tweetID}|${tweet.likesCount}|${tweet.tweetContent}`
+}
+
+function stringToUint8Array(str: string): Uint8Array {
+    const encoder = new TextEncoder();
+    return encoder.encode(str);
+}
+
+function arrayBufferToBase64(bytes: Uint8Array | ArrayBuffer): string {
+    let binary = '';
+    const byteArray = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const len = byteArray.byteLength;
+
+    for (let i = 0; i < len; i++) {
+        binary += String.fromCharCode(byteArray[i]);
+    }
+
+    return btoa(binary);
+}
+
+function base64ToArrayBuffer(base64: string): Uint8Array {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+}
+
 
 function generateRandomLikes(): number {
     // Generate random likes with most values between 0-10

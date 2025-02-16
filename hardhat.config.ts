@@ -80,7 +80,8 @@ const config = {
         L2Etherscan: process.env.BASESCAN_KEY
     },
     mocha: {
-        timeout: 100000000
+        timeout: 100000000,
+        parallel: false,
     },
 };
 

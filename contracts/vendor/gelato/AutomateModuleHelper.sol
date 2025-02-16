@@ -3,7 +3,7 @@ pragma solidity ^0.8.14;
 
 import "./Types.sol";
 
-abstract contract AutomateModuleHelper {
+contract AutomateModuleHelper {
     function _resolverModuleArg(
         address _resolverAddress,
         bytes memory _resolverData

@@ -24,7 +24,7 @@ export class MockHttpServer {
     private calledUrls: CalledUrlData[] = [];
     private routes: Map<string, {
         method: string;
-        callback?: (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders) => any
+        callback?: (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => any
     }> = new Map();
 
     constructor(private port: number) {
@@ -69,8 +69,9 @@ export class MockHttpServer {
 
             try {
                 if (route.callback) {
+                    const body = await this.getRequestBody(req);
                     // Use callback to generate the response
-                    responseData = route.callback(parsedUrl, req.headers);
+                    responseData = route.callback(parsedUrl, req.headers, body);
                 } else {
                     responseData = {message: 'No callback provided'};
                 }
@@ -98,17 +99,18 @@ export class MockHttpServer {
                 let body = '';
                 req.on('data', chunk => body += chunk);
                 req.on('end', () => {
-                    try {
-                        if (contentType === 'application/json') {
-                            resolve(JSON.parse(body));
-                        } else if (contentType === 'application/x-www-form-urlencoded') {
-                            resolve(querystring.parse(body));
-                        } else {
-                            resolve(body); // Handle other content types or plain text
-                        }
-                    } catch (error) {
-                        reject(error);
-                    }
+                    resolve(body);
+                    // try {
+                    //     if (contentType === 'application/json') {
+                    //         resolve(JSON.parse(body));
+                    //     } else if (contentType === 'application/x-www-form-urlencoded') {
+                    //         resolve(querystring.parse(body));
+                    //     } else {
+                    //         resolve(body); // Handle other content types or plain text
+                    //     }
+                    // } catch (error) {
+                    //     reject(error);
+                    // }
                 });
             } else {
                 resolve(null);
@@ -135,7 +137,13 @@ export class MockHttpServer {
         console.log(`Mocked ${method} ${url} with status ${statusCode} and content type ${contentType}`);
     }
 
-    public mockFunc(route: string, method: string, callback: (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders) => any) {
+    public removeMock(url: string, method: string) {
+        const routeKey = `${method}:${url}`;
+        delete this.mockData[url];
+        this.routes.delete(routeKey);
+    }
+
+    public mockFunc(route: string, method: string, callback: (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => any) {
         const routeKey = `${method}:${route}`;
         this.routes.set(routeKey, {method, callback});
     }

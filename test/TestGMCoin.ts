@@ -12,11 +12,13 @@ import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
 describe("GM", function () {
     async function deployGMCoinWithProxy() {
         // Contracts are deployed using the first signer/account by default
-        const [owner, feeAddr, gelatoAddr, otherAcc1, otherAcc2] = await hre.ethers.getSigners();
+        const [owner, feeAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2] = await hre.ethers.getSigners();
+
+        const coinsMultiplicator = 1_000_000;
 
         const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
         const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
-            [owner.address, feeAddr.address, 50, 1_000_000, gelatoAddr.address, 1_000_000],
+            [owner.address, feeAddr.address, 45, 1_000_000, gelatoAddr.address, relayerServerAcc.address, coinsMultiplicator, 2],
             {
                 kind: "uups",
             }) as unknown as GMCoinExposed;
@@ -33,12 +35,12 @@ describe("GM", function () {
         // });
         // await tx.wait();
 
-        return {coinContract, owner, feeAddr, gelatoAddr, otherAcc1, otherAcc2};
+        return {coinContract, owner, feeAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2, coinsMultiplicator};
     }
 
     it("proxy redeployment success", async function () {
         // 1. Retrieve Signers
-        const [owner, gelatoAddr] = await hre.ethers.getSigners();
+        const [owner, gelatoAddr, relayerServerAddr] = await hre.ethers.getSigners();
 
         // 2. Get Contract Factories
         const TwitterCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin");
@@ -47,7 +49,7 @@ describe("GM", function () {
         // 3. Deploy Upgradeable Proxy for TwitterCoin
         const instance: Contract = await upgrades.deployProxy(
             TwitterCoinFactory,
-            [owner.address, owner.address, 50, 1000, gelatoAddr.address, 1_000_000],
+            [owner.address, owner.address, 50, 1000, gelatoAddr.address, relayerServerAddr.address, 1_000_000, 2],
             {
                 kind: "uups",
             }
@@ -131,12 +133,12 @@ describe("GM", function () {
     });
 
     it('transaction fee', async () => {
-        const [owner, feeAddr, gelatoAddr, addr1, addr2] = await ethers.getSigners();
+        const [owner, feeAddr, gelatoAddr, relayerServerAddr, , addr1, addr2] = await ethers.getSigners();
 
         console.log('owner', owner.address);
 
         const TwitterCoin = await ethers.getContractFactory("GMCoin");
-        const coin: GMCoin = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, 1_000_000], {kind: "uups"}) as unknown as GMCoin;
+        const coin: GMCoin = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, relayerServerAddr.address, 1_000_000, 2], {kind: "uups"}) as unknown as GMCoin;
 
         await coin.waitForDeployment();
 

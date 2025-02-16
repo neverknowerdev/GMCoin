@@ -6,8 +6,9 @@ import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import "hardhat/console.sol";
+import {GMWeb3Functions} from "./GelatoWeb3Functions.sol";
 
-contract GMTwitterOracle is Initializable {
+contract GMTwitterOracle is Initializable, GMWeb3Functions {
     using ECDSA for bytes32;
 
     address gelatoAddress;
@@ -34,14 +35,16 @@ contract GMTwitterOracle is Initializable {
     uint256 public constant POINTS_MULTIPLICATOR_PER_CASHTAG = 10;
 
     uint public EPOCH_DAYS;
+    uint32 public epochNumber;
 
     mapping(address => string) internal usersByWallets;
     mapping(address => bool) internal registeredWallets;
 
     uint256[254] private __gap;
 
-    function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress, address _relayServerAddress, uint _epochDays) public initializer {
+    function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress, address _relayServerAddress, uint _epochDays) public onlyInitializing {
         EPOCH_DAYS = _epochDays;
+        epochNumber = 1;
 
         gelatoAddress = _gelatoAddress;
         serverRelayerAddress = _relayServerAddress;
@@ -53,13 +56,7 @@ contract GMTwitterOracle is Initializable {
         // pre-yesterday
         lastMintedDay = uint32(block.timestamp - (block.timestamp % 1 days) - 2 days);
 
-        // dayPoints = 0;
-        // dayPointsFromStakers = 0;
-        // countedUsers = 0;
-        // lastMintedDay = 0;
-        // lastDaySupply = 0;
 
-        // currentDay = block.timestamp % (SECONDS_IN_A_DAY);
     }
 
     function walletByTwitterUser(string calldata username) internal view returns (address) {
@@ -105,7 +102,7 @@ contract GMTwitterOracle is Initializable {
     }
 
     event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet);
-    event TwitterVerificationResult(string indexed userID, address indexed wallet, bool isSuccess, string errorMsg);
+    event TwitterVerificationResult(string userID, address indexed wallet, bool isSuccess, string errorMsg);
 
     function requestTwitterVerification(string calldata accessCodeEncrypted, string calldata userID) public {
         require(wallets[userID] == address(0), "wallet already linked for that user");
@@ -156,12 +153,15 @@ contract GMTwitterOracle is Initializable {
         uint64 startIndex;
         uint64 endIndex;
         string nextCursor;
+        uint8 errorCount;
     }
 
-    event twitterMintingProcessed(uint32 mintingDayTimestamp, Batch[] batches);
-    event twitterMintingErrored(uint32 mintingDayTimestamp, Batch[] errorBatches);
-    event MintingStarted(uint32 mintingDay);
-    event MintingFinished(uint32 mintingDayTimestamp, string finalCID);
+    event twitterMintingProcessed(uint32 indexed mintingDayTimestamp, Batch[] batches);
+    event twitterMintingErrored(uint32 indexed mintingDayTimestamp, Batch[] errorBatches);
+    event MintingStarted(uint32 indexed mintingDay);
+    event MintingFinished(uint32 indexed mintingDayTimestamp, string runningHash);
+    event MintingFinished_TweetsUploadedToIPFS(uint32 indexed mintingDayTimetsamp, string runningHash, string cid);
+
     event changedComplexity(uint256 newMultiplicator);
 
     uint32 internal lastMintedDay;
@@ -174,12 +174,20 @@ contract GMTwitterOracle is Initializable {
 
     uint32 mintingInProgressForDay;
 
+    Batch[] private emptyArray;
     uint256[254] private __gap2;
 
     function startMinting() public onlyGelato {
+        // continue minting for not finished day if any
+        if (mintingInProgressForDay > 0) {
+            emit twitterMintingProcessed(mintingInProgressForDay, emptyArray);
+            return;
+        }
+
+        uint32 yesterday = getStartOfYesterday();
         uint32 dayToMint = lastMintedDay + 1 days;
 
-        require(dayToMint < block.timestamp - 1 days, "minting is already started for that day");
+        require(dayToMint <= yesterday, "dayToMint should be not further than yesterday");
         require(lastMintedDay < dayToMint, "minting is already started for that day");
         require(mintingInProgressForDay == 0, "minting process already started");
 
@@ -188,6 +196,7 @@ contract GMTwitterOracle is Initializable {
         mintingDayPointsFromUsers = 0;
 
         // complexity calculation
+        // start new epoch
         if (dayToMint > epochStartedAt && dayToMint - epochStartedAt >= EPOCH_DAYS) {
             epochStartedAt = dayToMint;
 
@@ -196,9 +205,10 @@ contract GMTwitterOracle is Initializable {
             // minus 20%
             emit changedComplexity(COINS_MULTIPLICATOR);
             // }
-            //  else if(COMPLEXITY_DIVIDER > 1 && lastEpochPoints < currentEpochPoints) {
-            //     COMPLEXITY_DIVIDER /= 2;
-            // }
+//              else if(COMPLEXITY_DIVIDER > 1 && lastEpochPoints < currentEpochPoints) {
+//                 COMPLEXITY_DIVIDER /= 2;
+//             }
+            epochNumber++;
 
             lastEpochPoints = currentEpochPoints;
             currentEpochPoints = 0;
@@ -206,11 +216,17 @@ contract GMTwitterOracle is Initializable {
 
         emit MintingStarted(dayToMint);
 
-        Batch[] memory emptyArray;
         emit twitterMintingProcessed(dayToMint, emptyArray);
     }
 
-    function finishMinting(uint32 mintingDayTimestamp, string calldata finalCID) public onlyGelato {
+    // manual calling continue minting for a day if there was any unexpected error
+    function continueMintingForADay() public onlyOwner {
+        require(mintingInProgressForDay != 0, "not found any in progress minting days");
+
+        emit twitterMintingProcessed(mintingInProgressForDay, emptyArray);
+    }
+
+    function finishMinting(uint32 mintingDayTimestamp, string calldata runningHash) public onlyGelato {
         require(mintingDayTimestamp == mintingInProgressForDay, "wrong mintingDay");
         require(lastMintedDay < mintingDayTimestamp, "wrong mintingDayTimestamp");
 
@@ -219,7 +235,16 @@ contract GMTwitterOracle is Initializable {
 
         mintingInProgressForDay = 0;
 
-        emit MintingFinished(mintingDayTimestamp, finalCID);
+        emit MintingFinished(mintingDayTimestamp, runningHash);
+
+        uint32 yesterday = getStartOfYesterday();
+        if (lastMintedDay < yesterday) {
+            startMinting();
+        }
+    }
+
+    function attachIPFSTweetsFile(uint32 mintingDayTimestamp, string calldata finalHash, string calldata cid) public onlyServerRelayer {
+        emit MintingFinished_TweetsUploadedToIPFS(mintingDayTimestamp, finalHash, cid);
     }
 
     // to be defined in main contract
@@ -260,5 +285,12 @@ contract GMTwitterOracle is Initializable {
         if (batches.length > 0) {
             emit twitterMintingProcessed(mintingDayTimestamp, batches);
         }
+    }
+
+    function getStartOfYesterday() public view returns (uint32) {
+        // Calculate the start of today (midnight) by rounding down block.timestamp to the nearest day.
+        uint32 startOfToday = uint32((block.timestamp / 1 days) * 1 days);
+        // Subtract one day to get the start of yesterday.
+        return startOfToday - 1 days;
     }
 }

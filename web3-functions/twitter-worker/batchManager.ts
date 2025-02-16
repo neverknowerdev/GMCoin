@@ -27,7 +27,8 @@ export class BatchManager {
         queryList: string[];
         userIndexByUsername: Map<string, number>
     }> {
-        batches = batches.filter(batch => batch.nextCursor != '')
+        // skip already done batches
+        batches = batches.filter(batch => batch.nextCursor != '' && batch.errorCount == 0)
             .sort((a, b) => Number(a.startIndex - b.startIndex));
 
         for (let i = 0; i < batches.length; i++) {
@@ -68,7 +69,8 @@ export class BatchManager {
                 const newBatch: Batch = {
                     startIndex: startIndex,
                     endIndex: startIndex + recordInsertedCount,
-                    nextCursor: ''
+                    nextCursor: '',
+                    errorCount: 0,
                 }
 
                 if (newBatch.endIndex > maxEndIndex) {

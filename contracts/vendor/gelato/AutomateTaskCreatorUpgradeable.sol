@@ -3,7 +3,6 @@ pragma solidity ^0.8.14;
 
 import "./AutomateReadyUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
 /**
  * @dev Inherit this contract to allow your upgradeable smart contract
  * to be a task creator and create tasks.

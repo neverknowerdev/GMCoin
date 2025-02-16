@@ -59,6 +59,11 @@ export const ContractABI = [
                         "internalType": "string",
                         "name": "nextCursor",
                         "type": "string"
+                    },
+                    {
+                        "internalType": "uint8",
+                        "name": "errorCount",
+                        "type": "uint8"
                     }
                 ],
                 "internalType": "struct GMTwitterOracle.Batch[]",
@@ -99,7 +104,7 @@ export const ContractABI = [
         "anonymous": false,
         "inputs": [
             {
-                "indexed": false,
+                "indexed": true,
                 "internalType": "uint32",
                 "name": "mintingDayTimestamp",
                 "type": "uint32"
@@ -120,6 +125,11 @@ export const ContractABI = [
                         "internalType": "string",
                         "name": "nextCursor",
                         "type": "string"
+                    },
+                    {
+                        "internalType": "uint8",
+                        "name": "errorCount",
+                        "type": "uint8"
                     }
                 ],
                 "indexed": false,
@@ -154,6 +164,11 @@ export const ContractABI = [
                         "internalType": "string",
                         "name": "nextCursor",
                         "type": "string"
+                    },
+                    {
+                        "internalType": "uint8",
+                        "name": "errorCount",
+                        "type": "uint8"
                     }
                 ],
                 "internalType": "struct GMTwitterOracle.Batch[]",
@@ -175,7 +190,7 @@ export const ContractABI = [
             },
             {
                 "internalType": "string",
-                "name": "finalCID",
+                "name": "runningHash",
                 "type": "string"
             }
         ],
@@ -194,13 +209,14 @@ export interface Batch {
     startIndex: number;
     endIndex: number;
     nextCursor: string;
+    errorCount: number;
 }
 
 export interface Tweet {
     userIndex: number;
-    userID: number;
+    userID: string;
     username: string;
-    tweetID: number;
+    tweetID: string;
     tweetContent: string;
     likesCount: number;
     userDescriptionText: string;
@@ -271,10 +287,12 @@ export interface w3fStorage {
     getSize(): Promise<number>;
 }
 
-export interface Batch {
-    startIndex: number;
-    endIndex: number;
-    nextCursor: string;
+
+export enum TweetProcessingType {
+    Skipped = 0,
+    Simple = 1,
+    Hashtag = 2,
+    Cashtag = 3,
 }
 
 // Define the result structure

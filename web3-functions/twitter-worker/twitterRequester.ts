@@ -153,11 +153,16 @@ export class TwitterRequester {
                             tweets[i].userIndex = userIndex || 0;
                         }
 
-                        batchesToProcess[index].nextCursor = nextCursor;
+                        batchesToProcess[index].nextCursor = '';
+                        if (tweets.length > 0 && nextCursor != '') {
+                            batchesToProcess[index].nextCursor = nextCursor
+                        }
 
                         allTweets.push(...tweets);
                     } catch (error) {
+                        cur.errorCount++;
                         errorBatches.push(cur);
+
                         console.error('error fetching and processing tweets: ', error);
                         return null;
                     }
@@ -179,6 +184,7 @@ export class TwitterRequester {
             console.log('cursor', cursor);
             const response = await ky.get(this.urlList.twitterSearchByQueryURL, {
                 timeout: 3000,
+                retry: 1,
                 headers: {
                     'X-Rapidapi-Key': this.secrets.OptimizedAPISecretKey,
                 },

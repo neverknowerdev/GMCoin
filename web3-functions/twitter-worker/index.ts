@@ -1,17 +1,13 @@
 import {Interface} from "@ethersproject/abi";
 import {Storage} from './storage';
-import {
-    Web3Function,
-    Web3FunctionEventContext,
-    Web3FunctionResult
-} from "@gelatonetwork/web3-functions-sdk";
+import {Web3Function, Web3FunctionEventContext, Web3FunctionResult} from "@gelatonetwork/web3-functions-sdk";
 import {Contract, ContractRunner} from "ethers";
 import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
-import {ContractABI, Result, Tweet, Batch, TwitterApiResponse, defaultResult, w3fStorage} from "./consts";
+import {ContractABI, defaultResult, Result, Tweet, TweetProcessingType} from "./consts";
 import {BatchManager} from "./batchManager";
-import {TwitterRequester, TwitterSecrets} from "./twitterRequester";
+import {TwitterRequester} from "./twitterRequester";
 import {SmartContractConnector} from "./smartContractConnector";
-import {createIPFSBatchUploader} from "./IPFSBatchUploader";
+import {BatchUploader} from "./batchUploader";
 
 const KEYWORD = "gm";
 const verifyTweetBatchSize = 300;
@@ -24,6 +20,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     const SearchURL = userArgs.searchURL as string;
     const CONCURRENCY_LIMIT = userArgs.concurrencyLimit as number;
     const ConvertToUsernamesURL = userArgs.convertToUsernamesURL as string;
+    const serverSaveTweetsURL = userArgs.serverSaveTweetsURL as string;
 
     const bearerToken = await context.secrets.get("TWITTER_BEARER");
     if (!bearerToken)
@@ -34,14 +31,9 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         throw new Error('Missing TWITTER_RAPIDAPI_KEY environment variable');
     }
 
-    const w3spaceDelegationKey = await context.secrets.get("W3SPACE_DELEGATION_KEY");
-    if (!w3spaceDelegationKey) {
-        throw new Error('Missing W3SPACE_DELEGATION_KEY environment variable');
-    }
-
-    const w3spaceDelegationProof = await context.secrets.get("W3SPACE_DELEGATION_PROOF");
-    if (!w3spaceDelegationProof) {
-        throw new Error('Missing W3SPACE_DELEGATION_PROOF environment variable');
+    const serverApiKey = await context.secrets.get("SERVER_API_KEY");
+    if (!serverApiKey) {
+        throw new Error('Missing SERVER_API_KEY env variable');
     }
 
     try {
@@ -76,10 +68,12 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         const initBatches = eventBatches.map(item => ({
             startIndex: item.startIndex.toNumber(),
             endIndex: item.endIndex.toNumber(),
-            nextCursor: item.nextCursor
+            nextCursor: item.nextCursor,
+            errorCount: item.errorCount,
         }));
 
-        let ipfsBatchUploader = await createIPFSBatchUploader(storage, mintingDayTimestamp, w3spaceDelegationKey, w3spaceDelegationProof, 1000);
+        let batchUploader = new BatchUploader(mintingDayTimestamp, storage, serverSaveTweetsURL, serverApiKey);
+        await batchUploader.loadStateFromStorage();
 
         console.log(' ');
         console.log(' ');
@@ -138,11 +132,15 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
                 let result = UserResults.get(tweets[i].userIndex) || {...defaultResult};
                 result.userIndex = tweets[i].userIndex;
-                const newResult = calculateTweetByKeyword(result, tweets[i].likesCount, foundKeyword);
-                console.log(`newResult for userIndex ${tweets[i].userIndex} userID ${tweets[i].username}`);
-                UserResults.set(tweets[i].userIndex, newResult);
+                const processingType = calculateTweetByKeyword(result, tweets[i].likesCount, foundKeyword);
+                batchUploader.add(tweets[i], processingType);
 
-                ipfsBatchUploader.add(tweets[i], 0);
+                if (processingType == TweetProcessingType.Skipped) {
+                    continue;
+                }
+
+                console.log(`newResult for userIndex ${tweets[i].userIndex} userID ${tweets[i].username}`);
+                UserResults.set(tweets[i].userIndex, result);
             }
 
             if (isNewTweetsToVerify) {
@@ -191,12 +189,25 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             await storage.saveUserResults(UserResults);
             const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
 
-            console.log('waiting for ipfsBatchUploader..');
-            await ipfsBatchUploader.wait();
-            await ipfsBatchUploader.saveToStorage();
+            const runningHash = batchUploader.getRunningHash();
+            console.log('runningHash', runningHash);
+
+            const uploaded = await batchUploader.uploadToServer();
+            if (!uploaded) {
+                throw new Error('failed to upload tweets to the server');
+            }
+            await batchUploader.saveStateToStorage();
 
             console.log('newBatches', batchesToProcess);
             console.log('sortedResults', sortedResults.length);
+
+            // retry errored batches that has less that 3 retries
+            const batchesToRetry = errorBatches.filter((b) => b.errorCount < 3);
+            const errorBatchesToLog = errorBatches.filter((b) => b.errorCount >= 3);
+
+            if (batchesToRetry.length > 0) {
+                batchesToProcess.push(...batchesToRetry);
+            }
 
             if (sortedResults.length > 0 || batchesToProcess.length > 0) {
                 transactions.push({
@@ -208,8 +219,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                     ]),
                 })
             }
-
-            if (errorBatches.length > 0) {
+            if (errorBatchesToLog.length > 0) {
                 transactions.push({
                     to: userArgs.contractAddress as string,
                     data: smartContract.interface.encodeFunctionData("logErrorBatches", [
@@ -240,17 +250,20 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             try {
                 const verifiedTweets = await twitterRequester.fetchTweetsByIDs(tweetsToVerify);
                 console.log('verifiedTweets', verifiedTweets.length);
-                console.log('userResults before', UserResults);
                 for (let i = 0; i < verifiedTweets.length; i++) {
                     const result = UserResults.get(verifiedTweets[i].userIndex) || {...defaultResult};
 
-                    let res = calculateTweetByKeyword(result, verifiedTweets[i].likesCount, findKeywordWithPrefix(verifiedTweets[i].tweetContent));
-                    res.userIndex = verifiedTweets[i].userIndex;
-                    UserResults.set(verifiedTweets[i].userIndex, res);
+                    let tweetProcessResult = calculateTweetByKeyword(result, verifiedTweets[i].likesCount, findKeywordWithPrefix(verifiedTweets[i].tweetContent));
+                    batchUploader.add(verifiedTweets[i], tweetProcessResult);
+                    if (tweetProcessResult == TweetProcessingType.Skipped) {
+                        continue;
+                    }
 
-                    ipfsBatchUploader.add(verifiedTweets[i], 0);
+                    if (!result.userIndex) {
+                        result.userIndex = verifiedTweets[i].userIndex;
+                    }
+                    UserResults.set(verifiedTweets[i].userIndex, result);
                 }
-                console.log('userResults after', UserResults);
 
                 const results = [...UserResults.values()].sort((a, b) => Number(a.userIndex - b.userIndex));
 
@@ -276,18 +289,24 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 }
             }
 
-            const finalCID = await ipfsBatchUploader.uploadFinalFileToIPFS(10);
+            const finalHash = batchUploader.getRunningHash();
+            console.log('finalHash', finalHash);
+
+            const uploaded = await batchUploader.uploadToServer();
+            if (!uploaded) {
+                throw new Error('failed to SaveTweets (verifiedTweets) to the server');
+            }
+
+            // finish minting at all
+            await storage.clearAll();
 
             transactions.push({
                 to: await smartContract.getAddress() as string,
                 data: smartContract.interface.encodeFunctionData("finishMinting", [
                     BigInt(mintingDayTimestamp),
-                    finalCID
+                    finalHash
                 ]),
             });
-
-            // finish minting at all
-            await storage.clearAll();
 
 
             console.log('return transactions', transactions.length);
@@ -312,24 +331,43 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     }
 });
 
-function calculateTweetByKeyword(result: Result, likesCount: number, keyword: string): Result {
+function calculateTweetByKeyword(result: Result, likesCount: number, keyword: string): TweetProcessingType {
+    let processingType = TweetProcessingType.Skipped;
+
     if (keyword == "") {
-        return result;
+        return processingType;
     }
 
     // limit 10 hashtag/cashtag per day per user
     if (keyword == "$" + KEYWORD && result.cashtagTweets < 10) {
-        result.cashtagTweets++;
+        processingType = TweetProcessingType.Cashtag;
     } else if (keyword == "#" + KEYWORD && result.hashtagTweets < 10) {
-        result.hashtagTweets++;
+        processingType = TweetProcessingType.Hashtag;
     } else if (keyword == KEYWORD) {
-        result.simpleTweets++;
+        processingType = TweetProcessingType.Simple;
+    }
+
+    if (processingType == TweetProcessingType.Skipped) {
+        return processingType;
+    }
+
+    switch (processingType) {
+        case TweetProcessingType.Simple:
+            result.simpleTweets++;
+            break;
+        case TweetProcessingType.Hashtag:
+            result.hashtagTweets++;
+            break;
+        case TweetProcessingType.Cashtag:
+            result.cashtagTweets++;
+            break;
+
     }
 
     result.tweets++;
     result.likes += likesCount;
 
-    return result;
+    return processingType;
 }
 
 function findKeywordWithPrefix(text: string): string {

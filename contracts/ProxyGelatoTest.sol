@@ -21,19 +21,20 @@ contract GGCoin is ERC165, IERC1271, Initializable, OwnableUpgradeable, ERC20Upg
     function newInitializer(address _owner) public onlyOwner {
         trustedSigner = _owner;
     }
-//    function initialize(address _owner, uint256 _initialSupply) public initializer {
-//        counter = 0;
-//        taskID = bytes32("");
-//
-//        __Ownable_init(_owner);
-//        __UUPSUpgradeable_init();
-//        __ERC20_init("Test Gelato coin", "GGCOIN");
-//
-//        __AutomateTaskCreator_init(0x2A6C106ae13B558BB9E2Ec64Bd2f1f7BEFF3A5E0);
-//
-//        trustedSigner = _owner;
-//        _mint(address(_owner), _initialSupply);
-//    }
+
+    function initialize(address _owner, uint256 _initialSupply) public initializer {
+        counter = 0;
+        taskID = bytes32("");
+
+        __Ownable_init(_owner);
+        __UUPSUpgradeable_init();
+        __ERC20_init("Test Gelato coin", "GGCOIN");
+
+        __AutomateTaskCreator_init(0x2A6C106ae13B558BB9E2Ec64Bd2f1f7BEFF3A5E0);
+
+        trustedSigner = _owner;
+        _mint(address(_owner), _initialSupply);
+    }
 
     function cancelWeb3Function(bytes32 _taskID) public onlyOwner {
         _cancelTask(_taskID);
@@ -41,9 +42,6 @@ contract GGCoin is ERC165, IERC1271, Initializable, OwnableUpgradeable, ERC20Upg
     }
 
     function createWeb3Functions(string calldata _gelatoW3fHash, string calldata _address) public onlyOwner {
-//        if (taskID.length != 0) {
-//            _cancelTask(taskID);
-//        }
         counter = 0;
 
         bytes memory execData = abi.encodeCall(this.increaseCount, (- 3));

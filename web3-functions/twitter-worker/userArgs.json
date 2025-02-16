@@ -3,5 +3,6 @@
   "searchURL": "https://api.gmcoin.meme/Search",
   "tweetLookupURL": "https://api.twitter.com/2/tweets",
   "convertToUsernamesURL": "https://api.gmcoin.meme/UserResultsByRestIds",
+  "serverSaveTweetsURL": "",
   "concurrencyLimit": 10
 }

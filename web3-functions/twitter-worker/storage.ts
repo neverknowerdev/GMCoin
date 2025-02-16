@@ -74,20 +74,20 @@ export class Storage {
         await this.storage.set(`${this.mintingDayTimestamp}_tweetsToVerify`, JSON.stringify(tweets));
     }
 
-    async saveIPFSTweets(tweets: TweetTuple[]) {
-        await this.storage.set(`${this.mintingDayTimestamp}_tweetsToIPFS`, JSON.stringify(tweets));
+    async saveRunningHash(hash: string) {
+        await this.storage.set(`${this.mintingDayTimestamp}_runningHash`, hash);
     }
 
-    async getIPFSTweets(): Promise<TweetTuple[]> {
-        return JSON.parse(await this.storage.get(`${this.mintingDayTimestamp}_tweetsToIPDS`) || '[]')
+    async getRunningHash(): Promise<string> {
+        return await this.storage.get(`${this.mintingDayTimestamp}_runningHash`) || '';
     }
 
-    async saveIPFSCids(cids: string[]) {
-        await this.storage.set(`${this.mintingDayTimestamp}_cids`, JSON.stringify(cids));
+    async saveTweetOrder(order: number) {
+        await this.storage.set(`${this.mintingDayTimestamp}_tweetOrder`, order.toString());
     }
 
-    async getIPFSCids(): Promise<string[]> {
-        return JSON.parse(await this.storage.get(`${this.mintingDayTimestamp}_cids`) || '[]')
+    async getTweetOrder(): Promise<number> {
+        return parseInt(await this.storage.get(`${this.mintingDayTimestamp}_tweetOrder`) || '0');
     }
 
 }

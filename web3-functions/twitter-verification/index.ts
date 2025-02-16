@@ -8,15 +8,15 @@ import {Contract} from "ethers";
 import ky, {HTTPError} from "ky";
 
 import {gcm} from '@noble/ciphers/aes';
-import {bytesToHex, hexToBytes} from '@noble/ciphers/utils';
+import {bytesToHex, hexToBytes, toBytes} from '@noble/ciphers/utils';
 
 // Define Twitter API endpoint
 const TWITTER_ME_URL = '/2/users/me';
 
 const VerifierContractABI = [
-    "event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet)",
     "function verifyTwitter(string calldata userID, address wallet, bool isSubscribed) public",
-    "function twitterVerificationError(address wallet, string userID, string calldata errorMsg)"
+    "function twitterVerificationError(address wallet, string calldata userID, string calldata errorMsg) public",
+    "event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet)",
 ];
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
@@ -49,12 +49,11 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     console.log('userID', userID);
     console.log(`Veryfing Twitter for address ${wallet}..`);
 
-    console.log('before decryptData');
+    console.log('before decryptData', accessCodeEncrypted);
     const accessToken = decryptData(accessCodeEncrypted, decryptionKey);
     console.log('after decryptData', accessToken);
 
     try {
-
         // Step 2: Use access token to call the users/me endpoint
         const userResponse = await ky.get(TwitterApiURL + TWITTER_ME_URL, {
             headers: {
