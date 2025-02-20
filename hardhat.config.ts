@@ -68,7 +68,7 @@ const config = {
         base: {
             url: "https://mainnet.base.org",
             chainId: 8453,
-            accounts: [process.env.BASE_PROD_PRIVATE_KEY],
+            accounts: [process.env.BASE_PROD_PRIVATE_KEY, process.env.BASE_PROD_FEE_PRIVATE_KEY],
         }
     },
     gasReporter: {

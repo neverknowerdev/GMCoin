@@ -40,7 +40,7 @@ contract GMTwitterOracle is Initializable, GMWeb3Functions {
     mapping(address => string) internal usersByWallets;
     mapping(address => bool) internal registeredWallets;
 
-    uint256[254] private __gap;
+    uint256[255] private __gap;
 
     function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress, address _relayServerAddress, uint _epochDays) public onlyInitializing {
         EPOCH_DAYS = _epochDays;
@@ -175,7 +175,7 @@ contract GMTwitterOracle is Initializable, GMWeb3Functions {
     uint32 mintingInProgressForDay;
 
     Batch[] private emptyArray;
-    uint256[254] private __gap2;
+    uint256[255] private __gap2;
 
     function startMinting() public onlyGelato {
         // continue minting for not finished day if any

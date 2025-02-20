@@ -3,10 +3,7 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./Types.sol";
-import {
-Initializable
-} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "hardhat/console.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /**
  * @dev Inherit this contract to allow your upgradeable smart contract to
@@ -39,27 +36,19 @@ abstract contract AutomateReadyUpgradeable is Initializable {
     internal
     onlyInitializing
     {
-        console.log('gelatoInit1');
         automate = IAutomate(_automate);
 
-        console.log('gelatoInit2');
-        console.log('automate.gelato', automate.gelato());
         IGelato gelato = IGelato(automate.gelato());
 
-        console.log('gelatoInit3');
         feeCollector = gelato.feeCollector();
 
-        console.log('gelatoInit3.5');
         address proxyModuleAddress = IAutomate(automate).taskModuleAddresses(
             Module.PROXY
         );
 
-        console.log('gelatoInit4');
-
         address opsProxyFactoryAddress = IProxyModule(proxyModuleAddress)
             .opsProxyFactory();
 
-        console.log('gelatoInit5');
         (dedicatedMsgSender,) = IOpsProxyFactory(opsProxyFactoryAddress)
         .getProxyOf(_taskCreator);
     }

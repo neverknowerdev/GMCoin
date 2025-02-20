@@ -13,15 +13,18 @@ import {GMWeb3Functions} from "./parts/GelatoWeb3Functions.sol";
 
 contract GMCoin is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracle
 {
-    address plannedNewImplementation;
+    address public plannedNewImplementation;
     uint256 public plannedNewImplementationTime;
 
-    uint256 feePercentage; // Commission percentage in basis points (100 = 1%)
+    // Commission percentage in basis points (100 = 1%)
+    uint256 feePercentage; // % fee of transaction goes to the team for maintenance
+    uint256 treasuryPercentage; // % of minted tokens goes to Treasury that locks fund for 3 months
     address feeAddress;
-
-    uint256 public liquidityPoolCollectedAmount;
+    address treasuryAddress;
 
     uint256 public totalHolders;
+
+    uint256[255] private __gap;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -31,55 +34,56 @@ contract GMCoin is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgr
     function initialize(
         address _owner,
         address _feeAddress,
-        uint256 _comissionPercentage,
-        uint256 _initialSupply,
+        address _treasuryAddress,
         address _relayServerAddress,
         uint256 coinsMultiplicator,
         uint _epochDays
     ) public initializer {
-        feePercentage = _comissionPercentage;
         feeAddress = _feeAddress;
+        treasuryAddress = _treasuryAddress;
         totalHolders = 0;
 
-        console.log('init1');
-        __Ownable_init(_owner);
-        console.log('init2');
-        __UUPSUpgradeable_init();
-        console.log('init3');
-        __GelatoWeb3Functions__init(_owner);
-        console.log('init4');
-        __ERC20_init("GM Coin", "GM");
-        console.log('init5');
-        __TwitterOracle__init(coinsMultiplicator, dedicatedMsgSender, _relayServerAddress, _epochDays);
-        console.log('init6');
+        feePercentage = 100; // 1% fee of transaction
+        treasuryPercentage = 500; // 5% of minted coins
 
-        _mint(address(_owner), _initialSupply);
+        __Ownable_init(_owner);
+        __UUPSUpgradeable_init();
+        __GelatoWeb3Functions__init(_owner);
+        __ERC20_init("GM Coin", "GM");
+        __TwitterOracle__init(coinsMultiplicator, dedicatedMsgSender, _relayServerAddress, _epochDays);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
     }
 
-    function scheduleUpgrade(address newImplementation) public onlyOwner {
-        require(newImplementation != address(0), "wrong newImplementation address");
-        require(plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
+    // disabled Timelock for testing period on Mainnet, then would be turned on
+//    function scheduleUpgrade(address newImplementation) public onlyOwner {
+//        require(newImplementation != address(0), "wrong newImplementation address");
+//        require(plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
+//
+//        plannedNewImplementation = newImplementation;
+//        plannedNewImplementationTime = block.timestamp + 3 days;
+//    }
+//
+//    function upgradeToAndCall(address newImplementation, bytes memory data) public override payable onlyOwner {
+//        require(newImplementation != address(0), "wrong newImplementation address");
+//        require(newImplementation == plannedNewImplementation, "you should schedule upgrade first");
+//        require(block.timestamp > plannedNewImplementationTime, "timeDelay is not passed to make an upgrade");
+//
+//        plannedNewImplementationTime = 0;
+//        plannedNewImplementation = address(0);
+//
+//        super.upgradeToAndCall(newImplementation, data);
+//    }
 
-        plannedNewImplementation = newImplementation;
-        plannedNewImplementationTime = block.timestamp + 3 days;
-    }
-
-    function upgradeToAndCall(address newImplementation, bytes memory data) public override payable onlyOwner {
-        require(newImplementation != address(0), "wrong newImplementation address");
-        require(newImplementation == plannedNewImplementation, "you should schedule upgrade first");
-        require(block.timestamp > plannedNewImplementationTime, "timeDelay is not passed to make an upgrade");
-
-        plannedNewImplementationTime = 0;
-        plannedNewImplementation = address(0);
-
-        super.upgradeToAndCall(newImplementation, data);
-    }
 
     function _update(address from, address to, uint256 value) internal override {
-        if (from != address(0) && to != address(0)) {
+        // minting
+        if (from == address(0) && to != address(0)) {
+            super._update(address(0), treasuryAddress, (value * treasuryPercentage) / 10000);
+
+            // if transfer
+        } else if (from != address(0) && to != address(0)) {
             // taking fee only for transfer operation
             uint256 feeAmount = (value * feePercentage) / 10000;
             value = value - feeAmount;
@@ -87,13 +91,16 @@ contract GMCoin is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgr
             super._update(from, feeAddress, feeAmount);
         }
 
+        // holders++ if "to" was zero and become > zero (before transaction)
+        // holders-- if "from" was not zero and become zero (after transaction)
+        if (to != address(0) && balanceOf(to) == 0 && value > 0) { // ++
+            totalHolders++;
+        }
+
         super._update(from, to, value);
 
-        if (from != address(0) && balanceOf(from) == 0) { // --
+        if (from != address(0) && balanceOf(from) == 0 && value > 0) { // --
             totalHolders--;
-        }
-        if (to != address(0) && balanceOf(to) - value == 0) { // ++
-            totalHolders++;
         }
     }
 
@@ -101,12 +108,6 @@ contract GMCoin is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgr
         address walletAddr = walletByTwitterUserIndex(userIndex);
         require(walletAddr != address(0), "walletAddr shouldn't be zero!");
 
-        // 50% of amount is going to liquidity pool
-        uint256 amountToMintForLiquidityPool = amount * 50 / 100;
-
-        liquidityPoolCollectedAmount += amountToMintForLiquidityPool;
-
-        _mint(address(this), amountToMintForLiquidityPool);
         _mint(walletAddr, amount);
     }
 }

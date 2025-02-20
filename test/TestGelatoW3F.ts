@@ -47,7 +47,7 @@ describe("GelatoW3F", function () {
 
     async function deployGMCoinWithProxy() {
         // Contracts are deployed using the first signer/account by default
-        const [owner, feeAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2] = await hre.ethers.getSigners();
+        const [owner, feeAddr, treasuryAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2] = await hre.ethers.getSigners();
 
 
         let gelatoIAutomate = await smock.fake('IAutomate', {
@@ -75,12 +75,9 @@ describe("GelatoW3F", function () {
 
         const coinsMultiplicator = 1_000_000;
 
-        // const gelatoAutomateMockContract = await ethers.getContractFactory("GelatoAutomateTaskCreatorMock");
-        // const gelatoAutomateMockDeployed = await gelatoAutomateMockContract.deploy();
-
         const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
         const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
-            [owner.address, feeAddr.address, 45, 1_000_000, relayerServerAcc.address, coinsMultiplicator, 2],
+            [owner.address, feeAddr.address, treasuryAddr.address, relayerServerAcc.address, coinsMultiplicator, 2],
             {
                 kind: "uups",
             }) as unknown as GMCoinExposed;
@@ -97,7 +94,17 @@ describe("GelatoW3F", function () {
         // });
         // await tx.wait();
 
-        return {coinContract, owner, feeAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2, coinsMultiplicator};
+        return {
+            coinContract,
+            owner,
+            feeAddr,
+            treasuryAddr,
+            gelatoAddr,
+            relayerServerAcc,
+            otherAcc1,
+            otherAcc2,
+            coinsMultiplicator
+        };
     }
 
     it('should post to the mock server and validate the response', async function () {
@@ -285,6 +292,7 @@ describe("GelatoW3F", function () {
             coinContract: smartContract,
             owner,
             feeAddr,
+            treasuryAddr,
             gelatoAddr,
             coinsMultiplicator
         } = await loadFixture(deployGMCoinWithProxy);
@@ -375,11 +383,12 @@ describe("GelatoW3F", function () {
 
         const userArgs = {
             contractAddress: verifierAddress,
-            searchURL: "http://localhost:8118/Search",
+            searchPath: "/Search",
             tweetLookupURL: "http://localhost:8118/tweet-lookup/",
-            convertToUsernamesURL: "http://localhost:8118/convert-ids-to-usernames/",
+            convertToUsernamesPath: "/convert-ids-to-usernames/",
             concurrencyLimit: concurrencyLimit,
-            serverSaveTweetsURL: "http://localhost:8118/save-tweets/"
+            serverSaveTweetsURL: "http://localhost:8118/save-tweets/",
+            twitterOptimizedServerHost: "http://localhost:8118"
         };
         //
         // const currentTimestamp = await time.latest();
@@ -390,10 +399,10 @@ describe("GelatoW3F", function () {
         const mintingDay = today.setDate(today.getDate() - 1) / 1000;
 
         const {
-            userTransferCount,
-            feeTransferCount,
+            userMintCount,
+            treasuryMintCount,
             finalRunningHash
-        } = await mintUntilEnd(smartContract, gelatoAddr, userArgs, mintingDay)
+        } = await mintUntilEnd(smartContract, gelatoAddr, treasuryAddr, userArgs, mintingDay)
 
         let userPoints: Map<string, number> = new Map();
         let totalEligibleUsers: number = 0;
@@ -437,14 +446,8 @@ describe("GelatoW3F", function () {
         }
         console.log('minting finished here!!');
 
-        expect(feeTransferCount).to.be.equal(totalEligibleUsers);
-        expect(userTransferCount).to.be.equal(totalEligibleUsers);
-
-
-        // to maintain log.json file the same for git
-
-        // let resultWallet = await instance.getWalletByUserID("1796129942104657921");
-        // expect(resultWallet.toLowerCase()).to.equal("0x6794a56583329794f184d50862019ecf7b6d8ba6");
+        expect(treasuryMintCount).to.be.equal(totalEligibleUsers);
+        expect(userMintCount).to.be.equal(totalEligibleUsers);
     });
 
     it('twitter-worker runningHash', async function () {
@@ -562,8 +565,8 @@ describe("GelatoW3F", function () {
         const mintingDay = today.setDate(today.getDate() - 1) / 1000;
 
         const {
-            userTransferCount,
-            feeTransferCount,
+            userMintCount,
+            treasuryMintCount,
             finalRunningHash
         } = await mintUntilEnd(smartContract, gelatoAddr, userArgs, mintingDay)
 
@@ -663,13 +666,13 @@ describe("GelatoW3F", function () {
 
 
         const {
-            userTransferCount,
-            feeTransferCount,
+            userMintCount,
+            treasuryMintCount,
             finalRunningHash
         } = await mintUntilEnd(smartContract, gelatoAddr, userArgs, mintingDay)
 
-        expect(userTransferCount).to.be.greaterThan(0);
-        expect(feeTransferCount).to.be.greaterThan(0);
+        expect(userMintCount).to.be.greaterThan(0);
+        expect(treasuryMintCount).to.be.greaterThan(0);
 
         let totalBalance = 0n;
         for (const [uid, wallet] of walletByUsername) {
@@ -793,13 +796,14 @@ describe("GelatoW3F", function () {
 
     });
 
-    async function mintUntilEnd(smartContract: GMCoinExposed, gelatoAddr: HardhatEthersSigner, userArgs, mintingDay: number): Promise<{
-        userTransferCount: number,
-        feeTransferCount: number,
+    async function mintUntilEnd(smartContract: GMCoinExposed, gelatoAddr: HardhatEthersSigner, treasuryAddr: HardhatEthersSigner, userArgs, mintingDay: number): Promise<{
+        userMintCount: number,
+        treasuryMintCount: number,
         finalRunningHash: string
     }> {
         const gelatoContract = smartContract.connect(gelatoAddr);
         const smartContractAddress = await smartContract.getAddress();
+        const treasuryAddress = await treasuryAddr.getAddress();
 
         await gelatoContract.startMinting();
 
@@ -812,8 +816,8 @@ describe("GelatoW3F", function () {
 
         let finalRunningHash = '';
 
-        let userTransferLogsCount = 0;
-        let feeTransferLogsCount = 0;
+        let userMintsLogsCount = 0;
+        let treasuryMintingLogsCount = 0;
         while (hasLogsToProcess) {
             const oracleW3f: Web3FunctionHardhat = w3f.get("twitter-worker");
             let {result, storage} = await oracleW3f.run("onRun", {
@@ -840,10 +844,14 @@ describe("GelatoW3F", function () {
                         }
 
                         if (decodedLog.name == "Transfer") {
-                            if (decodedLog.args[1] == smartContractAddress) {
-                                feeTransferLogsCount++;
+                            if (decodedLog.args[0] != 0x0) {
+                                continue;
+                            }
+
+                            if (decodedLog.args[1] == treasuryAddress) {
+                                treasuryMintingLogsCount++;
                             } else {
-                                userTransferLogsCount++;
+                                userMintsLogsCount++;
                             }
                             continue;
                         }
@@ -876,8 +884,8 @@ describe("GelatoW3F", function () {
         }
 
         return {
-            userTransferCount: userTransferLogsCount,
-            feeTransferCount: feeTransferLogsCount,
+            userMintCount: userMintsLogsCount,
+            treasuryMintCount: treasuryMintingLogsCount,
             finalRunningHash: finalRunningHash
         };
     }

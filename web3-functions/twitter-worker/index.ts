@@ -17,24 +17,35 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     console.log('running..');
     const {log, userArgs, multiChainProvider, storage: w3fStorage} = context;
 
-    const SearchURL = userArgs.searchURL as string;
     const CONCURRENCY_LIMIT = userArgs.concurrencyLimit as number;
-    const ConvertToUsernamesURL = userArgs.convertToUsernamesURL as string;
     const serverSaveTweetsURL = userArgs.serverSaveTweetsURL as string;
 
     const bearerToken = await context.secrets.get("TWITTER_BEARER");
     if (!bearerToken)
         return {canExec: false, message: `TWITTER_BEARER not set in secrets`};
 
-    const secretKey = await context.secrets.get("TWITTER_RAPIDAPI_KEY");
+    const secretKey = await context.secrets.get("TWITTER_OPTIMIZED_SERVER_KEY");
     if (!secretKey) {
-        throw new Error('Missing TWITTER_RAPIDAPI_KEY environment variable');
+        throw new Error('Missing TWITTER_OPTIMIZED_SERVER_KEY environment variable');
+    }
+
+    const twitterOptimizedServerHost = userArgs.twitterOptimizedServerHost !== '' ? userArgs.twitterOptimizedServerHost : await context.secrets.get("TWITTER_OPTIMIZED_SERVER_HOST");
+    if (!twitterOptimizedServerHost) {
+        throw new Error('Missing TWITTER_OPTIMIZED_SERVER_HOST environment variable');
+    }
+
+    const twitterOptimizedServerAuthHeaderName = await context.secrets.get("TWITTER_OPTIMIZED_SERVER_AUTH_HEADER_NAME");
+    if (!twitterOptimizedServerAuthHeaderName) {
+        throw new Error('Missing TWITTER_OPTIMIZED_SERVER_AUTH_HEADER_NAME environment variable');
     }
 
     const serverApiKey = await context.secrets.get("SERVER_API_KEY");
     if (!serverApiKey) {
         throw new Error('Missing SERVER_API_KEY env variable');
     }
+
+    const ConvertToUsernamesURL = `${twitterOptimizedServerHost}${userArgs.convertToUsernamesPath}`;
+    const SearchURL = `${twitterOptimizedServerHost}${userArgs.searchPath}`;
 
     try {
         const provider = multiChainProvider.default() as ContractRunner;
@@ -55,6 +66,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         let twitterRequester = new TwitterRequester({
             OptimizedAPISecretKey: secretKey,
             OfficialBearerToken: bearerToken,
+            AuthHeaderName: twitterOptimizedServerAuthHeaderName,
         }, {
             convertToUsernamesURL: ConvertToUsernamesURL,
             twitterLookupURL: userArgs.tweetLookupURL as string,
@@ -139,7 +151,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                     continue;
                 }
 
-                console.log(`newResult for userIndex ${tweets[i].userIndex} userID ${tweets[i].username}`);
                 UserResults.set(tweets[i].userIndex, result);
             }
 

@@ -4,6 +4,7 @@ import {Batch, Result, Tweet, TwitterApiResponse} from "./consts";
 export interface TwitterSecrets {
     OfficialBearerToken: string;
     OptimizedAPISecretKey: string; // optimized Twitter API secret
+    AuthHeaderName: string;
 }
 
 export interface TwitterURLList {
@@ -36,11 +37,12 @@ export class TwitterRequester {
         const requests = batches.map(async (batch) => {
             const url = `${this.urlList.convertToUsernamesURL}?user_ids=${batch.join(',')}`;
 
+            const headerKey = this.secrets.AuthHeaderName;
             try {
                 const response = await ky
                     .get(url, {
                         headers: {
-                            'X-Rapidapi-Key': this.secrets.OptimizedAPISecretKey,
+                            [headerKey]: this.secrets.OptimizedAPISecretKey,
                         },
                     })
                     .json<any>();
@@ -182,11 +184,13 @@ export class TwitterRequester {
             // Perform the GET request using ky
             console.log('query', query);
             console.log('cursor', cursor);
+            const headerKey = this.secrets.AuthHeaderName;
+
             const response = await ky.get(this.urlList.twitterSearchByQueryURL, {
                 timeout: 3000,
                 retry: 1,
                 headers: {
-                    'X-Rapidapi-Key': this.secrets.OptimizedAPISecretKey,
+                    [headerKey]: this.secrets.OptimizedAPISecretKey,
                 },
                 searchParams: {
                     q: query,

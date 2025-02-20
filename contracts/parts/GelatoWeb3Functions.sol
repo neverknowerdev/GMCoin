@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.24;
+
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -11,6 +14,7 @@ import "../vendor/gelato/Types.sol";
 contract GMWeb3Functions is ERC165, IERC1271, Initializable, OwnableUpgradeable, AutomateTaskCreatorUpgradeable {
     bytes32 public twitterVerificationTaskId;
     bytes32 public twitterWorkerTaskId;
+    bytes32 public dailyTriggerTaskId;
     address public trustedSigner;
 
     // old deployments -- Base Mainnet && Base Sepolia
@@ -24,22 +28,25 @@ contract GMWeb3Functions is ERC165, IERC1271, Initializable, OwnableUpgradeable,
         __AutomateTaskCreator_init(gelatoAutomateTaskCreator);
     }
 
-    function createTwitterVerificationFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner onlyDedicatedMsgSender {
-        require(twitterVerificationTaskId == "", "task already initialized");
+    function createTwitterVerificationFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner {
+        require(twitterVerificationTaskId == bytes32(""), "task already initialized");
 
-        twitterVerificationTaskId = createWeb3Functions(_w3fHash, argsHash, topics);
+        twitterVerificationTaskId = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
     }
 
     function createTwitterWorkerFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner {
-        require(twitterWorkerTaskId == "", "task already initialized");
+        require(twitterWorkerTaskId == bytes32(""), "task already initialized");
 
-        twitterWorkerTaskId = createWeb3Functions(_w3fHash, argsHash, topics);
+        twitterWorkerTaskId = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
     }
 
-    function createWeb3Functions(string calldata _gelatoW3fHash, bytes calldata w3fArgsHash, bytes32[][] memory topics) private returns (bytes32) {
-//        bytes memory execData = abi.encodeCall(this.increaseCount, (- 3));
-//        bytes memory w3fArgsHash = abi.encode(_address);
+    function createDailyFunction(uint128 startTime, uint128 interval, bytes calldata execData) public onlyOwner {
+        require(dailyTriggerTaskId == bytes32(""), "task already initialized");
 
+        dailyTriggerTaskId = createWeb3FunctionTime(startTime, interval, execData);
+    }
+
+    function createWeb3FunctionEvent(string calldata _gelatoW3fHash, bytes calldata w3fArgsHash, bytes32[][] memory topics) private returns (bytes32) {
         ModuleData memory moduleData = ModuleData({
             modules: new Module[](3),
             args: new bytes[](3)
@@ -58,10 +65,27 @@ contract GMWeb3Functions is ERC165, IERC1271, Initializable, OwnableUpgradeable,
 
         return _createTask(
             address(this),
-            "0x",
+            abi.encode(this.supportsInterface.selector),
             moduleData,
             address(0)
         );
+    }
+
+    function createWeb3FunctionTime(uint128 startTime, uint128 interval, bytes calldata execData) private returns (bytes32) {
+        ModuleData memory moduleData = ModuleData({
+            modules: new Module[](2),
+            args: new bytes[](2)
+        });
+        moduleData.modules[0] = Module.PROXY;
+        moduleData.modules[1] = Module.TRIGGER;
+
+        moduleData.args[0] = _proxyModuleArg();
+        moduleData.args[1] = _timeTriggerModuleArg(
+            startTime * 1000,
+            interval * 1000
+        );
+
+        return _createTask(address(this), execData, moduleData, address(0));
     }
 
     function _eventTriggerModuleArg(
