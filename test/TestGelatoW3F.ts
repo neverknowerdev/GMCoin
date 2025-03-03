@@ -598,9 +598,9 @@ describe("GelatoW3F", function () {
 
         const userArgs = {
             contractAddress: smartContractAddress,
-            searchURL: "/Search",
+            searchPath: "/Search",
             tweetLookupURL: "https://api.x.com/2/tweets",
-            convertToUsernamesURL: "https://twitter283.p.rapidapi.com/UserResultsByRestIds",
+            convertToUsernamesPath: "/UserResultsByRestIds",
             concurrencyLimit: concurrencyLimit,
             serverSaveTweetsURL: "https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/SaveTweets"
         };
