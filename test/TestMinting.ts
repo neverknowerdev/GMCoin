@@ -6,33 +6,9 @@ import {GMCoin} from "../typechain-types/contracts/GMCoin";
 import {GMCoinExposed} from "../typechain-types/contracts/testing/GMCoinExposed";
 import hre from "hardhat";
 import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
+import {createGMCoinFixture, deployGMCoinWithProxy} from "./tools/deployContract";
 
 describe("GM minting", function () {
-    async function deployGMCoinWithProxy() {
-        // Contracts are deployed using the first signer/account by default
-        const [owner, feeAddr, gelatoAddr, relayerServerAddr, , otherAcc1, otherAcc2] = await hre.ethers.getSigners();
-
-        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
-            [owner.address, feeAddr.address, 45, 1_000_000, gelatoAddr.address, relayerServerAddr.address, 1_000_000, 2],
-            {
-                kind: "uups",
-            }) as unknown as GMCoinExposed;
-
-        await coinContract.waitForDeployment();
-
-        const deployedAddress = await coinContract.getAddress();
-
-        console.log('contract deployed at ', deployedAddress);
-
-        // const tx = await owner.sendTransaction({
-        //   to: deployedAddress,
-        //   value: ethers.parseEther("1.0"),
-        // });
-        // await tx.wait();
-
-        return {coinContract, owner, feeAddr, gelatoAddr, relayerServerAddr, otherAcc1, otherAcc2};
-    }
 
 
     it('minting for twitter users: one day', async () => {
@@ -68,10 +44,11 @@ describe("GM minting", function () {
 
         const nextCursor = generateRandomString(32);
 
-        let cursor: Cursor = {
+        let batch: Batch = {
             startIndex: 0n,
             endIndex: BigInt(generatedData.length - 1),
             nextCursor: nextCursor,
+            errorCount: 0,
         }
 
         // start minting process
@@ -79,11 +56,11 @@ describe("GM minting", function () {
 
         let allUsersData = [];
 
-        await expect(gelatoContract.mintCoinsForTwitterUsers(generatedData, startOfYesterday, [cursor])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[0n, 99n, nextCursor]]);
+        await expect(gelatoContract.mintCoinsForTwitterUsers(generatedData, startOfYesterday, [batch])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[0n, 99n, nextCursor, 0]]);
 
-        cursor.nextCursor = "";
+        batch.nextCursor = "";
 
-        await expect(gelatoContract.mintCoinsForTwitterUsers(generatedData, startOfYesterday, [cursor])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[0n, 99n, '']]);
+        await expect(gelatoContract.mintCoinsForTwitterUsers(generatedData, startOfYesterday, [batch])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[0n, 99n, '', 0]]);
 
         // *2 cause we passed that data twice: with cursor and without
         for (let i = 0; i < generatedData.length; i++) {
@@ -109,15 +86,16 @@ describe("GM minting", function () {
         });
         allUsersData.push(...generatedData2);
 
-        cursor = {
+        batch = {
             startIndex: 100n,
             endIndex: BigInt(100 + generatedData2.length - 1),
-            nextCursor: ""
+            nextCursor: "",
+            errorCount: 0,
         }
 
-        await expect(gelatoContract.mintCoinsForTwitterUsers(generatedData2, startOfYesterday, [cursor])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[100n, 154n, '']]);
+        await expect(gelatoContract.mintCoinsForTwitterUsers(generatedData2, startOfYesterday, [batch])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[100n, 154n, '', 0]]);
 
-        const expectedResults = calcPointsForUsers(allUsersData, 1);
+        const expectedResults = calcPointsForUsers(allUsersData, 1, 1, 2, 3, 1_000_000);
         for (let i = 0; i < expectedResults.length; i++) {
             let expectedCoins = BigInt(expectedResults[i].expectedCoins) * 10n ** 18n;
             expect(await coinContract.balanceOf(wallets[i])).to.be.equal(expectedCoins);
@@ -126,9 +104,13 @@ describe("GM minting", function () {
 
 
     it('minting for twitter users: simple math', async () => {
-        const {coinContract, owner, feeAddr, gelatoAddr} = await loadFixture(deployGMCoinWithProxy);
+        const {coinContract, owner, feeAddr, gelatoAddr, treasuryAddr} = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = coinContract.connect(gelatoAddr);
+        const perTweet = Number(await coinContract.POINTS_PER_TWEET());
+        const perLike = Number(await coinContract.POINTS_PER_LIKE());
+        const perHashtag = Number(await coinContract.POINTS_PER_HASHTAG());
+        const perCashtag = Number(await coinContract.POINTS_PER_CASHTAG());
 
         const batchSize = 15;
 
@@ -160,31 +142,19 @@ describe("GM minting", function () {
             }
         });
 
-        await simulateDay(startOfTheDayTimestamp, 100_000, gelatoContract, gelatoAddr, generatedData);
+        await simulateDay(startOfTheDayTimestamp, gelatoContract, gelatoAddr, generatedData);
 
-        const expectedPoints = [
-            3 * 4 + 5 * 10 + 2 * 2 + 15 * 1,
-            0 * 4 + 12 * 10 + 28 * 2 + 120,
-            3 * 4 + 5 * 10 + 2 * 2 + 15 * 1,
-            0 * 4 + 12 * 10 + 28 * 2 + 120,
-            3 * 4 + 5 * 10 + 2 * 2 + 15 * 1,
-            0 * 4 + 12 * 10 + 28 * 2 + 120,
-            3 * 4 + 5 * 10 + 2 * 2 + 15 * 1,
-            0 * 4 + 12 * 10 + 28 * 2 + 120,
-            3 * 4 + 5 * 10 + 2 * 2 + 15 * 1,
-            0 * 4 + 12 * 10 + 28 * 2 + 120,
-            3 * 4 + 5 * 10 + 2 * 2 + 15 * 1,
-            0 * 4 + 12 * 10 + 28 * 2 + 120,
-            3 * 4 + 5 * 10 + 2 * 2 + 15 * 1,
-            0 * 4 + 12 * 10 + 28 * 2 + 120,
-            3 * 4 + 5 * 10 + 2 * 2 + 15 * 1,
-        ];
+        let totalPointsForUsers = 0;
+        let expectedPoints: number[] = [];
+        for (let i = 0; i < generatedData.length; i++) {
+            const points = generatedData[i].simpleTweets * perTweet +
+                generatedData[i].likes * perLike +
+                generatedData[i].hashtagTweets * perHashtag +
+                generatedData[i].cashtagTweets * perCashtag;
 
-        const totalPointsForUsers = expectedPoints.reduce((acc, current) => acc + current, 0);
-
-        log('pointsForUsers', totalPointsForUsers);
-        expect(await coinContract.getMintingDayPointsFromUsers()).to.be.equal(totalPointsForUsers);
-
+            expectedPoints.push(points);
+            totalPointsForUsers += points;
+        }
 
         let coinsSum: bigint = 0n;
         for (let i = 0; i < batchSize; i++) {
@@ -208,9 +178,9 @@ describe("GM minting", function () {
         log('coinsSum', coinsSum);
         expect(BigInt(totalPointsForUsers) - (coinsSum / 1_000_000n)).to.be.below(5); // rounding diff here is ok
 
-        let liquidityPoolBalance = await coinContract.balanceOf(coinContract.getAddress());
-        log('contract balance (liquidity pool)', liquidityPoolBalance);
-        expect(liquidityPoolBalance / 10n ** 18n).to.be.equal(coinsSum / 2n);
+        let treasuryPoolBalance = await coinContract.balanceOf(treasuryAddr);
+        log('contract balance (treasury pool)', treasuryPoolBalance);
+        expect(treasuryPoolBalance / 10n ** 18n).to.be.equal(coinsSum * 10n / 100n); // 5%
 
 
         //
@@ -219,7 +189,7 @@ describe("GM minting", function () {
 
     });
 
-    it('minting for twitter users: one mint per day constraint', async () => {
+    it('minting for twitter users: continuation after error', async () => {
         const {coinContract, owner, feeAddr, gelatoAddr} = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract: GMCoinExposed = coinContract.connect(gelatoAddr);
@@ -352,13 +322,14 @@ describe("GM minting", function () {
     });
 
     it('minting for twitter users: epochs and complexity', async () => {
-        const {coinContract, owner, feeAddr, gelatoAddr} = await loadFixture(deployGMCoinWithProxy);
+        const {coinContract, owner, feeAddr, gelatoAddr} = await loadFixture(createGMCoinFixture(7));
 
         let users = generateNewUsers(30);
         let userData = generateRandomUserData(30);
 
         log('week 1');
         let complexity = await coinContract.COINS_MULTIPLICATOR();
+        const epochDays = await coinContract.EPOCH_DAYS();
         let dayTimestamp = await time.latest();
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
@@ -414,10 +385,11 @@ type User = {
     wallet: HDNodeWallet;
 }
 
-type Cursor = {
+type Batch = {
     startIndex: bigint;
     endIndex: bigint;
     nextCursor: string;
+    errorCount: number;
 }
 
 
@@ -462,11 +434,11 @@ async function simulateDayFull(dayTimestamp: number, users: User[], userData: Tw
     const startOfPrevDay = await getStartOfDayTimestamp(dayTimestamp) - time.duration.days(1);
     await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(startOfPrevDay);
 
-    await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, userData.length - 1, '']])).to.emit(coinContract, "twitterMintingProcessed");
+    await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, userData.length - 1, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
     await expect(gelatoContract.finishMinting(startOfPrevDay, "finalHash")).to.emit(coinContract, "MintingFinished");
 }
 
-async function simulateDay(dayTimestamp: number, totalGMCoins: number, coinContract: GMCoin, gelatoAddr: HardhatEthersSigner, userData: any[]) {
+async function simulateDay(dayTimestamp: number, coinContract: GMCoin, gelatoAddr: HardhatEthersSigner, userData: any[]) {
     const gelatoContract: GMCoinExposed = coinContract.connect(gelatoAddr);
 
 
@@ -480,16 +452,16 @@ async function simulateDay(dayTimestamp: number, totalGMCoins: number, coinContr
         nextCursor: "",
         errorCount: 0,
     }
-    await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [cursor])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfPrevDay, [[cursor.startIndex, cursor.endIndex, cursor.nextCursor]]);
+    await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [cursor])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfPrevDay, [[cursor.startIndex, cursor.endIndex, cursor.nextCursor, cursor.errorCount]]);
 
 }
 
-function calcPointsForUsers(userData: TweetData[], divider: number): any[] {
+function calcPointsForUsers(userData: TweetData[], perTweet: number, perLike: number, perHashtag: number, perCashtag: number, multiplicator: number): any[] {
     var results = [];
     for (let i = 0; i < userData.length; i++) {
-        const expectedPoints = userData[i].simpleTweets * 2 + userData[i].hashtagTweets * 4 + userData[i].cashtagTweets * 10 + userData[i].likes;
+        const expectedPoints = userData[i].simpleTweets * perTweet + userData[i].hashtagTweets * perHashtag + userData[i].cashtagTweets * perCashtag + userData[i].likes * perLike;
 
-        let expectedCoinsN = BigInt(expectedPoints) * 1_000_000n / BigInt(divider);
+        let expectedCoinsN = BigInt(expectedPoints) * BigInt(multiplicator);
         //   expectedCoinsN = expectedCoinsN - (expectedCoinsN * BigInt(mintComission*10000) / 1000n);
 
 

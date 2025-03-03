@@ -45,13 +45,10 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
     // Handle event data
     const {accessCodeEncrypted, userID, wallet} = event.args;
-    console.log('authCode', accessCodeEncrypted);
     console.log('userID', userID);
     console.log(`Veryfing Twitter for address ${wallet}..`);
 
-    console.log('before decryptData', accessCodeEncrypted);
     const accessToken = decryptData(accessCodeEncrypted, decryptionKey);
-    console.log('after decryptData', accessToken);
 
     try {
         // Step 2: Use access token to call the users/me endpoint

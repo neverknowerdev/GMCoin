@@ -37,8 +37,8 @@ contract GMTreasury is Ownable {
     }
 
     function setToken(IERC20 _token) public onlyOwner {
-        require(token == address(0), "Token is already set");
-        
+        require(address(token) == address(0), "Token is already set");
+
         token = _token;
     }
 

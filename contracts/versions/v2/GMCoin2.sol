@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
+import "./TwitterOracle2.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "./TwitterOracle.sol";
 
 // Uncomment this line to use console.log
 //import "hardhat/console.sol";
-import {GMWeb3FunctionsV4} from "./GelatoWeb3Functions.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 
-contract GMCoinV4 is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracleV4
+contract GMCoinV2 is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracleV2
 {
     address public plannedNewImplementation;
     uint256 public plannedNewImplementationTime;
 
     // Commission percentage in basis points (100 = 1%)
-    uint256 public feePercentage; // 1% fee of transaction goes to the team for maintenance
-    uint256 public treasuryPercentage; // 10% of minted tokens goes to Treasury that locks fund for 3 months
+    uint256 public feePercentage; // % fee of transaction goes to the team for maintenance
+    uint256 public treasuryPercentage; // % of minted tokens goes to Treasury that locks fund for 3 months
     address feeAddress;
     address treasuryAddress;
 
@@ -29,6 +28,32 @@ contract GMCoinV4 is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUp
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
+    }
+
+    function initialize(
+        address _owner,
+        address _feeAddress,
+        address _treasuryAddress,
+        address _relayServerAddress,
+        uint256 coinsMultiplicator,
+        uint _epochDays
+    ) public initializer {
+        feeAddress = _feeAddress;
+        treasuryAddress = _treasuryAddress;
+        totalHolders = 0;
+
+        feePercentage = 100; // 1% fee of transaction
+        treasuryPercentage = 500; // 5% of minted coins
+
+        __Ownable_init(_owner);
+        __UUPSUpgradeable_init();
+        __GelatoWeb3Functions__init(_owner);
+        __ERC20_init("GM Coin", "GM");
+        __TwitterOracle__init(coinsMultiplicator, dedicatedMsgSender, _relayServerAddress, _epochDays);
+    }
+
+    function initialize2() public reinitializer(2) onlyOwner {
+        __TwitterOracle__init2();
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {

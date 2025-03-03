@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "./GMCoin.sol";
 
-contract GMCoinTestnet is GMCoin
+contract GMCoinTestnet is GMCoinV3
 {
     function addTwitterUsername(string calldata userID, address walletAddress) public {
         wallets[userID] = walletAddress;

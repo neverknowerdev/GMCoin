@@ -9,9 +9,9 @@ import "./TwitterOracle.sol";
 
 // Uncomment this line to use console.log
 //import "hardhat/console.sol";
-import {GMWeb3FunctionsV4} from "./GelatoWeb3Functions.sol";
+import {GMWeb3FunctionsV3} from "./GelatoWeb3Functions.sol";
 
-contract GMCoinV4 is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracleV4
+contract GMCoinV3 is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracleV3
 {
     address public plannedNewImplementation;
     uint256 public plannedNewImplementationTime;
@@ -29,6 +29,15 @@ contract GMCoinV4 is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUp
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
+    }
+
+    function initialize3(uint _epochDays, uint ownerSupply, uint256 coinsPerTweet) public reinitializer(3) onlyOwner {
+        treasuryPercentage = 1000; // 10%
+        __TwitterOracle__init3(_epochDays, coinsPerTweet);
+
+        if (ownerSupply > 0) {
+            _mint(owner(), ownerSupply);
+        }
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {

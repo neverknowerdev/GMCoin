@@ -5,10 +5,11 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
+//import "hardhat/console.sol";
 import "hardhat/console.sol";
-import {GMWeb3Functions} from "./GelatoWeb3Functions.sol";
+import {GMWeb3FunctionsV4} from "./GelatoWeb3Functions.sol";
 
-contract GMTwitterOracle is Initializable, GMWeb3Functions {
+contract GMTwitterOracleV4 is Initializable, GMWeb3FunctionsV4 {
     using ECDSA for bytes32;
 
     address gelatoAddress;
@@ -17,6 +18,11 @@ contract GMTwitterOracle is Initializable, GMWeb3Functions {
     modifier onlyGelato() {
         require(msg.sender == gelatoAddress, "only Gelato can call this function");
         _;
+    }
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
     modifier onlyServerRelayer() {
@@ -29,10 +35,12 @@ contract GMTwitterOracle is Initializable, GMWeb3Functions {
     string[] internal allTwitterUsers;
 
     uint256 public COINS_MULTIPLICATOR;
-    uint256 public constant POINTS_MULTIPLICATOR_PER_TWEET = 2;
-    uint256 public constant POINTS_MULTIPLICATOR_PER_LIKE = 1;
-    uint256 public constant POINTS_MULTIPLICATOR_PER_HASHTAG = 4;
-    uint256 public constant POINTS_MULTIPLICATOR_PER_CASHTAG = 10;
+
+    // not using it anymore
+    uint256 public constant __NOT_USED__ANYMORE1 = 2;
+    uint256 public constant __NOT_USED__ANYMORE2 = 1;
+    uint256 public constant __NOT_USED__ANYMORE3 = 4;
+    uint256 public constant __NOT_USED__ANYMORE4 = 10;
 
     uint public EPOCH_DAYS;
     uint32 public epochNumber;
@@ -40,24 +48,12 @@ contract GMTwitterOracle is Initializable, GMWeb3Functions {
     mapping(address => string) internal usersByWallets;
     mapping(address => bool) internal registeredWallets;
 
-    uint256[255] private __gap;
+    uint256 public POINTS_PER_TWEET;
+    uint256 public POINTS_PER_LIKE;
+    uint256 public POINTS_PER_HASHTAG;
+    uint256 public POINTS_PER_CASHTAG;
 
-    function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress, address _relayServerAddress, uint _epochDays) public onlyInitializing {
-        EPOCH_DAYS = _epochDays;
-        epochNumber = 1;
-
-        gelatoAddress = _gelatoAddress;
-        serverRelayerAddress = _relayServerAddress;
-
-        COINS_MULTIPLICATOR = coinsPerTweet * 10 ** 18;
-
-        epochStartedAt = uint32(block.timestamp - (block.timestamp % 1 days) - 1 days);
-
-        // pre-yesterday
-        lastMintedDay = uint32(block.timestamp - (block.timestamp % 1 days) - 2 days);
-
-
-    }
+    uint256[251] private __gap;
 
     function walletByTwitterUser(string calldata username) internal view returns (address) {
         return wallets[username];
@@ -197,17 +193,34 @@ contract GMTwitterOracle is Initializable, GMWeb3Functions {
 
         // complexity calculation
         // start new epoch
-        if (dayToMint > epochStartedAt && dayToMint - epochStartedAt >= EPOCH_DAYS) {
+        if (dayToMint > epochStartedAt && dayToMint - epochStartedAt >= EPOCH_DAYS * 1 days) {
             epochStartedAt = dayToMint;
 
-            // if(currentEpochPoints > lastEpochPoints) {
-            COINS_MULTIPLICATOR = COINS_MULTIPLICATOR * 80 / 100;
-            // minus 20%
-            emit changedComplexity(COINS_MULTIPLICATOR);
-            // }
-//              else if(COMPLEXITY_DIVIDER > 1 && lastEpochPoints < currentEpochPoints) {
-//                 COMPLEXITY_DIVIDER /= 2;
-//             }
+            if (lastEpochPoints != 0) {
+                // more GMs now that in previous epoch
+                if (currentEpochPoints > lastEpochPoints) {
+                    if (currentEpochPoints / lastEpochPoints >= 5) {
+                        // 1/2
+                        COINS_MULTIPLICATOR = COINS_MULTIPLICATOR / 5;
+                    } else if (currentEpochPoints / lastEpochPoints >= 2) {
+                        // 1/2
+                        COINS_MULTIPLICATOR = COINS_MULTIPLICATOR / 2;
+                    } else {
+                        // minus 30%
+                        COINS_MULTIPLICATOR = COINS_MULTIPLICATOR * 70 / 100;
+                    }
+                }
+                if (currentEpochPoints < lastEpochPoints) {
+                    if (lastEpochPoints / currentEpochPoints >= 3) {
+                        COINS_MULTIPLICATOR = COINS_MULTIPLICATOR * 2;
+                    } else {
+                        // plus 20%
+                        COINS_MULTIPLICATOR = COINS_MULTIPLICATOR * 120 / 100;
+                    }
+                }
+
+                emit changedComplexity(COINS_MULTIPLICATOR);
+            }
             epochNumber++;
 
             lastEpochPoints = currentEpochPoints;
@@ -266,10 +279,10 @@ contract GMTwitterOracle is Initializable, GMWeb3Functions {
             }
 
             uint256 points =
-                userData[i].simpleTweets * POINTS_MULTIPLICATOR_PER_TWEET
-                + userData[i].likes * POINTS_MULTIPLICATOR_PER_LIKE
-                + userData[i].hashtagTweets * POINTS_MULTIPLICATOR_PER_HASHTAG
-                + userData[i].cashtagTweets * POINTS_MULTIPLICATOR_PER_CASHTAG;
+                userData[i].simpleTweets * POINTS_PER_TWEET
+                + userData[i].likes * POINTS_PER_LIKE
+                + userData[i].hashtagTweets * POINTS_PER_HASHTAG
+                + userData[i].cashtagTweets * POINTS_PER_CASHTAG;
 
             if (points == 0) {
                 continue;

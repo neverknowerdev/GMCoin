@@ -2,7 +2,7 @@ import {ethers, Interface, EventFragment} from 'ethers';
 import fs from 'fs';
 import path from 'path';
 
-const abiPath = 'artifacts/contracts/parts/TwitterOracle.sol/GMTwitterOracle.json'; // Replace with your ABI file path
+const abiPath = 'artifacts/contracts/TwitterOracle.sol/GMTwitterOracleV3.json'; // Replace with your ABI file path
 
 export async function generateEventLog(eventName: string, params: any[]): any {
     const abiFile = JSON.parse(fs.readFileSync(abiPath, 'utf8'));

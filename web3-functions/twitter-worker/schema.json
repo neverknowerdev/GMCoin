@@ -11,6 +11,7 @@
     "convertToUsernamesPath": "string",
     "tweetLookupURL": "string",
     "concurrencyLimit": "number",
-    "twitterOptimizedServerHost": "string"
+    "twitterOptimizedServerHost": "string",
+    "serverSaveTweetsURL": "string"
   }
 }

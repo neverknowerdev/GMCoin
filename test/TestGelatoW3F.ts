@@ -16,7 +16,8 @@ import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk/hardhat-plu
 import {GMCoinExposed} from "../typechain";
 import {MockHttpServer} from './tools/mockServer';
 import {Provider, HDNodeWallet, EventLog} from "ethers";
-import {generateEventLog, writeEventLogFile} from './tools/helpers';
+import {generateEventLog} from './tools/helpers';
+import {deployGMCoinWithProxy} from "./tools/deployContract";
 import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers";
 import {FakeContract, smock} from '@neverknowerdev/smock';
 import * as url from 'url';
@@ -25,6 +26,7 @@ import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
 import {IncomingHttpHeaders} from "http";
 import {blake2b} from "blakejs";
 import axios from "axios";
+
 
 describe("GelatoW3F", function () {
     let mockServer: MockHttpServer;
@@ -44,68 +46,6 @@ describe("GelatoW3F", function () {
         // Reset mocks before each test
         mockServer.resetMocks();
     });
-
-    async function deployGMCoinWithProxy() {
-        // Contracts are deployed using the first signer/account by default
-        const [owner, feeAddr, treasuryAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2] = await hre.ethers.getSigners();
-
-
-        let gelatoIAutomate = await smock.fake('IAutomate', {
-            address: "0x2A6C106ae13B558BB9E2Ec64Bd2f1f7BEFF3A5E0",
-        });
-        gelatoIAutomate.gelato.returns('0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30001');
-        gelatoIAutomate.taskModuleAddresses.returns('0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30002');
-
-        let gelatoIGelato = await smock.fake('IGelato', {
-            address: "0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30001",
-        });
-        gelatoIGelato.feeCollector.returns();
-
-        let gelatoIProxyModule = await smock.fake('IProxyModule', {
-            address: "0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30002",
-        });
-        gelatoIProxyModule.opsProxyFactory.returns('0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30003');
-
-        let gelatoIOpsProxyFactory = await smock.fake('IOpsProxyFactory', {
-            address: "0x2a6c106ae13b558bb9e2ec64bd2f1f7beff30003",
-        })
-
-        gelatoIOpsProxyFactory.getProxyOf.returns([gelatoAddr.address, true]);
-
-
-        const coinsMultiplicator = 1_000_000;
-
-        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
-            [owner.address, feeAddr.address, treasuryAddr.address, relayerServerAcc.address, coinsMultiplicator, 2],
-            {
-                kind: "uups",
-            }) as unknown as GMCoinExposed;
-
-        await coinContract.waitForDeployment();
-
-        const deployedAddress = await coinContract.getAddress();
-
-        console.log('contract deployed at ', deployedAddress);
-
-        // const tx = await owner.sendTransaction({
-        //   to: deployedAddress,
-        //   value: ethers.parseEther("1.0"),
-        // });
-        // await tx.wait();
-
-        return {
-            coinContract,
-            owner,
-            feeAddr,
-            treasuryAddr,
-            gelatoAddr,
-            relayerServerAcc,
-            otherAcc1,
-            otherAcc2,
-            coinsMultiplicator
-        };
-    }
 
     it('should post to the mock server and validate the response', async function () {
         mockServer.mock('/api/test', 'GET', {message: 'Mocked GET response'}, 200, 'application/json');
@@ -134,7 +74,7 @@ describe("GelatoW3F", function () {
             expect(data.success).to.be.true;
 
             // Optionally, check if the endpoint was called with the correct parameters
-            mockServer.expectURLToBeCalled('/api/submit', 'POST', undefined, {data: 'example'});
+            mockServer.expectURLToBeCalled('/api/submit', 'POST', undefined, "{\"data\":\"example\"}");
         }
     });
 
@@ -299,7 +239,7 @@ describe("GelatoW3F", function () {
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
-        const userLimit = 3000;
+        const userLimit = 1000;
         const concurrencyLimit = 10;
 
         const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
@@ -313,9 +253,9 @@ describe("GelatoW3F", function () {
             expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);
         }
 
-        // let allUserTweetsByUsername = loadUserTweets('./test/generatedUserTweets_err.json')
+        // let allUserTweetsByUsername = loadUserTweets('./test/generatedUserTweets_error_60.json')
         let allUserTweetsByUsername = generateUserTweetsMap(userLimit);
-        // saveUserTweetsToFile(allUserTweetsByUsername, './test/generatedUserTweets1.json');
+        // saveUserTweetsToFile(allUserTweetsByUsername, './test/generatedUserTweets_error_60.json');
 
         let tweetMap: Map<string, Tweet> = new Map();
         for (let [userID, tweets] of allUserTweetsByUsername) {
@@ -324,7 +264,13 @@ describe("GelatoW3F", function () {
             }
         }
 
+        let queryCount = 0;
         mockServer.mockFunc('/Search', 'GET', (url: url.UrlWithParsedQuery) => {
+            queryCount++;
+            if (queryCount % 7 == 0) {
+                throw new Error("some random error");
+            }
+
             const q = url.query["q"] as string;
             const cursor = url.query["cursor"] as string;
             const usernamesList = extractUserIDs(q);
@@ -407,7 +353,14 @@ describe("GelatoW3F", function () {
         let userPoints: Map<string, number> = new Map();
         let totalEligibleUsers: number = 0;
 
+        const perTweet = Number(await smartContract.POINTS_PER_TWEET());
+        const perLike = Number(await smartContract.POINTS_PER_LIKE());
+        const perHashtag = Number(await smartContract.POINTS_PER_HASHTAG());
+        const perCashtag = Number(await smartContract.POINTS_PER_CASHTAG());
+
         allUserTweetsByUsername.forEach((tweets, uid) => {
+            let totalHashtagsCount = 0;
+            let totalCashtagCount = 0;
             const calculateTotalPoints = (tweets: Tweet[]): number => {
                 return tweets.reduce((totalPoints, tweet) => {
                     const gmCount = (tweet.text.match(/\bgm\b/gi) || []).length; // Matches whole "gm" words
@@ -416,15 +369,21 @@ describe("GelatoW3F", function () {
 
                     let pointsPerTweet = 0;
                     if (dollarGmCount > 0) {
-                        pointsPerTweet += 10;
+                        totalCashtagCount++;
+                        if (totalCashtagCount <= 10) {
+                            pointsPerTweet += perCashtag;
+                        }
                     } else if (hashtagGmCount > 0) {
-                        pointsPerTweet += 4;
+                        totalHashtagsCount++;
+                        if (totalHashtagsCount <= 10) {
+                            pointsPerTweet += perHashtag;
+                        }
                     } else if (gmCount > 0) {
-                        pointsPerTweet += 2;
+                        pointsPerTweet += perTweet;
                     }
 
                     if (pointsPerTweet > 0) {
-                        pointsPerTweet += tweet.likesCount;
+                        pointsPerTweet += tweet.likesCount * perLike;
                     }
 
                     return totalPoints + pointsPerTweet;
@@ -446,8 +405,10 @@ describe("GelatoW3F", function () {
         }
         console.log('minting finished here!!');
 
-        expect(treasuryMintCount).to.be.equal(totalEligibleUsers);
+        console.log('userMintCount', userMintCount);
+        console.log('treasuryMintCount', treasuryMintCount);
         expect(userMintCount).to.be.equal(totalEligibleUsers);
+        expect(treasuryMintCount).to.be.equal(totalEligibleUsers);
     });
 
     it('twitter-worker runningHash', async function () {
@@ -803,7 +764,6 @@ describe("GelatoW3F", function () {
     }> {
         const gelatoContract = smartContract.connect(gelatoAddr);
         const smartContractAddress = await smartContract.getAddress();
-        const treasuryAddress = await treasuryAddr.getAddress();
 
         await gelatoContract.startMinting();
 
@@ -844,11 +804,12 @@ describe("GelatoW3F", function () {
                         }
 
                         if (decodedLog.name == "Transfer") {
+                            // checking only minting
                             if (decodedLog.args[0] != 0x0) {
                                 continue;
                             }
 
-                            if (decodedLog.args[1] == treasuryAddress) {
+                            if (decodedLog.args[1] == treasuryAddr.address) {
                                 treasuryMintingLogsCount++;
                             } else {
                                 userMintsLogsCount++;
@@ -1354,7 +1315,56 @@ function generateUserTweetsMap(limit: number): UserTweetsMap {
         userTweets.set(`user${userId}`, tweets);
     }
 
+    // adding more than 10 hashtags for some user
+    userTweets.set(`user1`, generateTweets(1, [
+        "#gm GM!",
+        "#gmgmgm should not work",
+        "#gm @someUser",
+        "hello my sweet #GM",
+        "#Gm people",
+        "#gm is never going to stop",
+        "#gm crypto will take over",
+        "#gm #gm #gm",
+        "#gm gm GM",
+        "#gm",
+        "#gm Sun!",
+        "@user use hashtag #gm!",
+        "#gm 11",
+        "#gm 12"
+    ]));
+
+    userTweets.set(`user2`, generateTweets(2, [
+        "$gm GM!",
+        "$gmgmgm should not work",
+        "$gm @someUser",
+        "hello my sweet $GM",
+        "$Gm people",
+        "$gm is never going to stop",
+        "$gm crypto will take over",
+        "$gm #gm #gm",
+        "$gm gm GM",
+        "$gm",
+        "$gm Sun!",
+        "@user use cashtag $gm!",
+        "$gm 11",
+        "$gm 12"
+    ]));
+
     return userTweets;
+}
+
+function generateTweets(userId: number, texts: string[]): Tweet[] {
+    let result: Tweet[] = [];
+    for (let i = 0; i < texts.length; i++) {
+        result.push({
+            text: texts[i],
+            likesCount: 10,
+            author_id: `${userId}`,
+            tweet_id: `tweetId${userId}_${i}`
+        })
+    }
+
+    return result;
 }
 
 // Function to save userTweets map to a JSON file

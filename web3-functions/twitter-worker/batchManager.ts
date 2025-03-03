@@ -27,8 +27,8 @@ export class BatchManager {
         queryList: string[];
         userIndexByUsername: Map<string, number>
     }> {
-        // skip already done batches
-        batches = batches.filter(batch => batch.nextCursor != '' && batch.errorCount == 0)
+        // skip already done batches: nextCursor == '' && errorCount == 0
+        batches = batches.filter(batch => !(batch.nextCursor == '' && batch.errorCount == 0))
             .sort((a, b) => Number(a.startIndex - b.startIndex));
 
         for (let i = 0; i < batches.length; i++) {

@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "../GMCoin.sol";
 
-contract GMCoinExposed is GMCoin
+contract GMCoinExposedV3 is GMCoinV3
 {
     function getWalletByUserID(string calldata username) public view returns (address) {
         return walletByTwitterUser(username);

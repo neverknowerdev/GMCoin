@@ -32,16 +32,12 @@ async function main() {
     const twitterWorkerCID = await twitterWorkerFunc.deploy();
     console.log('twitterWorkerCID CID', twitterWorkerCID);
 
-
-    console.log('encoding twitter-verification args..');
-    let am = new AutomateModule();
-    const twitterVerificationArgsHex = await am.encodeWeb3FunctionArgs(twitterVerificationCID, {
+    const twitterVerificationArgsHex = await encodeUserArgs(twitterVerificationCID, {
         verifierContractAddress: contractAddress,
         twitterHost: "https://api.x.com",
     });
 
-    console.log('encoding twitter-worker args..');
-    const twitterWorkerArgsHex = await am.encodeWeb3FunctionArgs(twitterWorkerCID, {
+    const twitterWorkerArgsHex = await encodeUserArgs(twitterWorkerCID, {
         "contractAddress": contractAddress,
         "searchPath": "/Search",
         "tweetLookupURL": "https://api.twitter.com/2/tweets",
@@ -69,12 +65,14 @@ async function main() {
     tx = await GMCoin.createTwitterWorkerFunction(twitterWorkerCID, twitterWorkerArgsHex, twitterWorkerTopics);
     await tx.wait()
 
-    console.log('calling GMCoin.createDailyFunction..');
-    const secondsUntil2AM = secondsUntilNext2AM();
-    const interval = 60 * 60 * 24; // 1 day
-    const execData = GMCoin.interface.encodeFunctionData("startMinting", []);
-    tx = await GMCoin.createDailyFunction(secondsUntil2AM, interval, execData);
-    await tx.wait();
+    // console.log('calling GMCoin.createDailyFunction..');
+    // const currentTimestamp = Math.floor(Date.now() / 1000);
+    // const nextDay2AM = currentTimestamp + secondsUntilNext2AM();
+    // console.log('secondsUntil2AM', nextDay2AM);
+    // const interval = 60 * 60 * 24; // 1 day
+    // const execData = GMCoin.interface.encodeFunctionData("startMinting", []);
+    // tx = await GMCoin.createDailyFunction(nextDay2AM, interval, execData);
+    // await tx.wait();
 
     const twitterVerificationTaskId = await GMCoin.twitterVerificationTaskId();
     const twitterWorkerTaskId = await GMCoin.twitterWorkerTaskId();
@@ -93,6 +91,15 @@ async function main() {
     await setSecretsForW3f(contractAddress, owner, twitterWorkerTaskId, hre.network.config.chainId as number, twitterWorkerSecrets);
 
     console.log('all done!!');
+}
+
+async function encodeUserArgs(functionCID: string, userArgs: any) {
+    let am = new AutomateModule();
+
+    const functionArgsHex = await am.encodeWeb3FunctionArgs(functionCID, userArgs);
+    const result = ethers.AbiCoder.defaultAbiCoder().decode(["string", "bytes"], functionArgsHex);
+
+    return result[1];
 }
 
 async function setSecretsForW3f(contractAddress: string, signer: HardhatEthersSigner, taskId: string, chainId: number, secrets: any) {

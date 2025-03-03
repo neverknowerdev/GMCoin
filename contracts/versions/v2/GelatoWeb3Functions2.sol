@@ -6,12 +6,18 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import "../vendor/gelato/AutomateModuleHelper.sol";
-import "../vendor/gelato/AutomateTaskCreatorUpgradeable.sol";
-import "../vendor/gelato/Types.sol";
+import "../../vendor/gelato/AutomateModuleHelper.sol";
+import "../../vendor/gelato/AutomateTaskCreatorUpgradeable.sol";
+import "../../vendor/gelato/Types.sol";
 
 
-contract GMWeb3Functions is ERC165, IERC1271, Initializable, OwnableUpgradeable, AutomateTaskCreatorUpgradeable {
+contract GMWeb3FunctionsV2 is ERC165, IERC1271, Initializable, OwnableUpgradeable, AutomateTaskCreatorUpgradeable {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+
     bytes32 public twitterVerificationTaskId;
     bytes32 public twitterWorkerTaskId;
     bytes32 public dailyTriggerTaskId;
@@ -28,20 +34,40 @@ contract GMWeb3Functions is ERC165, IERC1271, Initializable, OwnableUpgradeable,
         __AutomateTaskCreator_init(gelatoAutomateTaskCreator);
     }
 
+    function __GelatoWeb3Function__init2() public onlyInitializing onlyOwner {
+        _cancelTask(twitterWorkerTaskId);
+        _cancelTask(twitterVerificationTaskId);
+        _cancelTask(dailyTriggerTaskId);
+
+        twitterWorkerTaskId = bytes32("");
+        twitterVerificationTaskId = bytes32("");
+        dailyTriggerTaskId = bytes32("");
+    }
+
     function createTwitterVerificationFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner {
-        require(twitterVerificationTaskId == bytes32(""), "task already initialized");
+        // for devs purpose. Until contact will go to Live finally
+//        require(twitterVerificationTaskId == bytes32(""), "task already initialized");
+        if (twitterVerificationTaskId != bytes32("")) {
+            _cancelTask(twitterVerificationTaskId);
+        }
 
         twitterVerificationTaskId = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
     }
 
     function createTwitterWorkerFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner {
-        require(twitterWorkerTaskId == bytes32(""), "task already initialized");
+//        require(twitterWorkerTaskId == bytes32(""), "task already initialized");
+        if (twitterWorkerTaskId != bytes32("")) {
+            _cancelTask(twitterWorkerTaskId);
+        }
 
         twitterWorkerTaskId = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
     }
 
     function createDailyFunction(uint128 startTime, uint128 interval, bytes calldata execData) public onlyOwner {
-        require(dailyTriggerTaskId == bytes32(""), "task already initialized");
+//        require(dailyTriggerTaskId == bytes32(""), "task already initialized");
+        if (dailyTriggerTaskId != bytes32("")) {
+            _cancelTask(dailyTriggerTaskId);
+        }
 
         dailyTriggerTaskId = createWeb3FunctionTime(startTime, interval, execData);
     }

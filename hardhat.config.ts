@@ -69,6 +69,11 @@ const config = {
             url: "https://mainnet.base.org",
             chainId: 8453,
             accounts: [process.env.BASE_PROD_PRIVATE_KEY, process.env.BASE_PROD_FEE_PRIVATE_KEY],
+        },
+        polygon: {
+            url: "https://polygon-bor-rpc.publicnode.com",
+            chainId: 137,
+            accounts: [process.env.BASE_PROD_PRIVATE_KEY]
         }
     },
     gasReporter: {

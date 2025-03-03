@@ -14,7 +14,6 @@ const verifyTweetBatchSize = 300;
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
     // Get event log from Web3FunctionEventContext
-    console.log('running..');
     const {log, userArgs, multiChainProvider, storage: w3fStorage} = context;
 
     const CONCURRENCY_LIMIT = userArgs.concurrencyLimit as number;
@@ -87,8 +86,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         let batchUploader = new BatchUploader(mintingDayTimestamp, storage, serverSaveTweetsURL, serverApiKey);
         await batchUploader.loadStateFromStorage();
 
-        console.log(' ');
-        console.log(' ');
         console.log(' ');
         console.log('onRun!', mintingDayTimestamp);
         console.log('received batches', initBatches);
@@ -319,8 +316,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 ]),
             });
 
-
-            console.log('return transactions', transactions.length);
 
             return {
                 canExec: true,

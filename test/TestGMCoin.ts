@@ -7,49 +7,22 @@ import {time, loadFixture} from "@nomicfoundation/hardhat-network-helpers";
 import {GMCoin, GMCoinExposed} from "../typechain";
 import hre from "hardhat";
 import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
+import {createGMCoinFixture, deployGMCoinWithProxy} from "./tools/deployContract";
 
 
 describe("GM", function () {
-    async function deployGMCoinWithProxy() {
-        // Contracts are deployed using the first signer/account by default
-        const [owner, feeAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2] = await hre.ethers.getSigners();
-
-        const coinsMultiplicator = 1_000_000;
-
-        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
-            [owner.address, feeAddr.address, 45, 1_000_000, gelatoAddr.address, relayerServerAcc.address, coinsMultiplicator, 2],
-            {
-                kind: "uups",
-            }) as unknown as GMCoinExposed;
-
-        await coinContract.waitForDeployment();
-
-        const deployedAddress = await coinContract.getAddress();
-
-        console.log('contract deployed at ', deployedAddress);
-
-        // const tx = await owner.sendTransaction({
-        //   to: deployedAddress,
-        //   value: ethers.parseEther("1.0"),
-        // });
-        // await tx.wait();
-
-        return {coinContract, owner, feeAddr, gelatoAddr, relayerServerAcc, otherAcc1, otherAcc2, coinsMultiplicator};
-    }
 
     it("proxy redeployment success", async function () {
         // 1. Retrieve Signers
-        const [owner, gelatoAddr, relayerServerAddr] = await hre.ethers.getSigners();
-
+        const {coinContract, owner, feeAddr, gelatoAddr, relayerServerAcc} = await loadFixture(deployGMCoinWithProxy);
         // 2. Get Contract Factories
-        const TwitterCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin");
-        const TwitterCoinV2Factory: ContractFactory = await ethers.getContractFactory("GMCoinV2");
+        const TwitterCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoinV2");
+        const TwitterCoinV2Factory: ContractFactory = await ethers.getContractFactory("GMCoinV3");
 
         // 3. Deploy Upgradeable Proxy for TwitterCoin
         const instance: Contract = await upgrades.deployProxy(
             TwitterCoinFactory,
-            [owner.address, owner.address, 50, 1000, gelatoAddr.address, relayerServerAddr.address, 1_000_000, 2],
+            [owner.address, owner.address, gelatoAddr.address, relayerServerAcc.address, 1_000_000, 2],
             {
                 kind: "uups",
             }
@@ -67,7 +40,7 @@ describe("GM", function () {
 
         // 6. Verify Initial State
         const totalSupply1: number = await instance.totalSupply();
-        expect(totalSupply1).to.equal(1000);
+        expect(totalSupply1).to.equal(0);
 
         const name1: string = await instance.name();
         expect(name1).to.equal("GM Coin");
@@ -133,48 +106,56 @@ describe("GM", function () {
     });
 
     it('transaction fee', async () => {
-        const [owner, feeAddr, gelatoAddr, relayerServerAddr, , addr1, addr2] = await ethers.getSigners();
+        const initOwnerSupply = 100_000;
+        const {
+            coinContract: coin,
+            owner,
+            feeAddr,
+            gelatoAddr,
+            relayerServerAcc,
+            treasuryAddr,
+            otherAcc1,
+            otherAcc2
+        } = await loadFixture(createGMCoinFixture(2, initOwnerSupply));
 
-        console.log('owner', owner.address);
 
-        const TwitterCoin = await ethers.getContractFactory("GMCoin");
-        const coin: GMCoin = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, relayerServerAddr.address, 1_000_000, 2], {kind: "uups"}) as unknown as GMCoin;
-
-        await coin.waitForDeployment();
-
-        console.log('owner balance is', await coin.balanceOf(owner));
+        console.log('owner balance is', await coin.balanceOf(feeAddr));
 
         expect(await coin.symbol()).to.be.equal("GM");
         expect(await coin.name()).to.be.equal("GM Coin");
 
-        expect(await coin.balanceOf(owner)).to.be.equal(100000);
+        expect(await coin.balanceOf(owner)).to.be.equal(initOwnerSupply);
 
-        await coin.connect(owner).transfer(addr1, 1000);
+        await coin.connect()
+
+        await coin.connect(owner).transfer(otherAcc1, 1000);
         expect(await coin.balanceOf(owner)).to.be.equal(99000);
-        expect(await coin.balanceOf(addr1)).to.be.equal(995);
-        expect(await coin.balanceOf(feeAddr)).to.be.equal(5);
+        expect(await coin.balanceOf(otherAcc1)).to.be.equal(990);
+        expect(await coin.balanceOf(feeAddr)).to.be.equal(10);
 
-        await coin.connect(addr1).transfer(addr2, 100);
-        expect(await coin.balanceOf(addr1)).to.be.equal(895);
-        expect(await coin.balanceOf(addr2)).to.be.equal(100);
-        expect(await coin.balanceOf(feeAddr)).to.be.equal(5);
+        await coin.connect(otherAcc1).transfer(otherAcc2, 100);
+        expect(await coin.balanceOf(otherAcc1)).to.be.equal(890);
+        expect(await coin.balanceOf(otherAcc2)).to.be.equal(99);
+        expect(await coin.balanceOf(feeAddr)).to.be.equal(11);
 
-        await coin.connect(owner).transfer(addr1, 90000);
+        await coin.connect(owner).transfer(otherAcc1, 90000);
         expect(await coin.balanceOf(owner)).to.be.equal(9000);
-        expect(await coin.balanceOf(addr1)).to.be.equal(895 + 90000 - 450);
-        expect(await coin.balanceOf(feeAddr)).to.be.equal(5 + 450);
+        expect(await coin.balanceOf(otherAcc2)).to.be.equal(99);
+        expect(await coin.balanceOf(feeAddr)).to.be.equal(11 + 900);
+
+        // 10% of total minted (1_000_000) = 10000
+        expect(await coin.balanceOf(treasuryAddr)).to.be.equal(10000);
     });
 
     it('relayer', async function () {
-        const [owner, feeAddr, relayServerAddr, gelatoAddr, userAddr] = await ethers.getSigners();
-
-        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const instance: GMCoinExposed = await upgrades.deployProxy(TwitterCoin, [owner.address, feeAddr.address, 50, 100000, gelatoAddr.address, relayServerAddr.address, 100_000, 2], {kind: "uups"}) as unknown as GMCoinExposed;
-
-        await instance.waitForDeployment();
-
-        const verifierAddress = await instance.getAddress();
-        console.log(`deployed GMCoin to ${verifierAddress}`);
+        const {
+            coinContract,
+            owner,
+            feeAddr,
+            relayerServerAcc,
+            gelatoAddr,
+            otherAcc1: userAddr
+        } = await loadFixture(deployGMCoinWithProxy);
 
         const userID = "user1";
         const accessTokenEncrypted = "encryptedAccessToken";
@@ -184,48 +165,9 @@ describe("GM", function () {
             ["gmcoin.meme twitter-verification"]
         );
         const signature = await userAddr.signMessage(ethers.getBytes(rawMessage));
-        const serverRelayContract = instance.connect(relayServerAddr);
+        const serverRelayContract = coinContract.connect(relayerServerAcc);
 
         await expect(serverRelayContract.requestTwitterVerificationFromRelayer(userID, signature, accessTokenEncrypted)).to.emit(serverRelayContract, 'VerifyTwitterRequested').withArgs(accessTokenEncrypted, userID, userAddr.address);
     })
-
-//   it('updating twitter data bulk', async() => {
-//     const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(deployGMCoinWithProxy);
-
-//     const limit = 10_000;
-//     const batchSize = 500;
-
-//     console.log('total batches to insert', limit/batchSize);
-
-//     for(let bi=0; (bi+1)*batchSize<=limit; bi++) {
-//       console.log('batch #', bi+1);
-
-//       const usernames = [];
-//       const USERNAME_LENGTH = 10; // You can adjust the length as needed
-
-//       for (let i = 0; i < batchSize; i++) {
-//         usernames.push(generateRandomString(USERNAME_LENGTH));
-//       }
-
-//       let wallets = await generateWallets(ethers.provider, batchSize);
-
-//       for(let i=0; i<batchSize; i++) {
-//         await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address);
-//       }
-
-//       let contractUsernames = await coinContract.connect(owner).getTwitterUsers(bi*batchSize, batchSize);
-//       console.log('allTwitterUsernames', contractUsernames);
-
-
-//       const points = Array(batchSize).fill(10);
-
-//       await coinContract.connect(gelatoAddr).updateTwitterStat(usernames, points);
-//     }
-
-
-//     // await gelatoAddr.sendTransaction({ to: await coinContract.getAddress(), data:  });
-
-//   });
-
 
 }).timeout("5m");

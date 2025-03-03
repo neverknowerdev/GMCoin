@@ -1,5 +1,7 @@
 import ky from "ky";
 import {Batch, Result, Tweet, TwitterApiResponse} from "./consts";
+import {setMaxIdleHTTPParsers} from "http";
+import {setDefaultAutoSelectFamily} from "net";
 
 export interface TwitterSecrets {
     OfficialBearerToken: string;
@@ -138,6 +140,7 @@ export class TwitterRequester {
         let allTweets: Tweet[] = [];
         let errorBatches: Batch[] = [];
 
+        let newindex = 0;
         await Promise.all(
             batchesToProcess.map(async (cur, index) => {
                     try {
@@ -145,6 +148,7 @@ export class TwitterRequester {
                             tweets,
                             nextCursor
                         } = await this.fetchTweetsBySearchQuery(queryList[index], cur.nextCursor);
+
 
                         for (let i = 0; i < tweets.length; i++) {
                             const userIndex = userIndexByUsername.get(tweets[i].username);
@@ -160,7 +164,9 @@ export class TwitterRequester {
                             batchesToProcess[index].nextCursor = nextCursor
                         }
 
+                        batchesToProcess[index].errorCount = 0;
                         allTweets.push(...tweets);
+                        newindex++;
                     } catch (error) {
                         cur.errorCount++;
                         errorBatches.push(cur);
@@ -171,6 +177,8 @@ export class TwitterRequester {
                 }
             )
         );
+
+        batchesToProcess = batchesToProcess.slice(0, newindex);
 
         return Promise.resolve({
             tweets: allTweets,
