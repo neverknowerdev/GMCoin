@@ -5,11 +5,11 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "./TwitterOracle.sol";
+import "./TwitterOracleV3.sol";
 
 // Uncomment this line to use console.log
 //import "hardhat/console.sol";
-import {GMWeb3FunctionsV3} from "./GelatoWeb3Functions.sol";
+import {GMWeb3FunctionsV3} from "./GelatoWeb3FunctionsV3.sol";
 
 contract GMCoinV3 is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracleV3
 {

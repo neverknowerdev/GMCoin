@@ -7,7 +7,7 @@ import {ethers, upgrades} from "hardhat";
 
 
 async function main(): Promise<void> {
-    if (hre.network.name !== "base") {
+    if (hre.network.name !== "baseSepolia") {
         throw new Error(`This script must be run on the 'base' network. Current network: ${hre.network.name}`);
     }
 
@@ -25,10 +25,11 @@ async function main(): Promise<void> {
     // init GMCoin contract
     // Deploy an upgradeable proxy for TwitterCoin using UUPS pattern
     const GMCoin = await upgrades.deployProxy(contract,
-        [owner.address, feeAddress.address, treasuryAddress, '0xda5f67A923887181B3848eF4d609D747d9dbBb43', 100_000, 7],
+        [owner.address, feeAddress.address, treasuryAddress, '0xda5f67A923887181B3848eF4d609D747d9dbBb43', 100, 7],
         {
             kind: "uups",
-            initializer: 'initialize'
+            initializer: 'initialize',
+            salt: "gm"
         });
 
     // Wait for the deployment to be completed
@@ -44,6 +45,11 @@ async function main(): Promise<void> {
     console.log('verifying implementation contract..');
     await hre.run('verify:verify', {
         address: implementationAddress,
+    })
+
+    console.log('verifying treasury contract..');
+    await hre.run('verify:verify', {
+        address: treasuryAddress,
     })
 
     let tx = await treasuryContract.setToken(address);

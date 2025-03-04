@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 //import "hardhat/console.sol";
 import "hardhat/console.sol";
-import {GMWeb3FunctionsV3} from "./GelatoWeb3Functions.sol";
+import {GMWeb3FunctionsV3} from "./GelatoWeb3FunctionsV3.sol";
 
 contract GMTwitterOracleV3 is Initializable, GMWeb3FunctionsV3 {
     using ECDSA for bytes32;

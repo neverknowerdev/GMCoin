@@ -9,64 +9,74 @@ import "./TwitterOracle.sol";
 
 // Uncomment this line to use console.log
 //import "hardhat/console.sol";
-import {GMWeb3FunctionsV4} from "./GelatoWeb3Functions.sol";
+import {GMWeb3Functions} from "./GelatoWeb3Functions.sol";
+import {GMStorage} from "./Storage.sol";
 
-contract GMCoinV4 is Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracleV4
+contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracle
 {
-    address public plannedNewImplementation;
-    uint256 public plannedNewImplementationTime;
-
-    // Commission percentage in basis points (100 = 1%)
-    uint256 public feePercentage; // 1% fee of transaction goes to the team for maintenance
-    uint256 public treasuryPercentage; // 10% of minted tokens goes to Treasury that locks fund for 3 months
-    address feeAddress;
-    address treasuryAddress;
-
-    uint256 public totalHolders;
-
-    uint256[255] private __gap;
-
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
+    }
+
+    function initialize(
+        address _owner,
+        address _feeAddress,
+        address _treasuryAddress,
+        address _relayServerAddress,
+        uint256 coinsMultiplicator,
+        uint _epochDays
+    ) public initializer {
+        feeConfig.feeAddress = _feeAddress;
+        feeConfig.treasuryAddress = _treasuryAddress;
+        totalHolders = 0;
+
+        feeConfig.feePercentage = 100; // 1% fee of transaction
+        feeConfig.treasuryPercentage = 1000; // 10% of minted coins
+
+        __Ownable_init(_owner);
+        __UUPSUpgradeable_init();
+        __GelatoWeb3Functions__init(_owner);
+        __ERC20_init("GM Coin", "GM");
+        __TwitterOracle__init(coinsMultiplicator, dedicatedMsgSender, _relayServerAddress, _epochDays);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
     }
 
     // disabled Timelock for testing period on Mainnet, then would be turned on
-//    function scheduleUpgrade(address newImplementation) public onlyOwner {
-//        require(newImplementation != address(0), "wrong newImplementation address");
-//        require(plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
-//
-//        plannedNewImplementation = newImplementation;
-//        plannedNewImplementationTime = block.timestamp + 3 days;
-//    }
-//
-//    function upgradeToAndCall(address newImplementation, bytes memory data) public override payable onlyOwner {
-//        require(newImplementation != address(0), "wrong newImplementation address");
-//        require(newImplementation == plannedNewImplementation, "you should schedule upgrade first");
-//        require(block.timestamp > plannedNewImplementationTime, "timeDelay is not passed to make an upgrade");
-//
-//        plannedNewImplementationTime = 0;
-//        plannedNewImplementation = address(0);
-//
-//        super.upgradeToAndCall(newImplementation, data);
-//    }
+    function scheduleUpgrade(address newImplementation) public onlyOwner {
+        require(newImplementation != address(0), "wrong newImplementation address");
+        require(timeLockConfig.plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
+
+        timeLockConfig.plannedNewImplementation = newImplementation;
+        timeLockConfig.plannedNewImplementationTime = block.timestamp + 3 days;
+    }
+
+    function upgradeToAndCall(address newImplementation, bytes memory data) public override payable onlyOwner {
+        require(newImplementation != address(0), "wrong newImplementation address");
+        require(newImplementation == timeLockConfig.plannedNewImplementation, "you should schedule upgrade first");
+        require(block.timestamp > timeLockConfig.plannedNewImplementationTime, "timeDelay is not passed to make an upgrade");
+
+        timeLockConfig.plannedNewImplementationTime = 0;
+        timeLockConfig.plannedNewImplementation = address(0);
+
+        super.upgradeToAndCall(newImplementation, data);
+    }
 
 
     function _update(address from, address to, uint256 value) internal override {
         // minting
         if (from == address(0) && to != address(0)) {
-            super._update(address(0), treasuryAddress, (value * treasuryPercentage) / 10000);
+            super._update(address(0), feeConfig.treasuryAddress, (value * feeConfig.treasuryPercentage) / 10000);
 
             // if transfer
         } else if (from != address(0) && to != address(0)) {
             // taking fee only for transfer operation
-            uint256 feeAmount = (value * feePercentage) / 10000;
+            uint256 feeAmount = (value * feeConfig.feePercentage) / 10000;
             value = value - feeAmount;
 
-            super._update(from, feeAddress, feeAmount);
+            super._update(from, feeConfig.feeAddress, feeAmount);
         }
 
         // holders++ if "to" was zero and become > zero (before transaction)

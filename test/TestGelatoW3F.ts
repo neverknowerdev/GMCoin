@@ -417,6 +417,7 @@ describe("GelatoW3F", function () {
             owner,
             feeAddr,
             gelatoAddr,
+            treasuryAddr,
             coinsMultiplicator
         } = await loadFixture(deployGMCoinWithProxy);
 
@@ -511,9 +512,9 @@ describe("GelatoW3F", function () {
 
         const userArgs = {
             contractAddress: verifierAddress,
-            searchURL: "http://localhost:8118/Search",
+            searchPath: "/Search",
             tweetLookupURL: "http://localhost:8118/tweet-lookup/",
-            convertToUsernamesURL: "http://localhost:8118/convert-ids-to-usernames/",
+            convertToUsernamesPath: "http://localhost:8118/convert-ids-to-usernames/",
             concurrencyLimit: concurrencyLimit,
             serverSaveTweetsURL: "http://localhost:8118/save-tweets/"
         };
@@ -529,7 +530,7 @@ describe("GelatoW3F", function () {
             userMintCount,
             treasuryMintCount,
             finalRunningHash
-        } = await mintUntilEnd(smartContract, gelatoAddr, userArgs, mintingDay)
+        } = await mintUntilEnd(smartContract, gelatoAddr, treasuryAddr, userArgs, mintingDay)
 
         let runningHash = '';
 

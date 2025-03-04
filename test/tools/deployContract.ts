@@ -1,6 +1,7 @@
 import hre, {ethers, upgrades} from "hardhat";
 import {smock} from "@neverknowerdev/smock";
 import {GMCoinExposed} from "../../typechain";
+import {ContractFactory} from "ethers";
 
 export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number = 0) {
     return async function deployGMToken() {
@@ -33,28 +34,29 @@ export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number =
 
         const coinsMultiplicator = 1_000_000;
 
-        const TwitterCoin = await ethers.getContractFactory("GMCoinV2");
-        const coinContractBase: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
-            [owner.address, feeAddr.address, treasuryAddr.address, relayerServerAcc.address, coinsMultiplicator, 2],
+
+        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
+        const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
+            [owner.address, feeAddr.address, treasuryAddr.address, relayerServerAcc.address, coinsMultiplicator, epochDays],
             {
                 kind: "uups",
             }) as unknown as GMCoinExposed;
 
-        await coinContractBase.waitForDeployment();
-
-        const deployedAddress = await coinContractBase.getAddress();
-
-        const contractV2 = await ethers.getContractFactory("GMCoinExposedV3");
-        const coinContract = await upgrades.upgradeProxy(deployedAddress, contractV2, {
-            call: {
-                fn: "initialize3",
-                args: [epochDays, ownerSupply]
-            }
-        });
         await coinContract.waitForDeployment();
 
-        console.log('contract deployed at ', deployedAddress);
+        // const deployedAddress = await coinContractBase.getAddress();
 
+        // const contractV2 = await ethers.getContractFactory("GMCoinExposedV3");
+        // const coinContract = await upgrades.upgradeProxy(deployedAddress, contractV2, {
+        //     call: {
+        //         fn: "initialize3",
+        //         args: [epochDays, ownerSupply]
+        //     }
+        // });
+        // await coinContract.waitForDeployment();
+        //
+        // console.log('contract deployed at ', deployedAddress);
+        // //
         // const tx = await owner.sendTransaction({
         //   to: deployedAddress,
         //   value: ethers.parseEther("1.0"),

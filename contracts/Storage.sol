@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.24;
+
+contract GMStorage {
+    struct UserTwitterData {
+        uint64 userIndex;
+        uint16 tweets;
+        uint16 hashtagTweets;     // Number of hashtags in the tweet
+        uint16 cashtagTweets;     // Number of cashtags in the tweet
+        uint16 simpleTweets;      // Number of simple tags in the tweet
+        uint32 likes;        // Number of likes for the tweet
+    }
+
+    struct Batch {
+        uint64 startIndex;
+        uint64 endIndex;
+        string nextCursor;
+        uint8 errorCount;
+    }
+
+    struct TimeLockConfig {
+        address plannedNewImplementation;
+        uint256 plannedNewImplementationTime;
+
+        uint256[10] __gap;
+    }
+
+    struct FeeConfig {
+        uint256 feePercentage; // 1% fee of transaction goes to the team for maintenance
+        uint256 treasuryPercentage; // 10% of minted tokens goes to Treasury that locks fund for 3 months
+        address feeAddress;
+        address treasuryAddress;
+
+        uint256[55] __gap;
+    }
+
+    uint256 public totalHolders;
+    address constant gelatoAutomateTaskCreator = 0x2A6C106ae13B558BB9E2Ec64Bd2f1f7BEFF3A5E0;
+
+    address public serverRelayerAddress;
+
+    struct GelatoConfig {
+        address gelatoAddress;
+        bytes32 gelatoTaskId_twitterVerification;
+        bytes32 gelatoTaskId_twitterWorker;
+        bytes32 gelatoTaskId_dailyTrigger;
+        address trustedSigner;
+
+        uint256[55] __gap;
+    }
+
+    struct MintingConfig {
+        uint256 COINS_MULTIPLICATOR;
+
+        uint EPOCH_DAYS;
+
+        uint256 POINTS_PER_TWEET;
+        uint256 POINTS_PER_LIKE;
+        uint256 POINTS_PER_HASHTAG;
+        uint256 POINTS_PER_CASHTAG;
+
+        uint32 epochNumber;
+
+        uint256[55] __gap;
+    }
+
+    struct MintingData {
+        mapping(string => address) wallets;
+        string[] allTwitterUsers;
+
+        mapping(address => string) usersByWallets;
+        mapping(string => address) walletsByUserIDs;
+        mapping(address => bool) registeredWallets;
+        mapping(string => uint) userIndexByUserID;
+
+        uint256 mintingDayPointsFromUsers;
+        uint32 mintingInProgressForDay;
+        uint32 lastMintedDay;
+
+        // public
+        uint32 epochStartedAt;
+        uint256 lastEpochPoints;
+        uint256 currentEpochPoints;
+
+        bytes32 gelatoTaskId_twitterVerification;
+        bytes32 gelatoTaskId_twitterWorker;
+        bytes32 gelatoTaskId_dailyTrigger;
+        address trustedSigner;
+
+        uint256[55] __gap;
+    }
+
+    Batch[] emptyArray;
+
+    TimeLockConfig public timeLockConfig;
+    FeeConfig public feeConfig;
+    GelatoConfig public gelatoConfig;
+    MintingConfig public mintingConfig;
+    MintingData internal mintingData;
+
+    uint256[255] __gap;
+
+    function COINS_MULTIPLICATOR() public view returns (uint256) {
+        return mintingConfig.COINS_MULTIPLICATOR;
+    }
+
+    function POINTS_PER_TWEET() public view returns (uint256) {
+        return mintingConfig.POINTS_PER_TWEET;
+    }
+
+    function POINTS_PER_LIKE() public view returns (uint256) {
+        return mintingConfig.POINTS_PER_LIKE;
+    }
+
+    function POINTS_PER_HASHTAG() public view returns (uint256) {
+        return mintingConfig.POINTS_PER_HASHTAG;
+    }
+
+    function POINTS_PER_CASHTAG() public view returns (uint256) {
+        return mintingConfig.POINTS_PER_CASHTAG;
+    }
+
+    function EPOCH_DAYS() public view returns (uint256) {
+        return mintingConfig.EPOCH_DAYS;
+    }
+}

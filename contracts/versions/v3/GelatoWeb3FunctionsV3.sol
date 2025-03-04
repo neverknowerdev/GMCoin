@@ -6,9 +6,9 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import "./vendor/gelato/AutomateModuleHelper.sol";
-import "./vendor/gelato/AutomateTaskCreatorUpgradeable.sol";
-import "./vendor/gelato/Types.sol";
+import "../../vendor/gelato/AutomateModuleHelper.sol";
+import "../../vendor/gelato/AutomateTaskCreatorUpgradeable.sol";
+import "../../vendor/gelato/Types.sol";
 
 
 contract GMWeb3FunctionsV3 is ERC165, IERC1271, Initializable, OwnableUpgradeable, AutomateTaskCreatorUpgradeable {

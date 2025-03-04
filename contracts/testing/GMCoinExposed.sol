@@ -3,21 +3,21 @@ pragma solidity ^0.8.24;
 
 import "../GMCoin.sol";
 
-contract GMCoinExposedV3 is GMCoinV3
+contract GMCoinExposed is GMCoin
 {
     function getWalletByUserID(string calldata username) public view returns (address) {
         return walletByTwitterUser(username);
     }
 
     function getCurrentComplexity() public view returns (uint256) {
-        return COINS_MULTIPLICATOR;
+        return mintingConfig.COINS_MULTIPLICATOR;
     }
 
     function getMintingDayPointsFromUsers() public view returns (uint256) {
-        return mintingDayPointsFromUsers;
+        return mintingData.mintingDayPointsFromUsers;
     }
 
     function getStartOfTheEpoch() public view returns (uint256) {
-        return epochStartedAt;
+        return mintingData.epochStartedAt;
     }
 }

@@ -5,20 +5,29 @@ import {ethers, upgrades} from "hardhat";
 
 async function main(): Promise<void> {
     // Get the ContractFactory for "TwitterCoin"
-    const contract = await ethers.getContractFactory("GMCoinTestnet");
+    const contract = await ethers.getContractFactory("GMCoin");
 
     if (hre.network.name !== "baseSepolia") {
         throw new Error(`This script must be run on the 'baseSepolia' network. Current network: ${hre.network.name}`);
     }
 
-    const [owner] = await ethers.getSigners();
+    const [owner, feeAddress] = await ethers.getSigners();
+
+    const treasuryContractFactory = await ethers.getContractFactory("GMTreasury");
+    const treasuryContract = await treasuryContractFactory.deploy();
+    await treasuryContract.waitForDeployment();
+
+    const treasuryAddress = await treasuryContract.getAddress();
+    console.log('treasuryContract address', treasuryAddress);
 
     // Deploy an upgradeable proxy for TwitterCoin using UUPS pattern
     const GMCoin = await upgrades.deployProxy(contract,
-        [owner.address, owner.address, 50, 100_000, '0x12EBb8C121b706aE6368147afc5B54702cB26637', '0xda5f67A923887181B3848eF4d609D747d9dbBb43', 100_000, 2],
+        [owner.address, feeAddress.address, treasuryAddress, '0xda5f67A923887181B3848eF4d609D747d9dbBb43', 100, 2],
         {
             kind: "uups",
-            initializer: 'initialize'
+            initializer: 'initialize',
+            salt: "gm",
+            verifySourceCode: true,
         });
 
     // Wait for the deployment to be completed

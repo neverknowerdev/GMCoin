@@ -63,8 +63,9 @@ const config = {
         baseSepolia: {
             url: "https://sepolia.base.org", // RPC URL for Base Sepolia
             chainId: 84532, // Base Sepolia's chain ID
-            accounts: [process.env.BASE_TESTNET_LEARNING_PRIVATE_KEY], // Your wallet private key (from .env file)
+            accounts: [process.env.BASE_PROD_PRIVATE_KEY, process.env.BASE_PROD_FEE_PRIVATE_KEY, process.env.BASE_TESTNET_LEARNING_PRIVATE_KEY], // Your wallet private key (from .env file)
         },
+
         base: {
             url: "https://mainnet.base.org",
             chainId: 8453,
@@ -73,6 +74,11 @@ const config = {
         polygon: {
             url: "https://polygon-bor-rpc.publicnode.com",
             chainId: 137,
+            accounts: [process.env.BASE_PROD_PRIVATE_KEY]
+        },
+        polygonAmoy: {
+            url: "https://rpc-amoy.polygon.technology",
+            chainId: 80002,
             accounts: [process.env.BASE_PROD_PRIVATE_KEY]
         }
     },

@@ -16,10 +16,10 @@ async function main(): Promise<void> {
     // Deploy an upgradeable proxy for TwitterCoin using UUPS pattern
     // address _owner, uint256 _initialSupply, string calldata _gelatoW3fHash, string calldata _serverURL
     const upgraded = await upgrades.upgradeProxy('0x05694e4A34e5f6f8504fC2b2cbe67Db523e0fCCb', contractV2, {
-        // call: {
-        //     fn: "newInitializer",
-        //     args: [owner.address]
-        // }
+        call: {
+            fn: "initialize3",
+            args: [2, 0, 1000]
+        }
     })
     // const GMCoin = await upgrades.deployProxy(contract,
     //     [owner.address, 500_000, 'Qme39LGvEnhLJ5dLkthrkqFcu9Dcp5ibb6RvnpqYvWoUXA', 'https://l4xtgdsal5.execute-api.eu-central-1.amazonaws.com/default/GMSecrets'],
