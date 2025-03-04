@@ -5,9 +5,9 @@ import {run} from "hardhat";
 
 async function main(): Promise<void> {
     // Get the ContractFactory for "TwitterCoin"
-    const contractV3 = await ethers.getContractFactory("GMCoinV3");
+    const contractV3 = await ethers.getContractFactory("GMCoin");
 
-    if (hre.network.name !== "base") {
+    if (hre.network.name !== "baseSepolia") {
         throw new Error(`This script must be run on the 'base' network. Current network: ${hre.network.name}`);
     }
 
@@ -15,11 +15,11 @@ async function main(): Promise<void> {
 
     // Deploy an upgradeable proxy for TwitterCoin using UUPS pattern
     // address _owner, uint256 _initialSupply, string calldata _gelatoW3fHash, string calldata _serverURL
-    const upgraded = await upgrades.upgradeProxy('0x6Ec55d72eAA6792380a627a2a4aD1aae8EC96F2d', contractV3, {
-        call: {
-            fn: "initialize3",
-            args: [7, 0, 100],
-        }
+    const upgraded = await upgrades.upgradeProxy('0x19bD68AD19544FFA043B2c3A5064805682783E91', contractV3, {
+        // call: {
+        //     fn: "initialize3",
+        //     args: [7, 0, 100],
+        // }
     })
     // const GMCoin = await upgrades.deployProxy(contract,
     //     [owner.address, 500_000, 'Qme39LGvEnhLJ5dLkthrkqFcu9Dcp5ibb6RvnpqYvWoUXA', 'https://l4xtgdsal5.execute-api.eu-central-1.amazonaws.com/default/GMSecrets'],

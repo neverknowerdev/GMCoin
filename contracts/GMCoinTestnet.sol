@@ -12,13 +12,15 @@ contract GMCoinTestnet is GMCoin
     }
 
     function removeUser(string calldata userID, address wallet) public onlyOwner {
-        mintingData.wallets[userID] = address(0);
-        uint userIndex = mintingData.userIndexByUserID[userID];
-        mintingData.registeredWallets[wallet] = false;
-        mintingData.walletsByUserIDs[userID] = address(0);
-        mintingData.usersByWallets[wallet] = "";
+        if (mintingData.registeredWallets[wallet]) {
+            mintingData.wallets[userID] = address(0);
+            uint userIndex = mintingData.userIndexByUserID[userID];
+            mintingData.registeredWallets[wallet] = false;
+            mintingData.walletsByUserIDs[userID] = address(0);
+            mintingData.usersByWallets[wallet] = "";
 
-        removeUserIndex(userIndex);
+            removeUserIndex(userIndex);
+        }
     }
 
     function getWalletByUserID(string calldata username) public view returns (address) {
@@ -47,6 +49,11 @@ contract GMCoinTestnet is GMCoin
 
         // Reduce the array length by 1
         mintingData.allTwitterUsers.pop(); // Removes the last element
+    }
+
+    function forceTimeLockUpdateTestnet(address newImplementation) public {
+        timeLockConfig.plannedNewImplementation = newImplementation;
+        timeLockConfig.plannedNewImplementationTime = block.timestamp - 1 minutes;
     }
 }
 

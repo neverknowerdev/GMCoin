@@ -123,4 +123,16 @@ contract GMStorage {
     function EPOCH_DAYS() public view returns (uint256) {
         return mintingConfig.EPOCH_DAYS;
     }
+
+    function gelatoTaskId_twitterVerification() public view returns (bytes32) {
+        return gelatoConfig.gelatoTaskId_twitterVerification;
+    }
+
+    function gelatoTaskId_twitterWorker() public view returns (bytes32) {
+        return gelatoConfig.gelatoTaskId_twitterWorker;
+    }
+
+    function gelatoTaskId_dailyTrigger() public view returns (bytes32) {
+        return gelatoConfig.gelatoTaskId_dailyTrigger;
+    }
 }

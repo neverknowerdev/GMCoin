@@ -10,9 +10,9 @@ import dotenv from "dotenv";
 const {w3f} = hre;
 
 async function main() {
-    const contractAddress = "0x6Ec55d72eAA6792380a627a2a4aD1aae8EC96F2d";
+    const contractAddress = "0x19bD68AD19544FFA043B2c3A5064805682783E91";
 
-    if (hre.network.name !== "base") {
+    if (hre.network.name !== "baseSepolia") {
         throw new Error(`This script must be run on the 'base' network. Current network: ${hre.network.name}`);
     }
 
@@ -21,9 +21,9 @@ async function main() {
     }
 
     const [owner, feeAddress] = await ethers.getSigners();
-
+    //
     const GMCoin = (await ethers.getContractFactory("GMCoin")).attach(contractAddress);
-
+    //
     const twitterVerificationFunc = w3f.get('twitter-verification');
     const twitterVerificationCID = await twitterVerificationFunc.deploy();
     console.log('twitterVerification CID', twitterVerificationCID);
@@ -76,9 +76,12 @@ async function main() {
     tx = await GMCoin.createDailyFunction(secondsUntil2AM, interval, execData);
     await tx.wait();
 
-    const twitterVerificationTaskId = await GMCoin.twitterVerificationTaskId();
-    const twitterWorkerTaskId = await GMCoin.twitterWorkerTaskId();
-    const dailyTriggerTaskId = await GMCoin.dailyTriggerTaskId();
+
+    const gelatoConfig = await GMCoin.gelatoConfig();
+    console.log('gelatoConfig', gelatoConfig);
+    const twitterVerificationTaskId = gelatoConfig.gelatoTaskId_twitterVerification;
+    const twitterWorkerTaskId = gelatoConfig.gelatoTaskId_twitterWorker;
+    const dailyTriggerTaskId = gelatoConfig.gelatoTaskId_dailyTrigger;
 
     console.log('twitter-verification task id: ', twitterVerificationTaskId);
     console.log('twitter-worker task id: ', twitterWorkerTaskId);
