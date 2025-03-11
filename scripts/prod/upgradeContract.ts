@@ -4,10 +4,10 @@ import {ethers, upgrades} from "hardhat";
 import {run} from "hardhat";
 
 async function main(): Promise<void> {
-    // Get the ContractFactory for "TwitterCoin"
+    
     const contractV3 = await ethers.getContractFactory("GMCoin");
 
-    if (hre.network.name !== "baseSepolia") {
+    if (hre.network.name !== "base") {
         throw new Error(`This script must be run on the 'base' network. Current network: ${hre.network.name}`);
     }
 
@@ -15,7 +15,7 @@ async function main(): Promise<void> {
 
     // Deploy an upgradeable proxy for TwitterCoin using UUPS pattern
     // address _owner, uint256 _initialSupply, string calldata _gelatoW3fHash, string calldata _serverURL
-    const upgraded = await upgrades.upgradeProxy('0x19bD68AD19544FFA043B2c3A5064805682783E91', contractV3, {
+    const upgraded = await upgrades.upgradeProxy('0x26f36F365E5EB6483DF4735e40f87E96e15e0007', contractV3, {
         // call: {
         //     fn: "initialize3",
         //     args: [7, 0, 100],

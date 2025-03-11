@@ -5,8 +5,6 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-//import "hardhat/console.sol";
-import "hardhat/console.sol";
 import {GMWeb3Functions} from "./GelatoWeb3Functions.sol";
 import {GMStorage} from "./Storage.sol";
 
@@ -29,9 +27,10 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     }
 
     function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress, address _relayServerAddress, uint _epochDays) public onlyInitializing {mintingConfig.POINTS_PER_TWEET = 1;
+        mintingConfig.POINTS_PER_TWEET = 1;
         mintingConfig.POINTS_PER_LIKE = 1;
-        mintingConfig.POINTS_PER_HASHTAG = 2;
-        mintingConfig.POINTS_PER_CASHTAG = 3;
+        mintingConfig.POINTS_PER_HASHTAG = 3;
+        mintingConfig.POINTS_PER_CASHTAG = 5;
 
         mintingConfig.EPOCH_DAYS = _epochDays;
 
@@ -139,16 +138,17 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
 
     function startMinting() public onlyGelato {
         // continue minting for not finished day if any
-        if (mintingData.mintingInProgressForDay > 0) {
-            emit twitterMintingProcessed(mintingData.mintingInProgressForDay, emptyArray);
-            return;
-        }
 
         uint32 yesterday = getStartOfYesterday();
         uint32 dayToMint = mintingData.lastMintedDay + 1 days;
 
+        // if minting for previous day is not finished - continue it
+        if (mintingData.mintingInProgressForDay > 0 && mintingData.mintingInProgressForDay < yesterday) {
+            emit twitterMintingProcessed(mintingData.mintingInProgressForDay, emptyArray);
+            return;
+        }
+
         require(dayToMint <= yesterday, "dayToMint should be not further than yesterday");
-        require(mintingData.lastMintedDay < dayToMint, "minting is already started for that day");
         require(mintingData.mintingInProgressForDay == 0, "minting process already started");
 
         mintingData.mintingInProgressForDay = dayToMint;
@@ -160,29 +160,9 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
         if (dayToMint > mintingData.epochStartedAt && dayToMint - mintingData.epochStartedAt >= mintingConfig.EPOCH_DAYS * 1 days) {
             mintingData.epochStartedAt = dayToMint;
 
-            if (mintingData.lastEpochPoints != 0) {
-                // more GMs now that in previous epoch
-                if (mintingData.currentEpochPoints > mintingData.lastEpochPoints) {
-                    if (mintingData.currentEpochPoints / mintingData.lastEpochPoints >= 5) {
-                        // 1/2
-                        mintingConfig.COINS_MULTIPLICATOR = mintingConfig.COINS_MULTIPLICATOR / 5;
-                    } else if (mintingData.currentEpochPoints / mintingData.lastEpochPoints >= 2) {
-                        // 1/2
-                        mintingConfig.COINS_MULTIPLICATOR = mintingConfig.COINS_MULTIPLICATOR / 2;
-                    } else {
-                        // minus 30%
-                        mintingConfig.COINS_MULTIPLICATOR = mintingConfig.COINS_MULTIPLICATOR * 70 / 100;
-                    }
-                }
-                if (mintingData.currentEpochPoints < mintingData.lastEpochPoints) {
-                    if (mintingData.lastEpochPoints / mintingData.currentEpochPoints >= 3) {
-                        mintingConfig.COINS_MULTIPLICATOR = mintingConfig.COINS_MULTIPLICATOR * 2;
-                    } else {
-                        // plus 20%
-                        mintingConfig.COINS_MULTIPLICATOR = mintingConfig.COINS_MULTIPLICATOR * 120 / 100;
-                    }
-                }
-
+            uint256 newCoinMultiplicator = changeComplexity(mintingConfig.COINS_MULTIPLICATOR, mintingData.lastEpochPoints, mintingData.currentEpochPoints);
+            if (newCoinMultiplicator > 0) {
+                mintingConfig.COINS_MULTIPLICATOR = newCoinMultiplicator;
                 emit changedComplexity(mintingConfig.COINS_MULTIPLICATOR);
             }
             mintingConfig.epochNumber++;
@@ -269,5 +249,34 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
         uint32 startOfToday = uint32((block.timestamp / 1 days) * 1 days);
         // Subtract one day to get the start of yesterday.
         return startOfToday - 1 days;
+    }
+
+    function changeComplexity(uint256 currentComplexity, uint256 lastEpochPoints, uint256 currentEpochPoints) internal pure returns (uint256) {
+        uint256 newMultiplicator = 0;
+        if (lastEpochPoints != 0) {
+            // more GMs now that in previous epoch
+            if (currentEpochPoints > lastEpochPoints) {
+                if (currentEpochPoints / lastEpochPoints >= 5) {
+                    // 1/2
+                    newMultiplicator = currentComplexity / 5;
+                } else if (currentEpochPoints / lastEpochPoints >= 2) {
+                    // 1/2
+                    newMultiplicator = currentComplexity / 2;
+                } else {
+                    // minus 30%
+                    newMultiplicator = currentComplexity * 70 / 100;
+                }
+            }
+            if (currentEpochPoints < lastEpochPoints) {
+                if (lastEpochPoints / currentEpochPoints >= 3) {
+                    newMultiplicator = currentComplexity * 2;
+                } else {
+                    // plus 20%
+                    newMultiplicator = currentComplexity * 120 / 100;
+                }
+            }
+        }
+
+        return newMultiplicator;
     }
 }

@@ -24,6 +24,10 @@ contract GMWeb3Functions is GMStorage, ERC165, IERC1271, Initializable, OwnableU
         __AutomateTaskCreator_init(gelatoAutomateTaskCreator);
     }
 
+    function cancelWeb3Function(bytes32 hash) public onlyOwner {
+        _cancelTask(hash);
+    }
+
     function createTwitterVerificationFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner {
         // for devs purpose. Until contact will go to Live finally
 //        require(twitterVerificationTaskId == bytes32(""), "task already initialized");

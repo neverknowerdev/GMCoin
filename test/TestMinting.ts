@@ -190,7 +190,7 @@ describe("GM minting", function () {
     });
 
     it('minting for twitter users: continuation after error', async () => {
-        const {coinContract, owner, feeAddr, gelatoAddr} = await loadFixture(deployGMCoinWithProxy);
+        const {coinContract, owner, feeAddr, gelatoAddr} = await loadFixture(createGMCoinFixture(7));
 
         const gelatoContract: GMCoinExposed = coinContract.connect(gelatoAddr);
         const ts = await time.latest();
@@ -208,16 +208,16 @@ describe("GM minting", function () {
 
         expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
 
-        // first day
+        // first day - success
         await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(startOfPrevDay);
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting process already started");
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, 9, '']])).to.emit(coinContract, "twitterMintingProcessed");
+        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
         await expect(gelatoContract.finishMinting(startOfPrevDay, "finalHash")).to.emit(coinContract, "MintingFinished").withArgs(startOfPrevDay, "finalHash");
 
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, 9, '']])).to.be.rejectedWith("no ongoing minting process");
+        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, 9, '', 0]])).to.be.rejectedWith("no ongoing minting process");
 
-        await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
-        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
+        await expect(gelatoContract.startMinting()).to.be.revertedWith("dayToMint should be not further than yesterday");
+        await expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
 
         // next day
         const day2Ts = ts + time.duration.days(1);
@@ -227,98 +227,29 @@ describe("GM minting", function () {
         const mintingDay2Ts = startOf2Day - time.duration.days(1);
 
         await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(mintingDay2Ts);
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay2Ts, [[0, 9, '']])).to.emit(coinContract, "twitterMintingProcessed");
-        await expect(gelatoContract.finishMinting(mintingDay2Ts)).to.emit(coinContract, "MintingFinished").withArgs(mintingDay2Ts);
-
-        await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
-        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
-
-        // 3rd day
+        // then something went wrong and minting is not finished..
         const day3Ts = day2Ts + time.duration.days(1);
-        await time.increaseTo(day3Ts);
 
         const startOf3Day = await getStartOfDayTimestamp(day3Ts);
-        const mintingDay3Ts = startOf2Day;
-        await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(mintingDay3Ts);
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay3Ts, [[0, 9, '']])).to.emit(coinContract, "twitterMintingProcessed");
-        await expect(gelatoContract.finishMinting(mintingDay3Ts)).to.emit(coinContract, "MintingFinished").withArgs(mintingDay3Ts);
+        const mintingDay3Ts = startOf3Day - time.duration.days(1);
 
-        await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
+        await time.increaseTo(day3Ts);
+        await expect(gelatoContract.startMinting()).to.emit(coinContract, "twitterMintingProcessed").withArgs(mintingDay2Ts, []);
+        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay2Ts, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
+        await expect(gelatoContract.finishMinting(mintingDay2Ts, "runningHash")).to
+            .emit(coinContract, "MintingFinished").withArgs(mintingDay2Ts, "runningHash")
+            .emit(coinContract, "MintingStarted").withArgs(mintingDay3Ts);
+
+        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay3Ts, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
+        await expect(gelatoContract.startMinting()).to.be.revertedWith("minting process already started");
+        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay3Ts, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
+        await expect(gelatoContract.startMinting()).to.be.revertedWith("minting process already started");
+        await expect(gelatoContract.finishMinting(mintingDay3Ts, "runningHash")).to
+            .emit(coinContract, "MintingFinished").withArgs(mintingDay3Ts, "runningHash");
+
+
+        await expect(gelatoContract.startMinting()).to.be.revertedWith("dayToMint should be not further than yesterday");
         expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
-
-        // 4rd day
-        const day4Ts = day3Ts + time.duration.days(1);
-        await time.increaseTo(day4Ts);
-
-        const startOf4Day = await getStartOfDayTimestamp(day4Ts);
-        const mintingDay4Ts = startOf3Day;
-
-        await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(mintingDay4Ts);
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay4Ts, [[0, 9, '']])).to.emit(coinContract, "twitterMintingProcessed");
-        await expect(gelatoContract.finishMinting(mintingDay4Ts)).to.emit(coinContract, "MintingFinished").withArgs(mintingDay4Ts);
-
-        await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
-        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
-
-        // 5rd day
-        const day5Ts = day4Ts + time.duration.days(1);
-        await time.increaseTo(day5Ts);
-
-        const startOf5Day = await getStartOfDayTimestamp(day5Ts);
-        const mintingDay5Ts = startOf4Day;
-
-        await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(mintingDay5Ts);
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay5Ts, [[0, 9, '']])).to.emit(coinContract, "twitterMintingProcessed");
-        await expect(gelatoContract.finishMinting(mintingDay5Ts)).to.emit(coinContract, "MintingFinished").withArgs(mintingDay5Ts);
-
-
-        await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
-        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
-
-        // 6rd day
-        const day6Ts = day5Ts + time.duration.days(1);
-        await time.increaseTo(day6Ts);
-
-        const startOf6Day = await getStartOfDayTimestamp(day6Ts);
-        const mintingDay6Ts = startOf5Day;
-
-        await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(mintingDay6Ts);
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay6Ts, [[0, 9, '']])).to.emit(coinContract, "twitterMintingProcessed");
-        await expect(gelatoContract.finishMinting(mintingDay6Ts)).to.emit(coinContract, "MintingFinished").withArgs(mintingDay6Ts);
-
-        await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
-        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
-
-        // 7rd day
-        const day7Ts = day6Ts + time.duration.days(1);
-        await time.increaseTo(day7Ts);
-
-        const startOf7Day = await getStartOfDayTimestamp(day7Ts);
-        const mintingDay7Ts = startOf6Day;
-
-        await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(mintingDay7Ts);
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay7Ts, [[0, 9, '']])).to.emit(coinContract, "twitterMintingProcessed");
-        await expect(gelatoContract.finishMinting(mintingDay7Ts)).to.emit(coinContract, "MintingFinished").withArgs(mintingDay7Ts);
-
-        await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
-        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
-
-        // 8rd day
-        const currentComplexity = await gelatoContract.getCurrentComplexity();
-        const expectedNewComplexity = currentComplexity * 80n / 100n;
-        log('currentComplexity', currentComplexity, expectedNewComplexity);
-
-        const day8Ts = day7Ts + time.duration.days(1);
-        await time.increaseTo(day8Ts);
-
-        const startOf8Day = await getStartOfDayTimestamp(day8Ts);
-        const mintingDay8Ts = startOf7Day;
-        await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(mintingDay8Ts).and.to.emit(coinContract, "changedComplexity").withArgs(expectedNewComplexity);
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay8Ts, [[0, 9, '']])).to.emit(coinContract, "twitterMintingProcessed");
-        await expect(gelatoContract.finishMinting(mintingDay8Ts)).to.emit(coinContract, "MintingFinished").withArgs(mintingDay8Ts);
-
-        await expect(gelatoContract.startMinting()).to.be.revertedWith("minting is already started for that day");
-        expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOf8Day - time.duration.days(1));
     });
 
     it('minting for twitter users: epochs and complexity', async () => {
@@ -343,20 +274,37 @@ describe("GM minting", function () {
         }
 
         log('week 2');
-        let newComplexity = complexity * 80n / 100n;
+        let userData2x: TweetData[] = [];
+        for (let i = 0; i < userData.length; i++) {
+            let userDataItem = userData[i];
+            userDataItem.likes *= 2;
+            userDataItem.simpleTweets *= 2;
+            userDataItem.cashtagTweets *= 5;
+        }
+        // let newComplexity = complexity * 80n / 100n;
+        // complexity didn't change after 1 week
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
+
             await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
-            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(complexity);
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
         }
 
+        for (let i = 0; i < userData.length; i++) {
+            let userDataItem = userData[i];
+            // userDataItem.likes *= 2;
+            userDataItem.simpleTweets *= 2;
+            userDataItem.cashtagTweets *= 5;
+        }
         log('week 3');
-        newComplexity = newComplexity * 80n / 100n;
+        let newComplexity = complexity / 2n;
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
+            // double the values
+
             await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
             expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
 
@@ -365,7 +313,7 @@ describe("GM minting", function () {
         }
 
         log('week 4');
-        newComplexity = newComplexity * 80n / 100n;
+        newComplexity = newComplexity * 70n / 100n;
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
             await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
@@ -374,7 +322,6 @@ describe("GM minting", function () {
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
         }
-
     });
 
 

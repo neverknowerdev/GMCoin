@@ -222,6 +222,29 @@ export interface Tweet {
     userDescriptionText: string;
 }
 
+export interface UserResult {
+    rest_id: string; // This is the userID
+    profile_bio: {
+        description: string;
+    };
+    core: {
+        name: string;
+        screen_name: string;
+    }
+}
+
+interface TwitterResultCore {
+    user_results: {
+        result: UserResult
+    };
+}
+
+interface TweetLegacy {
+    full_text: string; // The tweet content
+    favorite_count: number; // The number of likes
+    created_at: string;
+}
+
 export interface TwitterApiResponse {
     data: {
         search_by_raw_query: {
@@ -243,26 +266,14 @@ export interface TwitterApiResponse {
                                     tweet_results?: {
                                         rest_id: string; // This is the tweetID
                                         result: {
-                                            rest_id: string; // This
-                                            core: {
-                                                user_results: {
-                                                    result: {
-                                                        rest_id: string; // This is the userID
-                                                        profile_bio: {
-                                                            description: string;
-                                                        };
-                                                        core: {
-                                                            name: string;
-                                                            screen_name: string;
-                                                        }
-                                                    };
-                                                };
-                                            };
-                                            legacy: {
-                                                full_text: string; // The tweet content
-                                                favorite_count: number; // The number of likes
-                                                created_at: string;
-                                            };
+                                            rest_id?: string; // This
+                                            core?: TwitterResultCore;
+                                            tweet?: {
+                                                rest_id?: string
+                                                core: TwitterResultCore;
+                                                legacy: TweetLegacy
+                                            }
+                                            legacy?: TweetLegacy
                                         };
                                     };
                                 };

@@ -44,6 +44,11 @@ export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number =
 
         await coinContract.waitForDeployment();
 
+        if (ownerSupply > 0) {
+            const tx = await coinContract.mintForWallet(owner.address, ownerSupply);
+            await tx.wait();
+        }
+
         // const deployedAddress = await coinContractBase.getAddress();
 
         // const contractV2 = await ethers.getContractFactory("GMCoinExposedV3");

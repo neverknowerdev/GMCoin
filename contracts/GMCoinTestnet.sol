@@ -5,13 +5,13 @@ import "./GMCoin.sol";
 
 contract GMCoinTestnet is GMCoin
 {
-    function addTwitterUsername(string calldata userID, address walletAddress) public onlyOwner {
+    function addTwitterUsername(string calldata userID, address walletAddress) public {
         mintingData.wallets[userID] = walletAddress;
         mintingData.allTwitterUsers.push(userID);
         emit TwitterVerificationResult(userID, walletAddress, true, "");
     }
 
-    function removeUser(string calldata userID, address wallet) public onlyOwner {
+    function removeUser(string memory userID, address wallet) public {
         if (mintingData.registeredWallets[wallet]) {
             mintingData.wallets[userID] = address(0);
             uint userIndex = mintingData.userIndexByUserID[userID];
@@ -21,6 +21,13 @@ contract GMCoinTestnet is GMCoin
 
             removeUserIndex(userIndex);
         }
+    }
+
+    function removeMe() public {
+        require(mintingData.registeredWallets[_msgSender()], "your wallet is not registered as a user yet");
+
+        string memory userID = mintingData.usersByWallets[_msgSender()];
+        removeUser(userID, _msgSender());
     }
 
     function getWalletByUserID(string calldata username) public view returns (address) {

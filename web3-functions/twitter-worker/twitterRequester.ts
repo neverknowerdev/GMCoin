@@ -1,5 +1,5 @@
 import ky from "ky";
-import {Batch, Result, Tweet, TwitterApiResponse} from "./consts";
+import {Batch, Result, Tweet, TwitterApiResponse, TwitterResultCore, UserResult} from "./consts";
 import {setMaxIdleHTTPParsers} from "http";
 import {setDefaultAutoSelectFamily} from "net";
 
@@ -139,8 +139,8 @@ export class TwitterRequester {
     }> {
         let allTweets: Tweet[] = [];
         let errorBatches: Batch[] = [];
+        let finalSuccessBatches: Batch[] = [];
 
-        let newindex = 0;
         await Promise.all(
             batchesToProcess.map(async (cur, index) => {
                     try {
@@ -165,8 +165,9 @@ export class TwitterRequester {
                         }
 
                         batchesToProcess[index].errorCount = 0;
+                        finalSuccessBatches.push(batchesToProcess[index]);
+
                         allTweets.push(...tweets);
-                        newindex++;
                     } catch (error) {
                         cur.errorCount++;
                         errorBatches.push(cur);
@@ -178,11 +179,9 @@ export class TwitterRequester {
             )
         );
 
-        batchesToProcess = batchesToProcess.slice(0, newindex);
-
         return Promise.resolve({
             tweets: allTweets,
-            batches: batchesToProcess,
+            batches: finalSuccessBatches,
             errorBatches: errorBatches
         });
     }
@@ -236,11 +235,26 @@ export class TwitterRequester {
                     if (entry.content.content?.tweet_results) {
                         const tweetData = entry.content.content.tweet_results?.result;
                         if (tweetData) {
-                            const user = tweetData.core.user_results.result;
-                            const legacy = tweetData.legacy;
+                            const user = tweetData.core?.user_results.result ?? tweetData.tweet?.core.user_results.result;
+                            if (!user) {
+                                console.error('failed to find userResults for', entry)
+                                continue;
+                            }
+
+                            const legacy = tweetData.legacy ?? tweetData.tweet?.legacy;
+                            if (!legacy) {
+                                console.error('failed to find legacy for', entry)
+                                continue;
+                            }
+
+                            const tweetID = tweetData.rest_id ?? tweetData.tweet?.rest_id;
+                            if (!tweetID) {
+                                console.error('failed to get tweetID for entry', entry);
+                                continue;
+                            }
 
                             const tweet: Tweet = {
-                                tweetID: tweetData.rest_id,  // Extract tweetID from rest_id
+                                tweetID: tweetID,  // Extract tweetID from rest_id
                                 userID: user.rest_id, // Extract userID from user_results
                                 username: user.core.screen_name,
                                 tweetContent: legacy.full_text,  // Extract tweet content
@@ -248,6 +262,10 @@ export class TwitterRequester {
                                 userDescriptionText: user.profile_bio?.description || '', // Extract user bio
                                 userIndex: 0,
                             };
+                            if (tweet.tweetID == "" || tweet.userID == "" || tweet.username == "" || tweet.tweetContent == "") {
+                                console.error("one of required field for tweet is empty, entry", entry);
+                                continue;
+                            }
                             tweets.push(tweet);
                         }
                     }

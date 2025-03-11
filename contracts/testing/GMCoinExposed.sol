@@ -20,4 +20,8 @@ contract GMCoinExposed is GMCoin
     function getStartOfTheEpoch() public view returns (uint256) {
         return mintingData.epochStartedAt;
     }
+
+    function mintForWallet(address wallet, uint value) public onlyOwner {
+        _mint(wallet, value);
+    }
 }

@@ -16,8 +16,10 @@ describe("GM", function () {
         // 1. Retrieve Signers
         const {coinContract, owner, feeAddr, gelatoAddr, relayerServerAcc} = await loadFixture(deployGMCoinWithProxy);
         // 2. Get Contract Factories
-        const TwitterCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoinV3");
-        const TwitterCoinV2Factory: ContractFactory = await ethers.getContractFactory("GMCoinV3");
+        const TwitterCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin");
+
+        // would be GMCoinV2 soon
+        const TwitterCoinV2Factory: ContractFactory = await ethers.getContractFactory("GMCoinTestnet");
 
         // 3. Deploy Upgradeable Proxy for TwitterCoin
         const instance: Contract = await upgrades.deployProxy(
@@ -58,7 +60,8 @@ describe("GM", function () {
         await instance.scheduleUpgrade(newImplementationAddress);
 
         // 9. Retrieve Planned Upgrade Time
-        const plannedUpgradeTime: bigint = await instance.plannedNewImplementationTime();
+        const timelockConfig: any = await instance.timeLockConfig();
+        const plannedUpgradeTime: bigint = timelockConfig.plannedNewImplementationTime;
 
         // 10. Verify Time Delay (Expecting at least 1 day delay)
         const currentTime = await time.latest();
@@ -67,7 +70,8 @@ describe("GM", function () {
         console.log("Planned Upgrade Time:", plannedUpgradeTime);
 
         // 11. Prepare Initialization Data for TwitterCoin2
-        const initFunctionData: string = TwitterCoinV2Factory.interface.encodeFunctionData("initializeV2", []);
+        // const initFunctionData: string = TwitterCoinV2Factory.interface.encodeFunctionData("initializeV2", []);
+        const initFunctionData: string = "0x";
 
         // 12. Attempt Upgrade Before Time Delay (Expect Revert)
         await expect(
@@ -96,13 +100,13 @@ describe("GM", function () {
 
         // 18. Verify Updated State
         const totalSupply2: number = await instance.totalSupply();
-        expect(totalSupply2).to.equal(3000);
+        expect(totalSupply2).to.equal(0);
 
-        const name2: string = await instance.name();
-        expect(name2).to.equal("TwitterCoin2");
-
-        const symbol2: string = await instance.symbol();
-        expect(symbol2).to.equal("TWTCOIN");
+        // const name2: string = await instance.name();
+        // expect(name2).to.equal("TwitterCoin2");
+        //
+        // const symbol2: string = await instance.symbol();
+        // expect(symbol2).to.equal("TWTCOIN");
     });
 
     it('transaction fee', async () => {
@@ -119,7 +123,7 @@ describe("GM", function () {
         } = await loadFixture(createGMCoinFixture(2, initOwnerSupply));
 
 
-        console.log('owner balance is', await coin.balanceOf(feeAddr));
+        console.log('owner balance is', await coin.balanceOf(owner));
 
         expect(await coin.symbol()).to.be.equal("GM");
         expect(await coin.name()).to.be.equal("GM Coin");

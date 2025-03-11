@@ -5,7 +5,7 @@ import {run} from "hardhat";
 
 async function main(): Promise<void> {
     // Get the ContractFactory for "TwitterCoin"
-    const contractV2 = await ethers.getContractFactory("GMCoinTestnet");
+    const newContract = await ethers.getContractFactory("GMCoinTestnet");
 
     if (hre.network.name !== "baseSepolia") {
         throw new Error(`This script must be run on the 'baseSepolia' network. Current network: ${hre.network.name}`);
@@ -13,30 +13,22 @@ async function main(): Promise<void> {
 
     const [owner] = await ethers.getSigners();
 
-    // Deploy an upgradeable proxy for TwitterCoin using UUPS pattern
-    // address _owner, uint256 _initialSupply, string calldata _gelatoW3fHash, string calldata _serverURL
-    const upgraded = await upgrades.upgradeProxy('0x05694e4A34e5f6f8504fC2b2cbe67Db523e0fCCb', contractV2, {
-        call: {
-            fn: "initialize3",
-            args: [2, 0, 1000]
-        }
-    })
-    // const GMCoin = await upgrades.deployProxy(contract,
-    //     [owner.address, 500_000, 'Qme39LGvEnhLJ5dLkthrkqFcu9Dcp5ibb6RvnpqYvWoUXA', 'https://l4xtgdsal5.execute-api.eu-central-1.amazonaws.com/default/GMSecrets'],
-    //     {
-    //         kind: "uups",
-    //         initializer: 'initialize'
-    //     });
-    const address = await upgraded.getAddress();
-    console.log(`upgraded at ${address}`);
+    const deployedImplementation = await newContract.deploy();
+    const deployedContractAddress = await deployedImplementation.getAddress();
 
-    const implementationAddress = await upgrades.erc1967.getImplementationAddress(address);
-    console.log("Implementation Contract Address:", implementationAddress);
+    console.log(`deployed new implementation at ${deployedContractAddress}`);
 
-    console.log('verifying implementation contract..');
+    console.log('verifying implementation..');
     await hre.run('verify:verify', {
-        address: implementationAddress,
+        address: deployedContractAddress,
     })
+
+    const proxyContract = await ethers.getContractAt("GMCoinTestnet", "0x19bD68AD19544FFA043B2c3A5064805682783E91");
+
+    const tx = await proxyContract.forceTimeLockUpdateTestnet(deployedContractAddress);
+    await tx.wait()
+    const tx2 = await proxyContract.upgradeToAndCall(deployedContractAddress, '0x');
+    await tx2.wait();
 }
 
 // Execute the main function and handle potential errors

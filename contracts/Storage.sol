@@ -2,6 +2,22 @@
 pragma solidity ^0.8.24;
 
 contract GMStorage {
+    uint256 __unused;
+    address constant gelatoAutomateTaskCreator = 0x2A6C106ae13B558BB9E2Ec64Bd2f1f7BEFF3A5E0;
+
+    address public serverRelayerAddress;
+
+    Batch[] emptyArray;
+
+    TimeLockConfig public timeLockConfig;
+    FeeConfig public feeConfig;
+    GelatoConfig public gelatoConfig;
+    MintingConfig public mintingConfig;
+    MintingData internal mintingData;
+
+    uint256[255] __gap;
+
+
     struct UserTwitterData {
         uint64 userIndex;
         uint16 tweets;
@@ -34,10 +50,6 @@ contract GMStorage {
         uint256[55] __gap;
     }
 
-    uint256 public totalHolders;
-    address constant gelatoAutomateTaskCreator = 0x2A6C106ae13B558BB9E2Ec64Bd2f1f7BEFF3A5E0;
-
-    address public serverRelayerAddress;
 
     struct GelatoConfig {
         address gelatoAddress;
@@ -89,16 +101,6 @@ contract GMStorage {
 
         uint256[55] __gap;
     }
-
-    Batch[] emptyArray;
-
-    TimeLockConfig public timeLockConfig;
-    FeeConfig public feeConfig;
-    GelatoConfig public gelatoConfig;
-    MintingConfig public mintingConfig;
-    MintingData internal mintingData;
-
-    uint256[255] __gap;
 
     function COINS_MULTIPLICATOR() public view returns (uint256) {
         return mintingConfig.COINS_MULTIPLICATOR;

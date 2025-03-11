@@ -96,7 +96,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             userIndexByUsername
         } = await batchManager.generateNewBatches(twitterRequester, mintingDayTimestamp, initBatches);
 
-        console.log('batchesToProcess', batchesToProcess.length, batchesToProcess);
+        console.log('generateNewBatches', batchesToProcess.length, batchesToProcess);
 
         let transactions: any[] = [];
 
@@ -114,7 +114,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
             batchesToProcess = batches;
 
-            console.log('batchesToProcess', batchesToProcess.length);
+            console.log('batchesToProcess', batchesToProcess.length, 'errorBatches', errorBatches.length);
             console.log('tweets fetched', tweets.length);
 
             let minLikesCount = tweetsToVerify.length > 0 ? tweetsToVerify[tweetsToVerify.length - 1].likesCount : 0;
@@ -164,7 +164,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
             let allUserIndexes = Array.from(UserResults.keys()).sort((a, b) => a - b);
 
-            const ongoingBatches = batchesToProcess.filter((b) => b.nextCursor != '');
+            const ongoingBatches = batchesToProcess.concat(errorBatches).filter((b) => b.nextCursor != '');
             for (const userIndex of allUserIndexes) {
                 if (userIndexesUnderVerification.get(userIndex) === true) {
                     continue;
@@ -228,6 +228,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 })
             }
             if (errorBatchesToLog.length > 0) {
+                console.log('logErrorBatches', errorBatches);
                 transactions.push({
                     to: userArgs.contractAddress as string,
                     data: smartContract.interface.encodeFunctionData("logErrorBatches", [

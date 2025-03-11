@@ -26,6 +26,7 @@ import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
 import {IncomingHttpHeaders} from "http";
 import {blake2b} from "blakejs";
 import axios from "axios";
+import {loadEnvVariables} from "../scripts/prod/utils";
 
 
 describe("GelatoW3F", function () {
@@ -239,23 +240,28 @@ describe("GelatoW3F", function () {
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
-        const userLimit = 1000;
-        const concurrencyLimit = 10;
+        const userLimit = 10000;
+        const concurrencyLimit = 50;
 
         const generatedWallets: HDNodeWallet[] = generateWallets(ethers.provider, userLimit);
 
         let walletByUsername: Map<string, string> = new Map();
+        let usernameByWallet: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
             const userID = String(i + 1)
             await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any, false as any);
             walletByUsername.set(userID, generatedWallets[i].address);
+            usernameByWallet.set(generatedWallets[i].address, userID);
 
             expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);
         }
 
-        // let allUserTweetsByUsername = loadUserTweets('./test/generatedUserTweets_error_60.json')
-        let allUserTweetsByUsername = generateUserTweetsMap(userLimit);
-        // saveUserTweetsToFile(allUserTweetsByUsername, './test/generatedUserTweets_error_60.json');
+        // let allUserTweetsByUsername = loadUserTweets('./test/generatedUserTweets_error.json')
+        let allUserTweetsByUsername = generateUserTweetsMap(userLimit, true);
+
+        // adding more than 10 hashtags for some user
+
+        // saveUserTweetsToFile(allUserTweetsByUsername, './test/generatedUserTweets_error.json');
 
         let tweetMap: Map<string, Tweet> = new Map();
         for (let [userID, tweets] of allUserTweetsByUsername) {
@@ -265,15 +271,22 @@ describe("GelatoW3F", function () {
         }
 
         let queryCount = 0;
+        let queryErrorCount: Map<string, number> = new Map();
         mockServer.mockFunc('/Search', 'GET', (url: url.UrlWithParsedQuery) => {
             queryCount++;
-            if (queryCount % 7 == 0) {
-                throw new Error("some random error");
-            }
 
             const q = url.query["q"] as string;
             const cursor = url.query["cursor"] as string;
             const usernamesList = extractUserIDs(q);
+
+            const alreadyErroredCount = queryErrorCount.get(q) || 0;
+            if (alreadyErroredCount < 2) {
+                if (queryCount % 5 == 0) {
+                    queryErrorCount.set(q, alreadyErroredCount + 1);
+                    throw new Error("some random error");
+                }
+            }
+
 
             console.log('query', q);
             console.log('cursor', cursor);
@@ -358,6 +371,7 @@ describe("GelatoW3F", function () {
         const perHashtag = Number(await smartContract.POINTS_PER_HASHTAG());
         const perCashtag = Number(await smartContract.POINTS_PER_CASHTAG());
 
+        let mintUserUIDs: string[] = [];
         allUserTweetsByUsername.forEach((tweets, uid) => {
             let totalHashtagsCount = 0;
             let totalCashtagCount = 0;
@@ -393,9 +407,13 @@ describe("GelatoW3F", function () {
             const upoints = calculateTotalPoints(tweets);
             if (upoints > 0) {
                 totalEligibleUsers++;
+                // mintUserUIDs.push(uid.replace('user', '', -1));
             }
             userPoints.set(uid, upoints);
         })
+
+        // console.log('test mintedUserIDs', mintUserUIDs.length);
+        // console.log(JSON.stringify(mintUserUIDs));
 
         for (const [uid, wallet] of walletByUsername) {
             const points = userPoints.get(`user${uid}`) || 0;
@@ -405,8 +423,8 @@ describe("GelatoW3F", function () {
         }
         console.log('minting finished here!!');
 
-        console.log('userMintCount', userMintCount);
         console.log('treasuryMintCount', treasuryMintCount);
+        console.log('eligibleUsersCount', totalEligibleUsers);
         expect(userMintCount).to.be.equal(totalEligibleUsers);
         expect(treasuryMintCount).to.be.equal(totalEligibleUsers);
     });
@@ -514,9 +532,10 @@ describe("GelatoW3F", function () {
             contractAddress: verifierAddress,
             searchPath: "/Search",
             tweetLookupURL: "http://localhost:8118/tweet-lookup/",
-            convertToUsernamesPath: "http://localhost:8118/convert-ids-to-usernames/",
+            convertToUsernamesPath: "/convert-ids-to-usernames/",
             concurrencyLimit: concurrencyLimit,
-            serverSaveTweetsURL: "http://localhost:8118/save-tweets/"
+            serverSaveTweetsURL: "http://localhost:8118/save-tweets/",
+            twitterOptimizedServerHost: "",
         };
         //
         // const currentTimestamp = await time.latest();
@@ -548,7 +567,13 @@ describe("GelatoW3F", function () {
     });
 
     it('twitter-worker real-world', async function () {
-        const {coinContract: smartContract, owner, feeAddr, gelatoAddr} = await loadFixture(deployGMCoinWithProxy);
+        const {
+            coinContract: smartContract,
+            owner,
+            treasuryAddr,
+            feeAddr,
+            gelatoAddr
+        } = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = smartContract.connect(gelatoAddr);
 
@@ -603,14 +628,22 @@ describe("GelatoW3F", function () {
             tweetLookupURL: "https://api.x.com/2/tweets",
             convertToUsernamesPath: "/UserResultsByRestIds",
             concurrencyLimit: concurrencyLimit,
-            serverSaveTweetsURL: "https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/SaveTweets"
+            serverSaveTweetsURL: "https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/SaveTweets",
+            twitterOptimizedServerHost: "",
         };
+
+        // const secrets = {
+        //     TWITTER_OPTIMIZED_SERVER_HOST: 'http://localhost:8118'
+        // }
+
+        const secretsProd = loadEnvVariables('twitter-worker', 'prod');
+        const secretsDev = loadEnvVariables('twitter-worker', '');
+        let secrets = secretsProd;
+        secrets.SERVER_API_KEY = secretsDev.SERVER_API_KEY;
 
         dotenv.config({
             path: './test/.env'
         });
-
-        console.log('apikey', process.env.DELETE_TWEETS_SERVER_API)
 
         const response = await axios.post(
             'https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/DeleteDevTweets',
@@ -631,7 +664,7 @@ describe("GelatoW3F", function () {
             userMintCount,
             treasuryMintCount,
             finalRunningHash
-        } = await mintUntilEnd(smartContract, gelatoAddr, userArgs, mintingDay)
+        } = await mintUntilEnd(smartContract, gelatoAddr, treasuryAddr, userArgs, mintingDay, secrets)
 
         expect(userMintCount).to.be.greaterThan(0);
         expect(treasuryMintCount).to.be.greaterThan(0);
@@ -650,6 +683,8 @@ describe("GelatoW3F", function () {
         console.log('finalHash', finalRunningHash);
 
         console.log('uploading to IPFS..');
+        console.log('mintingDay', mintingDay);
+        console.log('finalHash', finalRunningHash);
         const uploadResponse = await axios.post(
             'https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/UploadTweetsToIPFS',
             {
@@ -665,7 +700,7 @@ describe("GelatoW3F", function () {
         );
 
         const cid = uploadResponse.data.cid;
-        console.log('cid', cid);
+        // console.log('cid', cid);
 
         const url = `https://${cid}.ipfs.w3s.link/`;
 
@@ -758,7 +793,7 @@ describe("GelatoW3F", function () {
 
     });
 
-    async function mintUntilEnd(smartContract: GMCoinExposed, gelatoAddr: HardhatEthersSigner, treasuryAddr: HardhatEthersSigner, userArgs, mintingDay: number): Promise<{
+    async function mintUntilEnd(smartContract: GMCoinExposed, gelatoAddr: HardhatEthersSigner, treasuryAddr: HardhatEthersSigner, userArgs, mintingDay: number, secrets?: any, usernameByWallet?: Map<string, string>): Promise<{
         userMintCount: number,
         treasuryMintCount: number,
         finalRunningHash: string
@@ -777,6 +812,8 @@ describe("GelatoW3F", function () {
 
         let finalRunningHash = '';
 
+        let mintedUserIDs: string[] = [];
+
         let userMintsLogsCount = 0;
         let treasuryMintingLogsCount = 0;
         while (hasLogsToProcess) {
@@ -785,6 +822,7 @@ describe("GelatoW3F", function () {
                 userArgs: userArgs,
                 storage: actualStorage,
                 log: overrideLog,
+                secrets: secrets,
             });
             actualStorage = storage.storage;
 
@@ -813,6 +851,10 @@ describe("GelatoW3F", function () {
                             if (decodedLog.args[1] == treasuryAddr.address) {
                                 treasuryMintingLogsCount++;
                             } else {
+                                const username = usernameByWallet?.get(decodedLog.args[1]);
+                                if (username) {
+                                    mintedUserIDs.push(username);
+                                }
                                 userMintsLogsCount++;
                             }
                             continue;
@@ -844,6 +886,10 @@ describe("GelatoW3F", function () {
                 }
             }
         }
+
+        // mintedUserIDs = mintedUserIDs.sort((a, b) => a - b);
+        // console.log('smart-contract minted UIDs..', mintedUserIDs.length);
+        // console.log(JSON.stringify(mintedUserIDs));
 
         return {
             userMintCount: userMintsLogsCount,
@@ -1296,7 +1342,7 @@ function encryptData(data: string, key: string): string {
     return bytesToHex(nonce) + bytesToHex(ciphertext);
 }
 
-function generateUserTweetsMap(limit: number): UserTweetsMap {
+function generateUserTweetsMap(limit: number, testRulesOf10?: boolean): UserTweetsMap {
     const userTweets: UserTweetsMap = new Map();
 
     for (let userId = 1; userId <= limit; userId++) {
@@ -1316,40 +1362,41 @@ function generateUserTweetsMap(limit: number): UserTweetsMap {
         userTweets.set(`user${userId}`, tweets);
     }
 
-    // adding more than 10 hashtags for some user
-    userTweets.set(`user1`, generateTweets(1, [
-        "#gm GM!",
-        "#gmgmgm should not work",
-        "#gm @someUser",
-        "hello my sweet #GM",
-        "#Gm people",
-        "#gm is never going to stop",
-        "#gm crypto will take over",
-        "#gm #gm #gm",
-        "#gm gm GM",
-        "#gm",
-        "#gm Sun!",
-        "@user use hashtag #gm!",
-        "#gm 11",
-        "#gm 12"
-    ]));
+    if (testRulesOf10) {
+        userTweets.set(`user1`, generateTweets(1, [
+            "#gm GM!",
+            "#gmgmgm should not work",
+            "#gm @someUser",
+            "hello my sweet #GM",
+            "#Gm people",
+            "#gm is never going to stop",
+            "#gm crypto will take over",
+            "#gm #gm #gm",
+            "#gm gm GM",
+            "#gm",
+            "#gm Sun!",
+            "@user use hashtag #gm!",
+            "#gm 11",
+            "#gm 12"
+        ]));
 
-    userTweets.set(`user2`, generateTweets(2, [
-        "$gm GM!",
-        "$gmgmgm should not work",
-        "$gm @someUser",
-        "hello my sweet $GM",
-        "$Gm people",
-        "$gm is never going to stop",
-        "$gm crypto will take over",
-        "$gm #gm #gm",
-        "$gm gm GM",
-        "$gm",
-        "$gm Sun!",
-        "@user use cashtag $gm!",
-        "$gm 11",
-        "$gm 12"
-    ]));
+        userTweets.set(`user2`, generateTweets(2, [
+            "$gm GM!",
+            "$gmgmgm should not work",
+            "$gm @someUser",
+            "hello my sweet $GM",
+            "$Gm people",
+            "$gm is never going to stop",
+            "$gm crypto will take over",
+            "$gm #gm #gm",
+            "$gm gm GM",
+            "$gm",
+            "$gm Sun!",
+            "@user use cashtag $gm!",
+            "$gm 11",
+            "$gm 12"
+        ]));
+    }
 
     return userTweets;
 }

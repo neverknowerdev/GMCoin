@@ -7,8 +7,6 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./TwitterOracle.sol";
 
-// Uncomment this line to use console.log
-//import "hardhat/console.sol";
 import {GMWeb3Functions} from "./GelatoWeb3Functions.sol";
 import {GMStorage} from "./Storage.sol";
 
@@ -29,7 +27,6 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
     ) public initializer {
         feeConfig.feeAddress = _feeAddress;
         feeConfig.treasuryAddress = _treasuryAddress;
-        totalHolders = 0;
 
         feeConfig.feePercentage = 100; // 1% fee of transaction
         feeConfig.treasuryPercentage = 1000; // 10% of minted coins
@@ -44,25 +41,32 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
     }
 
+    event UpgradePlanned(uint256 plannedTime, address newImplementation);
+    event UpgradeApplied(uint256 time, address newImplementation);
+
     // disabled Timelock for testing period on Mainnet, then would be turned on
-    function scheduleUpgrade(address newImplementation) public onlyOwner {
-        require(newImplementation != address(0), "wrong newImplementation address");
-        require(timeLockConfig.plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
-
-        timeLockConfig.plannedNewImplementation = newImplementation;
-        timeLockConfig.plannedNewImplementationTime = block.timestamp + 3 days;
-    }
-
-    function upgradeToAndCall(address newImplementation, bytes memory data) public override payable onlyOwner {
-        require(newImplementation != address(0), "wrong newImplementation address");
-        require(newImplementation == timeLockConfig.plannedNewImplementation, "you should schedule upgrade first");
-        require(block.timestamp > timeLockConfig.plannedNewImplementationTime, "timeDelay is not passed to make an upgrade");
-
-        timeLockConfig.plannedNewImplementationTime = 0;
-        timeLockConfig.plannedNewImplementation = address(0);
-
-        super.upgradeToAndCall(newImplementation, data);
-    }
+//    function scheduleUpgrade(address newImplementation) public onlyOwner {
+//        require(newImplementation != address(0), "wrong newImplementation address");
+//        require(timeLockConfig.plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
+//
+//        timeLockConfig.plannedNewImplementation = newImplementation;
+//        timeLockConfig.plannedNewImplementationTime = block.timestamp + 3 days;
+//
+//        emit UpgradePlanned(timeLockConfig.plannedNewImplementationTime, newImplementation);
+//    }
+//
+//    function upgradeToAndCall(address newImplementation, bytes memory data) public override payable onlyOwner {
+//        require(newImplementation != address(0), "wrong newImplementation address");
+//        require(newImplementation == timeLockConfig.plannedNewImplementation, "you should schedule upgrade first");
+//        require(block.timestamp > timeLockConfig.plannedNewImplementationTime, "timeDelay is not passed to make an upgrade");
+//
+//        timeLockConfig.plannedNewImplementationTime = 0;
+//        timeLockConfig.plannedNewImplementation = address(0);
+//
+//        super.upgradeToAndCall(newImplementation, data);
+//
+//        emit UpgradeApplied(block.timestamp, newImplementation);
+//    }
 
 
     function _update(address from, address to, uint256 value) internal override {
@@ -79,17 +83,7 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
             super._update(from, feeConfig.feeAddress, feeAmount);
         }
 
-        // holders++ if "to" was zero and become > zero (before transaction)
-        // holders-- if "from" was not zero and become zero (after transaction)
-        if (to != address(0) && balanceOf(to) == 0 && value > 0) { // ++
-            totalHolders++;
-        }
-
         super._update(from, to, value);
-
-        if (from != address(0) && balanceOf(from) == 0 && value > 0) { // --
-            totalHolders--;
-        }
     }
 
     function _mintForUserByIndex(uint256 userIndex, uint256 amount) internal override {

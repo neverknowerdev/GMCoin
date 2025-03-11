@@ -6,13 +6,14 @@ import axios from "axios";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
+import {encodeUserArgs, loadEnvVariables, setSecretsForW3f} from "./utils";
 
 const {w3f} = hre;
 
 async function main() {
-    const contractAddress = "0x19bD68AD19544FFA043B2c3A5064805682783E91";
+    const contractAddress = "0x26f36F365E5EB6483DF4735e40f87E96e15e0007";
 
-    if (hre.network.name !== "baseSepolia") {
+    if (hre.network.name !== "base") {
         throw new Error(`This script must be run on the 'base' network. Current network: ${hre.network.name}`);
     }
 
@@ -35,13 +36,13 @@ async function main() {
 
     console.log('encoding twitter-verification args..');
     let am = new AutomateModule();
-    const twitterVerificationArgsHex = await am.encodeWeb3FunctionArgs(twitterVerificationCID, {
+    const twitterVerificationArgsHex = await encodeUserArgs(twitterVerificationCID, {
         verifierContractAddress: contractAddress,
         twitterHost: "https://api.x.com",
     });
 
     console.log('encoding twitter-worker args..');
-    const twitterWorkerArgsHex = await am.encodeWeb3FunctionArgs(twitterWorkerCID, {
+    const twitterWorkerArgsHex = await encodeUserArgs(twitterWorkerCID, {
         "contractAddress": contractAddress,
         "searchPath": "/Search",
         "tweetLookupURL": "https://api.twitter.com/2/tweets",
@@ -87,8 +88,8 @@ async function main() {
     console.log('twitter-worker task id: ', twitterWorkerTaskId);
     console.log('dailyTrigger task id: ', dailyTriggerTaskId);
 
-    const twitterVerificationSecrets = loadEnvVariables('twitter-verification');
-    const twitterWorkerSecrets = loadEnvVariables('twitter-worker');
+    const twitterVerificationSecrets = loadEnvVariables('twitter-verification', "prod");
+    const twitterWorkerSecrets = loadEnvVariables('twitter-worker', "prod");
 
     console.log('setting secrets for twitter-verification..');
     await setSecretsForW3f(contractAddress, owner, twitterVerificationTaskId, hre.network.config.chainId as number, twitterVerificationSecrets);
@@ -96,82 +97,6 @@ async function main() {
     await setSecretsForW3f(contractAddress, owner, twitterWorkerTaskId, hre.network.config.chainId as number, twitterWorkerSecrets);
 
     console.log('all done!!');
-}
-
-async function setSecretsForW3f(contractAddress: string, signer: HardhatEthersSigner, taskId: string, chainId: number, secrets: any) {
-    // const contractAddress = "0xBc011Bab6A3C5AE25ca8055e36B242775683172E";
-
-    // const [signer] = await ethers.getSigners();
-
-    // const taskId = "0xf120ff6740ba0828cd43dee48881e61b9202cb5b8108f42a4655eea81cab9b97";
-
-    const domain = "app.gelato.network";
-    const uri = `https://${domain}/`;
-    const version = "1";
-    // const chainId = 84532;
-    const statement = "Gelato Web3Functions";
-    const expirationTimestamp = Date.now() + 600_000;
-    const expirationTime = new Date(expirationTimestamp).toISOString();
-
-    // Construct the SIWE message using the provided information
-    const siweMessage = new SiweMessage({
-        domain,
-        statement,
-        uri,
-        address: contractAddress,
-        version,
-        chainId,
-        expirationTime,
-    });
-
-    const message = siweMessage.prepareMessage();
-    const signature = await signer.signMessage(message);
-
-    const authToken = Buffer.from(
-        JSON.stringify({message, signature})
-    ).toString("base64");
-
-    try {
-        await axios.post(
-            `https://api.gelato.digital/automate/users/users/${contractAddress}/secrets/${chainId}/${taskId}`,
-            {...secrets},
-            {
-                headers: {Authorization: `Bearer ${authToken}`},
-            }
-        );
-        console.log("Secrets set successfully!");
-
-        const {data} = await axios.get(
-            `https://api.gelato.digital/automate/users/users/${contractAddress}/secrets/${chainId}/${taskId}`,
-            {
-                headers: {Authorization: `Bearer ${authToken}`},
-            }
-        );
-
-        console.log(`Secrets fetched: ${JSON.stringify(data)}`);
-    } catch (error) {
-        console.error("Error setting secrets:", error);
-    }
-
-    return true;
-}
-
-export function loadEnvVariables(functionName: string): Record<string, string> {
-    // Construct the path to the prod.env file
-    const envFilePath = path.join(__dirname, "..", "..", "web3-functions", functionName, "prod.env");
-
-    // Check if the file exists
-    if (!fs.existsSync(envFilePath)) {
-        throw new Error(`prod.env file not found at: ${envFilePath}`);
-    }
-
-    // Read the file content
-    const envContent = fs.readFileSync(envFilePath, {encoding: "utf8"});
-
-    // Parse the environment variables using dotenv
-    const envVars = dotenv.parse(envContent);
-
-    return envVars;
 }
 
 function secondsUntilNext2AM(): number {
