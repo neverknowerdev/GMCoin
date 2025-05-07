@@ -1,13 +1,19 @@
-# Sample Hardhat Project
+Official website: https://gmcoin.meme
+https://x.com/say_more_gm
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
+Developer: https://x.com/neverknower_dev
 
-Try running some of the following tasks:
 
+# GM meme-coin backend
+This repository contains all backend logic to GM meme-coin:
+1. smart-contracts
+2. Gelato w3f functions
+3. deploying scripts
+4. tests
+
+
+## How to run tests
 ```shell
-npx hardhat help
 npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat ignition deploy ./ignition/modules/Lock.ts
 ```
+
