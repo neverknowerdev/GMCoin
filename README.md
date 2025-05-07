@@ -1,4 +1,4 @@
-Official website: https://gmcoin.meme
+Project links: https://gmcoin.meme
 https://x.com/say_more_gm
 
 Developer: https://x.com/neverknower_dev
