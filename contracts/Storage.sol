@@ -152,4 +152,8 @@ contract GMStorage {
     function lastEpochPoints() public view returns (uint256) {
         return mintingData.lastEpochPoints;
     }
+
+    function totalUsersCount() public view returns (uint256) {
+        return mintingData.allTwitterUsers.length;
+    }
 }
