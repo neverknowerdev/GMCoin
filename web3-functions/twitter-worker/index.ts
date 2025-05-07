@@ -3,11 +3,12 @@ import {Storage} from './storage';
 import {Web3Function, Web3FunctionEventContext, Web3FunctionResult} from "@gelatonetwork/web3-functions-sdk";
 import {Contract, ContractRunner} from "ethers";
 import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
-import {ContractABI, defaultResult, Result, Tweet, TweetProcessingType} from "./consts";
+import {Batch, BatchToString, ContractABI, defaultResult, Result, Tweet, TweetProcessingType} from "./consts";
 import {BatchManager} from "./batchManager";
 import {TwitterRequester} from "./twitterRequester";
 import {SmartContractConnector} from "./smartContractConnector";
 import {BatchUploader} from "./batchUploader";
+import ky from "ky";
 
 const KEYWORD = "gm";
 const verifyTweetBatchSize = 300;
@@ -17,7 +18,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     const {log, userArgs, multiChainProvider, storage: w3fStorage} = context;
 
     const CONCURRENCY_LIMIT = userArgs.concurrencyLimit as number;
-    const serverSaveTweetsURL = userArgs.serverSaveTweetsURL as string;
+    const serverURLPrefix = userArgs.serverURLPrefix as string;
 
     const bearerToken = await context.secrets.get("TWITTER_BEARER");
     if (!bearerToken)
@@ -43,9 +44,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         throw new Error('Missing SERVER_API_KEY env variable');
     }
 
-    const ConvertToUsernamesURL = `${twitterOptimizedServerHost}${userArgs.convertToUsernamesPath}`;
-    const SearchURL = `${twitterOptimizedServerHost}${userArgs.searchPath}`;
-
     try {
         const provider = multiChainProvider.default() as ContractRunner;
         const smartContract = new Contract(
@@ -67,9 +65,10 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             OfficialBearerToken: bearerToken,
             AuthHeaderName: twitterOptimizedServerAuthHeaderName,
         }, {
-            convertToUsernamesURL: ConvertToUsernamesURL,
             twitterLookupURL: userArgs.tweetLookupURL as string,
-            twitterSearchByQueryURL: SearchURL
+            // optimizedServerURLPrefix: twitterOptimizedServerHost as string,
+            convertToUsernamesURL: `${twitterOptimizedServerHost}/UserResultsByRestIds`,
+            twitterSearchByQueryURL: `${twitterOptimizedServerHost}/Search`,
         });
 
         let contractConnector = new SmartContractConnector(provider, smartContract, storage);
@@ -83,12 +82,11 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             errorCount: item.errorCount,
         }));
 
-        let batchUploader = new BatchUploader(mintingDayTimestamp, storage, serverSaveTweetsURL, serverApiKey);
+        let batchUploader = new BatchUploader(mintingDayTimestamp, storage, serverURLPrefix, serverApiKey);
         await batchUploader.loadStateFromStorage();
 
-        console.log(' ');
         console.log('onRun!', mintingDayTimestamp);
-        console.log('received batches', initBatches);
+        // console.log('received batches', BatchToString(initBatches));
 
         let {
             batchesToProcess,
@@ -96,7 +94,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             userIndexByUsername
         } = await batchManager.generateNewBatches(twitterRequester, mintingDayTimestamp, initBatches);
 
-        console.log('generateNewBatches', batchesToProcess.length, batchesToProcess);
+        // console.log('generateNewBatches', batchesToProcess.length, BatchToString(batchesToProcess));
 
         let transactions: any[] = [];
 
@@ -114,7 +112,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
             batchesToProcess = batches;
 
-            console.log('batchesToProcess', batchesToProcess.length, 'errorBatches', errorBatches.length);
+            // console.log('batchesToProcess', batchesToProcess.length, 'errorBatches', errorBatches.length);
             console.log('tweets fetched', tweets.length);
 
             let minLikesCount = tweetsToVerify.length > 0 ? tweetsToVerify[tweetsToVerify.length - 1].likesCount : 0;
@@ -142,9 +140,11 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 let result = UserResults.get(tweets[i].userIndex) || {...defaultResult};
                 result.userIndex = tweets[i].userIndex;
                 const processingType = calculateTweetByKeyword(result, tweets[i].likesCount, foundKeyword);
+
                 batchUploader.add(tweets[i], processingType);
 
                 if (processingType == TweetProcessingType.Skipped) {
+                    console.log('skipping tweet', tweets[i].tweetID, tweets[i].tweetContent);
                     continue;
                 }
 
@@ -198,7 +198,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             const sortedResults = results.sort((a, b) => Number(a.userIndex - b.userIndex));
 
             const runningHash = batchUploader.getRunningHash();
-            console.log('runningHash', runningHash);
 
             const uploaded = await batchUploader.uploadToServer();
             if (!uploaded) {
@@ -206,7 +205,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             }
             await batchUploader.saveStateToStorage();
 
-            console.log('newBatches', batchesToProcess);
             console.log('sortedResults', sortedResults.length);
 
             // retry errored batches that has less that 3 retries
@@ -257,21 +255,23 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
             let transactions: Web3FunctionResultCallData[] = [];
             try {
-                const verifiedTweets = await twitterRequester.fetchTweetsByIDs(tweetsToVerify);
-                console.log('verifiedTweets', verifiedTweets.length);
-                for (let i = 0; i < verifiedTweets.length; i++) {
-                    const result = UserResults.get(verifiedTweets[i].userIndex) || {...defaultResult};
+                if (tweetsToVerify.length > 0) {
+                    const verifiedTweets = await twitterRequester.fetchTweetsByIDs(tweetsToVerify);
+                    console.log('verifiedTweets', verifiedTweets.length);
+                    for (let i = 0; i < verifiedTweets.length; i++) {
+                        const result = UserResults.get(verifiedTweets[i].userIndex) || {...defaultResult};
 
-                    let tweetProcessResult = calculateTweetByKeyword(result, verifiedTweets[i].likesCount, findKeywordWithPrefix(verifiedTweets[i].tweetContent));
-                    batchUploader.add(verifiedTweets[i], tweetProcessResult);
-                    if (tweetProcessResult == TweetProcessingType.Skipped) {
-                        continue;
-                    }
+                        let tweetProcessResult = calculateTweetByKeyword(result, verifiedTweets[i].likesCount, findKeywordWithPrefix(verifiedTweets[i].tweetContent));
+                        batchUploader.add(verifiedTweets[i], tweetProcessResult);
+                        if (tweetProcessResult == TweetProcessingType.Skipped) {
+                            continue;
+                        }
 
-                    if (!result.userIndex) {
-                        result.userIndex = verifiedTweets[i].userIndex;
+                        if (!result.userIndex) {
+                            result.userIndex = verifiedTweets[i].userIndex;
+                        }
+                        UserResults.set(verifiedTweets[i].userIndex, result);
                     }
-                    UserResults.set(verifiedTweets[i].userIndex, result);
                 }
 
                 const results = [...UserResults.values()].sort((a, b) => Number(a.userIndex - b.userIndex));
@@ -305,6 +305,11 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             if (!uploaded) {
                 throw new Error('failed to SaveTweets (verifiedTweets) to the server');
             }
+
+            // don't wait for response, cauze it take too long to complete (like 30-60 secs)
+            batchUploader.sendUploadToIPFSRequest();
+            // wait for 1 sec
+            await new Promise(f => setTimeout(f, 1000));
 
             // finish minting at all
             await storage.clearAll();
@@ -354,10 +359,6 @@ function calculateTweetByKeyword(result: Result, likesCount: number, keyword: st
         processingType = TweetProcessingType.Simple;
     }
 
-    if (processingType == TweetProcessingType.Skipped) {
-        return processingType;
-    }
-
     switch (processingType) {
         case TweetProcessingType.Simple:
             result.simpleTweets++;
@@ -368,7 +369,8 @@ function calculateTweetByKeyword(result: Result, likesCount: number, keyword: st
         case TweetProcessingType.Cashtag:
             result.cashtagTweets++;
             break;
-
+        default:
+            return processingType
     }
 
     result.tweets++;

@@ -5,9 +5,13 @@ import {run} from "hardhat";
 
 async function main(): Promise<void> {
 
-    const contractV3 = await ethers.getContractFactory("GMCoin");
+    const contractV3 = await ethers.getContractFactory("GMCoinTestnet");
 
-    const contractAddress = hre.network.name == "base" ? "0x26f36F365E5EB6483DF4735e40f87E96e15e0007" : "0x19bD68AD19544FFA043B2c3A5064805682783E91";
+    if (hre.network.name !== "baseSepolia") {
+        throw new Error(`This script must be run on the 'baseSepolia' network. Current network: ${hre.network.name}`);
+    }
+
+    const contractAddress = "0x19bD68AD19544FFA043B2c3A5064805682783E91";
 
     const [owner] = await ethers.getSigners();
 
@@ -15,7 +19,7 @@ async function main(): Promise<void> {
     // address _owner, uint256 _initialSupply, string calldata _gelatoW3fHash, string calldata _serverURL
     const upgraded = await upgrades.upgradeProxy(contractAddress, contractV3, {
         // call: {
-        //     fn: "clearUsers"
+        //     fn: "cleanup"
         // }
     })
     // const GMCoin = await upgrades.deployProxy(contract,
@@ -38,6 +42,6 @@ async function main(): Promise<void> {
 
 // Execute the main function and handle potential errors
 main().catch((error: Error) => {
-    console.error("Error deploying GGCoin:", error);
+    console.error("Error deploying GMCoinTestnet:", error);
     process.exitCode = 1;
 });

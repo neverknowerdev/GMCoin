@@ -5,24 +5,14 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import "hardhat/console.sol";
-import {GMStorage} from "./Storage.sol";
-import {GMWeb3Functions} from "./GelatoWeb3Functions.sol";
+import {GMWeb3FunctionsV2} from "./GelatoWeb3FunctionsV2.sol";
+import {GMStorageV2} from "./StorageV2.sol";
 
+contract GMTwitterOracleV2 is GMStorageV2, Initializable, GMWeb3FunctionsV2 {
+    using ECDSA for bytes32;
 
-contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     modifier onlyGelato() {
-        require(_msgSender() == gelatoConfig.gelatoAddress, "only Gelato can call this function");
-        _;
-    }
-
-    modifier onlyGelatoOrOwner() {
-        require(_msgSender() == gelatoConfig.gelatoAddress || _msgSender() == owner(), "only Gelato or owner can call this function");
-        _;
-    }
-
-    modifier onlyServerRelayer() {
-        require(_msgSender() == serverRelayerAddress, "only relay server can call this function");
+        require(msg.sender == gelatoConfig.gelatoAddress, "only Gelato can call this function");
         _;
     }
 
@@ -31,12 +21,36 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
         _disableInitializers();
     }
 
+    modifier onlyServerRelayer() {
+        require(msg.sender == serverRelayerAddress, "only relay server can call this function");
+        _;
+    }
+
+    function __TwitterOracle__init(uint256 coinsPerTweet, address _gelatoAddress, address _relayServerAddress, uint _epochDays) public onlyInitializing {mintingConfig.POINTS_PER_TWEET = 1;
+        mintingConfig.POINTS_PER_TWEET = 1;
+        mintingConfig.POINTS_PER_LIKE = 1;
+        mintingConfig.POINTS_PER_HASHTAG = 3;
+        mintingConfig.POINTS_PER_CASHTAG = 5;
+
+        mintingConfig.EPOCH_DAYS = _epochDays;
+
+        mintingConfig.COINS_MULTIPLICATOR = coinsPerTweet * 10 ** 18;
+
+        mintingData.epochStartedAt = uint32(block.timestamp - (block.timestamp % 1 days) - 1 days);
+
+        // pre-yesterday
+        mintingData.lastMintedDay = uint32(block.timestamp - (block.timestamp % 1 days) - 2 days);
+
+        gelatoConfig.gelatoAddress = _gelatoAddress;
+        serverRelayerAddress = _relayServerAddress;
+    }
+
     function walletByTwitterUser(string calldata username) internal view returns (address) {
         return mintingData.walletsByUserIDs[username];
     }
 
     function userByWallet(address wallet) public view returns (string memory) {
-//        require(_msgSender() == wallet, "only wallet owner could call this function");
+        require(_msgSender() == wallet, "only wallet owner could call this function");
 
         return mintingData.usersByWallets[wallet];
     }
@@ -46,6 +60,8 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     }
 
     function getTwitterUsers(uint64 start, uint16 count) public view returns (string[] memory) {
+        // require(start < allTwitterUsers.length, "Start index out of bounds");
+
         uint64 end = start + count;
         if (end > mintingData.allTwitterUsers.length) {
             end = uint64(mintingData.allTwitterUsers.length);
@@ -81,14 +97,16 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     }
 
     function requestTwitterVerificationFromRelayer(string calldata userID, address wallet, bytes calldata signature, string calldata accessTokenEncrypted) public onlyServerRelayer {
-        address recoveredSigner = ECDSA.recover(MessageHashUtils.toEthSignedMessageHash(bytes("I confirm that I want to verify my Twitter account with GMCoin")), signature);
+        bytes32 messageHash = keccak256(abi.encodePacked("I confirm that I want to verify my Twitter account with GMCoin"));
 
-        require(recoveredSigner != address(0), "empty signer");
-        require(recoveredSigner == wallet, "wrong signer or signature");
+        address signer = MessageHashUtils.toEthSignedMessageHash(messageHash).recover(signature);
+
+        require(signer != address(0), "empty signer");
+        require(signer == wallet, "wrong signer or signature");
         require(mintingData.walletsByUserIDs[userID] == address(0), "wallet already linked for that user");
-        require(!mintingData.registeredWallets[recoveredSigner], "wallet already verified and linked to Twitter");
+        require(!mintingData.registeredWallets[signer], "wallet already verified and linked to Twitter");
 
-        emit VerifyTwitterRequested(accessTokenEncrypted, userID, recoveredSigner);
+        emit VerifyTwitterRequested(accessTokenEncrypted, userID, signer);
     }
 
     function twitterVerificationError(address wallet, string calldata userID, string calldata errorMsg) public onlyGelato {
@@ -103,9 +121,9 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
             mintingData.walletsByUserIDs[userID] = wallet;
             mintingData.allTwitterUsers.push(userID);
             mintingData.userIndexByUserID[userID] = mintingData.allTwitterUsers.length - 1;
-
-            _mintForUserByIndex(mintingData.allTwitterUsers.length - 1, mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET); // mint welcome coins
-
+            if (isSubscribed) {
+                _mintForUserByIndex(mintingData.allTwitterUsers.length, 1 * mintingConfig.COINS_MULTIPLICATOR); // mint welcome coins
+            }
             emit TwitterVerificationResult(userID, wallet, true, "");
         }
     }
@@ -116,9 +134,11 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     event MintingFinished(uint32 indexed mintingDayTimestamp, string runningHash);
     event MintingFinished_TweetsUploadedToIPFS(uint32 indexed mintingDayTimetsamp, string runningHash, string cid);
 
-    event changedComplexity(uint256 newMultiplicator, uint256 previousEpochPoints, uint256 currentEpochPoints);
+    event changedComplexity(uint256 newMultiplicator);
 
-    function startMinting() public onlyGelatoOrOwner {
+    function startMinting() public onlyGelato {
+        // continue minting for not finished day if any
+
         uint32 yesterday = getStartOfYesterday();
         uint32 dayToMint = mintingData.lastMintedDay + 1 days;
 
@@ -133,17 +153,20 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
 
         mintingData.mintingInProgressForDay = dayToMint;
 
+        mintingData.mintingDayPointsFromUsers = 0;
+
         // complexity calculation
         // start new epoch
         if (dayToMint > mintingData.epochStartedAt && dayToMint - mintingData.epochStartedAt >= mintingConfig.EPOCH_DAYS * 1 days) {
-            pointsDeltaStreak = adjustPointsStreak(mintingData.lastEpochPoints, mintingData.currentEpochPoints, pointsDeltaStreak);
-            mintingConfig.COINS_MULTIPLICATOR = changeComplexity(mintingConfig.COINS_MULTIPLICATOR, mintingData.lastEpochPoints, mintingData.currentEpochPoints, pointsDeltaStreak);
-
-            emit changedComplexity(mintingConfig.COINS_MULTIPLICATOR, mintingData.lastEpochPoints, mintingData.currentEpochPoints);
-
             mintingData.epochStartedAt = dayToMint;
-            totalPoints += mintingData.currentEpochPoints;
+
+            uint256 newCoinMultiplicator = changeComplexity(mintingConfig.COINS_MULTIPLICATOR, mintingData.lastEpochPoints, mintingData.currentEpochPoints);
+            if (newCoinMultiplicator > 0) {
+                mintingConfig.COINS_MULTIPLICATOR = newCoinMultiplicator;
+                emit changedComplexity(mintingConfig.COINS_MULTIPLICATOR);
+            }
             mintingConfig.epochNumber++;
+
             mintingData.lastEpochPoints = mintingData.currentEpochPoints;
             mintingData.currentEpochPoints = 0;
         }
@@ -167,7 +190,6 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
         mintingData.currentEpochPoints += mintingData.mintingDayPointsFromUsers;
         mintingData.lastMintedDay = mintingDayTimestamp;
 
-        mintingData.mintingDayPointsFromUsers = 0;
         mintingData.mintingInProgressForDay = 0;
 
         emit MintingFinished(mintingDayTimestamp, runningHash);
@@ -200,7 +222,6 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
                 revert("wrong userIndex");
             }
 
-
             uint256 points =
                 userData[i].simpleTweets * mintingConfig.POINTS_PER_TWEET
                 + userData[i].likes * mintingConfig.POINTS_PER_LIKE
@@ -211,7 +232,6 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
                 continue;
             }
 
-//            console.log('userIndex', userData[i].userIndex, points);
             mintingData.mintingDayPointsFromUsers += points;
 
             uint256 coins = points * mintingConfig.COINS_MULTIPLICATOR;
@@ -231,46 +251,33 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
         return startOfToday - 1 days;
     }
 
-    function changeComplexity(uint256 currentComplexity, uint256 lastEpochPoints, uint256 currentEpochPoints, int32 epochPointsDeltaStreak) internal pure returns (uint256) {
-        if (lastEpochPoints == 0) {
-            return currentComplexity;
-        }
-
-        if (currentEpochPoints > lastEpochPoints) {
-            // minus 30%
-            return currentComplexity * 70 / 100;
-        }
-
-        if (currentEpochPoints <= lastEpochPoints) {
-            if (epochPointsDeltaStreak <= - 3) {
-                // plus 30%
-                return currentComplexity * 130 / 100;
-            } else if (epochPointsDeltaStreak == - 2) {
-                // plus 20%
-                return currentComplexity * 120 / 100;
-            } else {
-                return currentComplexity;
+    function changeComplexity(uint256 currentComplexity, uint256 lastEpochPoints, uint256 currentEpochPoints) internal pure returns (uint256) {
+        uint256 newMultiplicator = 0;
+        if (lastEpochPoints != 0) {
+            // more GMs now that in previous epoch
+            if (currentEpochPoints > lastEpochPoints) {
+                if (currentEpochPoints / lastEpochPoints >= 5) {
+                    // 1/2
+                    newMultiplicator = currentComplexity / 5;
+                } else if (currentEpochPoints / lastEpochPoints >= 2) {
+                    // 1/2
+                    newMultiplicator = currentComplexity / 2;
+                } else {
+                    // minus 30%
+                    newMultiplicator = currentComplexity * 70 / 100;
+                }
+            }
+            if (currentEpochPoints < lastEpochPoints) {
+                if (lastEpochPoints / currentEpochPoints >= 3) {
+                    newMultiplicator = currentComplexity * 2;
+                } else {
+                    // plus 20%
+                    newMultiplicator = currentComplexity * 120 / 100;
+                }
             }
         }
 
-        return currentComplexity;
-    }
-
-    function adjustPointsStreak(uint256 lastEpochPoints, uint256 currentEpochPoints, int32 currentPointsDeltaStreak) internal pure returns (int32) {
-        if (currentEpochPoints > lastEpochPoints && currentPointsDeltaStreak <= 0) {
-            return 1;
-        }
-        if (currentEpochPoints < lastEpochPoints && currentPointsDeltaStreak >= 0) {
-            return - 1;
-        }
-
-        if (currentEpochPoints > lastEpochPoints) {
-            return currentPointsDeltaStreak + 1;
-        } else if (currentEpochPoints < lastEpochPoints) {
-            return currentPointsDeltaStreak - 1;
-        }
-
-        return currentPointsDeltaStreak;
+        return newMultiplicator;
     }
 
     function removeMe() public {
@@ -293,21 +300,5 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
 
             mintingData.userIndexByUserID[lastIndexUserID] = userIndex;
         }
-    }
-
-    function removeUserByUserId(string memory userID) internal {
-        uint userIndex = mintingData.userIndexByUserID[userID];
-        address wallet = mintingData.walletsByUserIDs[userID];
-
-        delete mintingData.registeredWallets[wallet];
-        delete mintingData.walletsByUserIDs[userID];
-        delete mintingData.usersByWallets[wallet];
-
-        // remove from array
-        string memory lastIndexUserID = mintingData.allTwitterUsers[mintingData.allTwitterUsers.length - 1];
-        mintingData.allTwitterUsers[userIndex] = lastIndexUserID;
-        mintingData.allTwitterUsers.pop();
-
-        mintingData.userIndexByUserID[lastIndexUserID] = userIndex;
     }
 }

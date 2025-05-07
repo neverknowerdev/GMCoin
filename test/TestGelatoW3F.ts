@@ -15,7 +15,7 @@ import {
 import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
 import {GMCoinExposed} from "../typechain";
 import {MockHttpServer} from './tools/mockServer';
-import {Provider, HDNodeWallet, EventLog} from "ethers";
+import {Provider, HDNodeWallet, EventLog, Contract, JsonRpcProvider} from "ethers";
 import {generateEventLog} from './tools/helpers';
 import {deployGMCoinWithProxy} from "./tools/deployContract";
 import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers";
@@ -288,12 +288,12 @@ describe("GelatoW3F", function () {
             }
 
 
-            console.log('query', q);
-            console.log('cursor', cursor);
+            // console.log('query', q);
+            // console.log('cursor', cursor);
 
             const {filteredTweets, nextCursor} = filterUserTweets(allUserTweetsByUsername, usernamesList, cursor, 20);
 
-            console.log('nextCursor', nextCursor);
+            // console.log('nextCursor', nextCursor);
             // console.log('generateResponse', 'nextCursor', nextCursor, userIDList, filteredTweets);
 
             let response = generateResponse(filteredTweets, nextCursor, cursor == '');
@@ -310,7 +310,7 @@ describe("GelatoW3F", function () {
             return generateResponseForTweetLookup(tweetMap, tweetIDs, 0);
         });
 
-        mockServer.mockFunc('/convert-ids-to-usernames/', 'GET', (url: url.UrlWithParsedQuery) => {
+        mockServer.mockFunc('/UserResultsByRestIds', 'GET', (url: url.UrlWithParsedQuery) => {
             const idList = url.query["user_ids"] as string;
             const userIDs = idList.split(',');
 
@@ -329,25 +329,31 @@ describe("GelatoW3F", function () {
             return response;
         });
 
-        mockServer.mockFunc('/save-tweets/', 'POST', (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => {
+        mockServer.mock('/SaveTweets', 'POST', {success: true});
+
+        mockServer.mockFunc('/UploadTweetsToIPFS', 'POST', (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => {
+            const receivedJSON = JSON.parse(body);
+            const apiKey = headers.authorization;
+            expect(apiKey?.indexOf('sN') === 0).to.be.true;
+
+            expect(receivedJSON.mintingDayTimestamp).to.be.equal(mintingDay);
+
             return {
                 success: true
             }
         });
-        // mockServer.mock('/save-tweets/', 'POST', {success: true});
 
         const verifierAddress = await smartContract.getAddress();
         console.log(`deployed GMCoin to ${verifierAddress}`);
-
 
         const userArgs = {
             contractAddress: verifierAddress,
             searchPath: "/Search",
             tweetLookupURL: "http://localhost:8118/tweet-lookup/",
-            convertToUsernamesPath: "/convert-ids-to-usernames/",
+            // convertToUsernamesPath: "/convert-ids-to-usernames/",
             concurrencyLimit: concurrencyLimit,
-            serverSaveTweetsURL: "http://localhost:8118/save-tweets/",
-            twitterOptimizedServerHost: "http://localhost:8118"
+            twitterOptimizedServerHost: "http://localhost:8118",
+            serverURLPrefix: 'http://localhost:8118/',
         };
         //
         // const currentTimestamp = await time.latest();
@@ -378,48 +384,58 @@ describe("GelatoW3F", function () {
             const calculateTotalPoints = (tweets: Tweet[]): number => {
                 return tweets.reduce((totalPoints, tweet) => {
                     const gmCount = (tweet.text.match(/\bgm\b/gi) || []).length; // Matches whole "gm" words
-                    const hashtagGmCount = (tweet.text.match(/#gm/gi) || []).length; // Matches "#gm"
-                    const dollarGmCount = (tweet.text.match(/\$gm/gi) || []).length; // Matches "$gm"
+                    const hashtagGmCount = (tweet.text.match(/#gm\b/gi) || []).length; // Matches "#gm"
+                    const dollarGmCount = (tweet.text.match(/\$gm\b/gi) || []).length; // Matches "$gm"
 
                     let pointsPerTweet = 0;
                     if (dollarGmCount > 0) {
                         totalCashtagCount++;
+
                         if (totalCashtagCount <= 10) {
-                            pointsPerTweet += perCashtag;
+                            pointsPerTweet = perCashtag;
                         }
                     } else if (hashtagGmCount > 0) {
                         totalHashtagsCount++;
+
                         if (totalHashtagsCount <= 10) {
-                            pointsPerTweet += perHashtag;
+                            pointsPerTweet = perHashtag;
                         }
                     } else if (gmCount > 0) {
-                        pointsPerTweet += perTweet;
+                        pointsPerTweet = perTweet;
                     }
 
                     if (pointsPerTweet > 0) {
                         pointsPerTweet += tweet.likesCount * perLike;
                     }
 
+                    // console.log('pointsPerTweet', pointsPerTweet, tweet.text, tweet.likesCount, tweet.tweet_id);
+
                     return totalPoints + pointsPerTweet;
                 }, 0);
             };
 
-            const upoints = calculateTotalPoints(tweets);
+
+            let upoints = calculateTotalPoints(tweets);
             if (upoints > 0) {
                 totalEligibleUsers++;
-                // mintUserUIDs.push(uid.replace('user', '', -1));
             }
+
             userPoints.set(uid, upoints);
         })
 
         // console.log('test mintedUserIDs', mintUserUIDs.length);
         // console.log(JSON.stringify(mintUserUIDs));
+        // console.log('coinsMultiplicator', coinsMultiplicator);
 
         for (const [uid, wallet] of walletByUsername) {
             const points = userPoints.get(`user${uid}`) || 0;
             const balance = await smartContract.balanceOf(wallet as any);
+            const actualPoints = balance / BigInt(coinsMultiplicator) / 10n ** 18n
 
-            expect(balance / BigInt(coinsMultiplicator) / 10n ** 18n, `userIndex ${parseInt(uid) - 1}`).to.be.equal(BigInt(points));
+            // points per tweets/likes + welcomePoints
+            const expectedPoints = points + perTweet;
+
+            expect(actualPoints, `userIndex ${parseInt(uid) - 1}`).to.be.equal(BigInt(expectedPoints));
         }
         console.log('minting finished here!!');
 
@@ -490,7 +506,7 @@ describe("GelatoW3F", function () {
             return generateResponseForTweetLookup(tweetMap, tweetIDs, 0);
         });
 
-        mockServer.mockFunc('/convert-ids-to-usernames/', 'GET', (url: url.UrlWithParsedQuery) => {
+        mockServer.mockFunc('/UserResultsByRestIds', 'GET', (url: url.UrlWithParsedQuery) => {
             const idList = url.query["user_ids"] as string;
             const userIDs = idList.split(',');
 
@@ -510,13 +526,25 @@ describe("GelatoW3F", function () {
         });
 
         let savedTweets = [];
-        mockServer.mockFunc('/save-tweets/', 'POST', (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => {
+        mockServer.mockFunc('/SaveTweets', 'POST', (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => {
             const receivedJSON = JSON.parse(body);
             const apiKey = headers.authorization;
             expect(apiKey?.indexOf('sN') === 0).to.be.true;
 
             expect(receivedJSON.mintingDayTimestamp).to.be.equal(mintingDay);
             savedTweets.push(...receivedJSON.tweets);
+
+            return {
+                success: true
+            }
+        });
+
+        mockServer.mockFunc('/UploadTweetsToIPFS', 'POST', (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => {
+            const receivedJSON = JSON.parse(body);
+            const apiKey = headers.authorization;
+            expect(apiKey?.indexOf('sN') === 0).to.be.true;
+
+            expect(receivedJSON.mintingDayTimestamp).to.be.equal(mintingDay);
 
             return {
                 success: true
@@ -534,7 +562,7 @@ describe("GelatoW3F", function () {
             tweetLookupURL: "http://localhost:8118/tweet-lookup/",
             convertToUsernamesPath: "/convert-ids-to-usernames/",
             concurrencyLimit: concurrencyLimit,
-            serverSaveTweetsURL: "http://localhost:8118/save-tweets/",
+            serverURLPrefix: 'http://localhost:8118/',
             twitterOptimizedServerHost: "",
         };
         //
@@ -544,6 +572,7 @@ describe("GelatoW3F", function () {
         let today = new Date();
         today.setUTCHours(0, 0, 0, 0);
         const mintingDay = today.setDate(today.getDate() - 1) / 1000;
+        // const mintingDay = 1743292800;
 
         const {
             userMintCount,
@@ -562,6 +591,7 @@ describe("GelatoW3F", function () {
         }
         console.log('calculated runningHash', runningHash);
 
+        expect(finalRunningHash).to.be.not.empty;
         expect(finalRunningHash).to.be.equal(runningHash);
 
     });
@@ -578,6 +608,19 @@ describe("GelatoW3F", function () {
         const gelatoContract = smartContract.connect(gelatoAddr);
 
         const smartContractAddress = await smartContract.getAddress();
+
+        dotenv.config({
+            path: './test/.env'
+        });
+
+        const testnetCcontractAbi = [
+            "event MintingFinished_TweetsUploadedToIPFS(uint32 indexed mintingDayTimestamp, string runningHash, string cid)",
+            // Add other functions if needed, e.g.:
+            "function attachIPFSTweetsFile(uint32 mintingDayTimestamp, string calldata finalHash, string calldata cid) public",
+        ];
+
+        const testnetProvider = new JsonRpcProvider("https://base-sepolia.infura.io/v3/" + process.env.INFURA_KEY);
+        const testnetContract = new Contract("0x19bD68AD19544FFA043B2c3A5064805682783E91", testnetCcontractAbi, testnetProvider);
 
         const userLimit = 10;
         const concurrencyLimit = 30;
@@ -621,14 +664,14 @@ describe("GelatoW3F", function () {
         let today = new Date();
         today.setUTCHours(0, 0, 0, 0);
         const mintingDay = today.setDate(today.getDate() - 1) / 1000;
+        // const mintingDay = 1743292800;
 
         const userArgs = {
             contractAddress: smartContractAddress,
             searchPath: "/Search",
             tweetLookupURL: "https://api.x.com/2/tweets",
-            convertToUsernamesPath: "/UserResultsByRestIds",
             concurrencyLimit: concurrencyLimit,
-            serverSaveTweetsURL: "https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/SaveTweets",
+            serverURLPrefix: "https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/",
             twitterOptimizedServerHost: "",
         };
 
@@ -682,25 +725,30 @@ describe("GelatoW3F", function () {
         console.log('mintingDay', mintingDay);
         console.log('finalHash', finalRunningHash);
 
-        console.log('uploading to IPFS..');
-        console.log('mintingDay', mintingDay);
-        console.log('finalHash', finalRunningHash);
-        const uploadResponse = await axios.post(
-            'https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/dev/UploadTweetsToIPFS',
-            {
-                mintingDayTimestamp: mintingDay,
-                finalHash: finalRunningHash
-            }, // No data to send in the body
-            {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': process.env.SERVER_API,
-                },
-            }
-        );
+        console.log('waiting for upload to IPFS..');
 
-        const cid = uploadResponse.data.cid;
-        // console.log('cid', cid);
+
+        const filter = testnetContract.filters.MintingFinished_TweetsUploadedToIPFS(mintingDay);
+
+        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+        let foundEvent: EventLog;
+        for (let i = 0; i < 200; i++) {
+            const events = await testnetContract.queryFilter(filter);
+            if (events.length > 0) {
+                let lastEvent = events.reverse()[0] as EventLog;
+
+                const {mintingDayTimestamp, runningHash, cid} = lastEvent.args;
+                if (runningHash == finalRunningHash) {
+                    foundEvent = lastEvent;
+                    break;
+                }
+            }
+
+            await delay(1000);
+        }
+
+
+        const {mintingDayTimestamp, runningHash, cid} = foundEvent.args;
 
         const url = `https://${cid}.ipfs.w3s.link/`;
 
@@ -1274,7 +1322,7 @@ function calculateRunningHash(prevHash: string, tweet: any): string {
 }
 
 function toTweetKey(tweet: any): string {
-    return `${tweet.tweetID}|${tweet.likesCount}|${tweet.tweetContent}`
+    return `${tweet.tweetID}`
 }
 
 function stringToUint8Array(str: string): Uint8Array {

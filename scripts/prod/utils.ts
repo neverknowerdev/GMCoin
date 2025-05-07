@@ -66,7 +66,7 @@ export async function setSecretsForW3f(contractAddress: string, signer: HardhatE
             }
         );
 
-        console.log(`Secrets fetched: ${JSON.stringify(data)}`);
+        console.log(`Secrets fetched successfully`);
     } catch (error) {
         console.error("Error setting secrets:", error);
     }

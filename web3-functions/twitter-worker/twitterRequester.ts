@@ -14,6 +14,7 @@ export interface TwitterURLList {
     twitterLookupURL: string;
 
     // optimized API
+    // optimizedServerURLPrefix: string;
     convertToUsernamesURL: string;
     twitterSearchByQueryURL: string;
 }
@@ -37,6 +38,7 @@ export class TwitterRequester {
 
         let userIDtoUsername: Map<string, string> = new Map();
         const requests = batches.map(async (batch) => {
+            // const url = `${this.urlList.optimizedServerURLPrefix}/UserResultsByRestIds?user_ids=${batch.join(',')}`;
             const url = `${this.urlList.convertToUsernamesURL}?user_ids=${batch.join(',')}`;
 
             const headerKey = this.secrets.AuthHeaderName;
@@ -189,10 +191,11 @@ export class TwitterRequester {
     async fetchTweetsBySearchQuery(query: string, cursor: string): Promise<{ tweets: Tweet[], nextCursor: string }> {
         try {
             // Perform the GET request using ky
-            console.log('query', query);
-            console.log('cursor', cursor);
+            // console.log('query', query);
+            // console.log('cursor', cursor);
             const headerKey = this.secrets.AuthHeaderName;
 
+            // const response = await ky.get(this.urlList.optimizedServerURLPrefix + "Search", {
             const response = await ky.get(this.urlList.twitterSearchByQueryURL, {
                 timeout: 3000,
                 retry: 1,

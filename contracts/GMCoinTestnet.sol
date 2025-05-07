@@ -5,29 +5,43 @@ import "./GMCoin.sol";
 
 contract GMCoinTestnet is GMCoin
 {
+    function clearUser() public onlyOwner {
+        string memory userID = "1796129942104657921";
+        address wallet = mintingData.walletsByUserIDs[userID];
+
+        uint userIndex = mintingData.userIndexByUserID[userID];
+        delete mintingData.registeredWallets[wallet];
+        delete mintingData.walletsByUserIDs[userID];
+        delete mintingData.usersByWallets[wallet];
+
+        // remove from array
+        string memory lastIndexUserID = mintingData.allTwitterUsers[mintingData.allTwitterUsers.length - 1];
+        mintingData.allTwitterUsers[userIndex] = lastIndexUserID;
+        mintingData.allTwitterUsers.pop();
+
+        mintingData.userIndexByUserID[lastIndexUserID] = userIndex;
+    }
+
     function addTwitterUsername(string calldata userID, address walletAddress) public {
-        mintingData.wallets[userID] = walletAddress;
+        mintingData.walletsByUserIDs[userID] = walletAddress;
         mintingData.allTwitterUsers.push(userID);
         emit TwitterVerificationResult(userID, walletAddress, true, "");
     }
 
     function removeUser(string memory userID, address wallet) public {
         if (mintingData.registeredWallets[wallet]) {
-            mintingData.wallets[userID] = address(0);
             uint userIndex = mintingData.userIndexByUserID[userID];
-            mintingData.registeredWallets[wallet] = false;
-            mintingData.walletsByUserIDs[userID] = address(0);
-            mintingData.usersByWallets[wallet] = "";
+            delete mintingData.registeredWallets[wallet];
+            delete mintingData.walletsByUserIDs[userID];
+            delete mintingData.usersByWallets[wallet];
 
-            removeUserIndex(userIndex);
+            // remove from array
+            string memory lastIndexUserID = mintingData.allTwitterUsers[mintingData.allTwitterUsers.length - 1];
+            mintingData.allTwitterUsers[userIndex] = lastIndexUserID;
+            mintingData.allTwitterUsers.pop();
+
+            mintingData.userIndexByUserID[lastIndexUserID] = userIndex;
         }
-    }
-
-    function removeMe() public {
-        require(mintingData.registeredWallets[_msgSender()], "your wallet is not registered as a user yet");
-
-        string memory userID = mintingData.usersByWallets[_msgSender()];
-        removeUser(userID, _msgSender());
     }
 
     function getWalletByUserID(string calldata username) public view returns (address) {
@@ -44,18 +58,6 @@ contract GMCoinTestnet is GMCoin
 
     function getStartOfTheEpoch() public view returns (uint256) {
         return mintingData.epochStartedAt;
-    }
-
-    function removeUserIndex(uint index) internal {
-        require(index < mintingData.allTwitterUsers.length, "Index out of bounds");
-
-        // Shift elements to the left
-        for (uint i = index; i < mintingData.allTwitterUsers.length - 1; i++) {
-            mintingData.allTwitterUsers[i] = mintingData.allTwitterUsers[i + 1];
-        }
-
-        // Reduce the array length by 1
-        mintingData.allTwitterUsers.pop(); // Removes the last element
     }
 
     function forceTimeLockUpdateTestnet(address newImplementation) public {

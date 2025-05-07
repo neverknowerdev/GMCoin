@@ -31,18 +31,30 @@ export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number =
 
         gelatoIOpsProxyFactory.getProxyOf.returns([gelatoAddr.address, true]);
 
-
         const coinsMultiplicator = 1_000_000;
 
-
-        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
+        const contractV1 = await ethers.getContractFactory("GMCoinV1");
+        const coinContractV1 = await upgrades.deployProxy(contractV1,
             [owner.address, feeAddr.address, treasuryAddr.address, relayerServerAcc.address, coinsMultiplicator, epochDays],
             {
                 kind: "uups",
             }) as unknown as GMCoinExposed;
+        await coinContractV1.waitForDeployment();
 
+        const contractAddress = await coinContractV1.getAddress();
+
+        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
+        const coinContract: GMCoinExposed = await upgrades.upgradeProxy(contractAddress, TwitterCoin) as GMCoinExposed;
         await coinContract.waitForDeployment();
+
+
+        // const coinContract: GMCoinExposed = await upgrades.deployProxy(TwitterCoin,
+        //     [owner.address, feeAddr.address, treasuryAddr.address, relayerServerAcc.address, coinsMultiplicator, epochDays],
+        //     {
+        //         kind: "uups",
+        //     }) as unknown as GMCoinExposed;
+        //
+        // await coinContract.waitForDeployment();
 
         if (ownerSupply > 0) {
             const tx = await coinContract.mintForWallet(owner.address, ownerSupply);

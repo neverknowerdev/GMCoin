@@ -9,8 +9,6 @@ import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
 import {createGMCoinFixture, deployGMCoinWithProxy} from "./tools/deployContract";
 
 describe("GM minting", function () {
-
-
     it('minting for twitter users: one day', async () => {
         const {coinContract, owner, feeAddr, gelatoAddr} = await loadFixture(deployGMCoinWithProxy);
 
@@ -95,10 +93,15 @@ describe("GM minting", function () {
 
         await expect(gelatoContract.mintCoinsForTwitterUsers(generatedData2, startOfYesterday, [batch])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[100n, 154n, '', 0]]);
 
-        const expectedResults = calcPointsForUsers(allUsersData, 1, 1, 2, 3, 1_000_000);
+        const pointsPerCashtag = await gelatoContract.POINTS_PER_CASHTAG();
+        const pointsPerLike = await gelatoContract.POINTS_PER_LIKE();
+        const pointsPerTweet = await gelatoContract.POINTS_PER_TWEET();
+        const pointsPerHashtag = await gelatoContract.POINTS_PER_HASHTAG();
+        const coinMultiplicator = await coinContract.COINS_MULTIPLICATOR() / 10n ** 18n;
+        const expectedResults = calcPointsForUsers(allUsersData, Number(pointsPerTweet), Number(pointsPerLike), Number(pointsPerHashtag), Number(pointsPerCashtag), coinMultiplicator);
         for (let i = 0; i < expectedResults.length; i++) {
             let expectedCoins = BigInt(expectedResults[i].expectedCoins) * 10n ** 18n;
-            expect(await coinContract.balanceOf(wallets[i])).to.be.equal(expectedCoins);
+            expect(await coinContract.balanceOf(wallets[i]) / 10n ** 18n).to.be.equal(expectedCoins / 10n ** 18n);
         }
     })
 
@@ -159,7 +162,7 @@ describe("GM minting", function () {
         let coinsSum: bigint = 0n;
         for (let i = 0; i < batchSize; i++) {
             log('checking', i);
-            const expectedCoins = Math.floor(expectedPoints[i] * 1_000_000);
+            const expectedCoins = Math.floor((expectedPoints[i] + perTweet) * 1_000_000);
             log('points', expectedPoints[i]);
             log('expectedCoins', expectedCoins);
             // const expCoins = expPoints * 1_000_000n * 10n**18n / 1n;
@@ -273,6 +276,7 @@ describe("GM minting", function () {
             await time.increaseTo(dayTimestamp);
         }
 
+        // week2 - no changes to userData prev week - the same compexity
         log('week 2');
         let userData2x: TweetData[] = [];
         for (let i = 0; i < userData.length; i++) {
@@ -281,29 +285,10 @@ describe("GM minting", function () {
             userDataItem.simpleTweets *= 2;
             userDataItem.cashtagTweets *= 5;
         }
-        // let newComplexity = complexity * 80n / 100n;
-        // complexity didn't change after 1 week
+        // complexity without changes based on week 1
+        let newComplexity = complexity;
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
-
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
-            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(complexity);
-
-            dayTimestamp = dayTimestamp + time.duration.days(1);
-            await time.increaseTo(dayTimestamp);
-        }
-
-        for (let i = 0; i < userData.length; i++) {
-            let userDataItem = userData[i];
-            // userDataItem.likes *= 2;
-            userDataItem.simpleTweets *= 2;
-            userDataItem.cashtagTweets *= 5;
-        }
-        log('week 3');
-        let newComplexity = complexity / 2n;
-        for (let i = 0; i < 7; i++) {
-            log('day', i + 1);
-            // double the values
 
             await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
             expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
@@ -312,10 +297,181 @@ describe("GM minting", function () {
             await time.increaseTo(dayTimestamp);
         }
 
-        log('week 4');
-        newComplexity = newComplexity * 70n / 100n;
+
+        // week3 - currentPoints > prevPoints >> complexity -30%
+        log('week 3');
+        newComplexity = complexity * 70n / 100n;
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
+
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        // week4: currentPoints == prevPoints
+        // complexity the same
+        log('week 4');
+
+        for (let i = 0; i < userData.length; i++) {
+            let userDataItem = userData[i];
+            userDataItem.likes /= 2;
+            userDataItem.simpleTweets /= 2;
+            userDataItem.cashtagTweets /= 5;
+        }
+        for (let i = 0; i < 7; i++) {
+            log('day', i + 1);
+
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        // week5: currentPoints < prevPoints && epochPointsDeltaStreak == -1
+        // complexity without change
+        log('week 5');
+
+        for (let i = 0; i < userData.length; i++) {
+            let userDataItem = userData[i];
+            userDataItem.simpleTweets = userDataItem.simpleTweets <= 0 ? 0 : userDataItem.simpleTweets - 1;
+        }
+        for (let i = 0; i < 7; i++) {
+            log('day', i + 1);
+
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        // week6: currentPoints < prevPoints && epochPointsDeltaStreak == -2
+        // complexity +20%
+        newComplexity = newComplexity * 120n / 100n;
+        log('week 6');
+
+        for (let i = 0; i < 7; i++) {
+            log('day', i + 1);
+
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        // week7: currentPoints == prevPoints && epochPointsDeltaStreak == -2
+        // complexity +20%
+        newComplexity = newComplexity * 120n / 100n;
+        log('week 7');
+        for (let i = 0; i < userData.length; i++) {
+            let userDataItem = userData[i];
+            userDataItem.simpleTweets = userDataItem.simpleTweets <= 0 ? 0 : userDataItem.simpleTweets - 1;
+        }
+
+        for (let i = 0; i < 7; i++) {
+            log('day', i + 1);
+
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        // week8: currentPoints < prevPoints && epochPointsDeltaStreak == -3
+        // complexity +30%
+        newComplexity = newComplexity * 130n / 100n;
+        log('week 8');
+
+        for (let i = 0; i < userData.length; i++) {
+            let userDataItem = userData[i];
+            userDataItem.likes *= 2;
+            userDataItem.simpleTweets *= 2;
+            userDataItem.cashtagTweets *= 5;
+        }
+        for (let i = 0; i < 7; i++) {
+            log('day', i + 1);
+
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        // week9: currentPoints > prevPoints
+        // complexity -30%
+        newComplexity = newComplexity * 70n / 100n;
+        log('week 9');
+
+        for (let i = 0; i < 7; i++) {
+            log('day', i + 1);
+
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        // week10: currentPoints == prevPoints, epochPointsDeltaStreak == 0
+        // complexity is the same
+        // newComplexity = newComplexity * 70n / 100n;
+        log('week 10');
+
+        for (let i = 0; i < userData.length; i++) {
+            let userDataItem = userData[i];
+            userDataItem.simpleTweets = userDataItem.simpleTweets <= 0 ? 0 : userDataItem.simpleTweets - 1;
+        }
+
+        for (let i = 0; i < 7; i++) {
+            log('day', i + 1);
+
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        // week11: currentPoints < prevPoints, epochPointsDeltaStreak == -1
+        // complexity +20%
+        // newComplexity = newComplexity * 120n / 100n;
+        log('week 11');
+
+        for (let i = 0; i < userData.length; i++) {
+            let userDataItem = userData[i];
+            userDataItem.simpleTweets = userDataItem.simpleTweets <= 0 ? 0 : userDataItem.simpleTweets - 1;
+        }
+
+        for (let i = 0; i < 7; i++) {
+            log('day', i + 1);
+
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+
+            dayTimestamp = dayTimestamp + time.duration.days(1);
+            await time.increaseTo(dayTimestamp);
+        }
+
+        // week12: currentPoints < prevPoints, epochPointsDeltaStreak == -2
+        // complexity +20%
+        newComplexity = newComplexity * 120n / 100n;
+        log('week 12');
+
+        for (let i = 0; i < userData.length; i++) {
+            let userDataItem = userData[i];
+            userDataItem.simpleTweets = userDataItem.simpleTweets <= 0 ? 0 : userDataItem.simpleTweets - 1;
+        }
+
+        for (let i = 0; i < 7; i++) {
+            log('day', i + 1);
+
             await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
             expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
 
@@ -408,7 +564,7 @@ function calcPointsForUsers(userData: TweetData[], perTweet: number, perLike: nu
     for (let i = 0; i < userData.length; i++) {
         const expectedPoints = userData[i].simpleTweets * perTweet + userData[i].hashtagTweets * perHashtag + userData[i].cashtagTweets * perCashtag + userData[i].likes * perLike;
 
-        let expectedCoinsN = BigInt(expectedPoints) * BigInt(multiplicator);
+        let expectedCoinsN = BigInt(expectedPoints + perTweet) * BigInt(multiplicator);
         //   expectedCoinsN = expectedCoinsN - (expectedCoinsN * BigInt(mintComission*10000) / 1000n);
 
 

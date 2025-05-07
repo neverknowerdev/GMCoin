@@ -43,7 +43,7 @@ export class BatchManager {
         }
 
         if (batches.length < this.concurrencyLimit) {
-            console.log('generating new batches and queries..');
+            // console.log('generating new batches and queries..');
             const newCursorsCount = this.concurrencyLimit - batches.length;
 
             const maxEndIndex = await this.storage.getMaxEndIndex();
@@ -91,7 +91,6 @@ export class BatchManager {
             }
 
             await this.storage.saveRemainingUsernames(remainingUsernames);
-            console.log('newBatches', this.concurrencyLimit, batches.length, batches);
         }
 
         return Promise.resolve({

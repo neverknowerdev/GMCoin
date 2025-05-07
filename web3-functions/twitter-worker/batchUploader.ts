@@ -15,15 +15,16 @@ class ServerTweet {
     likesCount: number;
     userDescriptionText: string;
     tweetType: number;
+    runningHash: string;
 }
 
 export class BatchUploader {
     private buffer: ServerTweet[] = []; // Array to store elements
-    private runningHash: Uint8Array;
+    private runningHash: string;
     private mintingDayTimestamp: number;
     private storage: Storage;
 
-    private serverURL: string;
+    private serverURLPrefix: string;
     private serverApiKey: string;
 
     private tweetIndex: number = 0;
@@ -31,12 +32,12 @@ export class BatchUploader {
     constructor(mintingDayTimestamp: number, storage: Storage, serverURL: string, apiKey: string) {
         this.mintingDayTimestamp = mintingDayTimestamp;
         this.storage = storage;
-        this.serverURL = serverURL;
+        this.serverURLPrefix = serverURL;
         this.serverApiKey = apiKey;
     }
 
     public getRunningHash(): string {
-        return arrayBufferToBase64(this.runningHash);
+        return this.runningHash;
     }
 
     // Add an element to the buffer
@@ -52,41 +53,38 @@ export class BatchUploader {
         tw.username = element.username;
         tw.tweetType = processingResult;
 
+        this.runningHash = calculateRunningHash(this.runningHash, element);
+        tw.runningHash = this.runningHash;
+
         this.buffer.push(tw);
         this.tweetIndex++;
-
-        const runningHashLength = this.runningHash ? this.runningHash.length : 0;
-        const encodedTweet = stringToUint8Array(toTweetKey(element));
-        const combinedArray = new Uint8Array(runningHashLength + encodedTweet.length);
-        if (this.runningHash) {
-            combinedArray.set(this.runningHash);
-        }
-        combinedArray.set(encodedTweet, runningHashLength);
-
-        this.runningHash = blake2b(combinedArray, undefined, 20);
     }
 
     async saveStateToStorage(): Promise<void> {
-        await this.storage.saveRunningHash(arrayBufferToBase64(this.runningHash));
+        await this.storage.saveRunningHash(this.runningHash);
         await this.storage.saveTweetOrder(this.tweetIndex);
     }
 
     async loadStateFromStorage(): Promise<void> {
-        this.runningHash = base64ToArrayBuffer(await this.storage.getRunningHash());
+        this.runningHash = await this.storage.getRunningHash();
         this.tweetIndex = await this.storage.getTweetOrder();
     }
 
     async uploadToServer(): Promise<boolean> {
         if (this.buffer.length == 0) {
+            console.log('uploadToServer buffer length == 0, skip')
             return true;
         }
+
+        console.log('uploadToServer', this.runningHash, this.buffer.length, this.buffer.map((t => t.tweetID)));
 
         try {
             const request = {
                 tweets: this.buffer,
                 mintingDayTimestamp: this.mintingDayTimestamp
             }
-            const response = await ky.post(this.serverURL, {
+            console.log('serverURL', this.serverURLPrefix + "SaveTweets");
+            const response = await ky.post(this.serverURLPrefix + "SaveTweets", {
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': this.serverApiKey,
@@ -113,10 +111,49 @@ export class BatchUploader {
         }
         return false;
     }
+
+    async sendUploadToIPFSRequest() {
+        try {
+            // Using ky to make the request
+            const response = await ky.post(this.serverURLPrefix + "UploadTweetsToIPFS", {
+                timeout: 30000000, // Optional: set timeout in milliseconds
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': this.serverApiKey,
+                },
+                json: {
+                    mintingDayTimestamp: this.mintingDayTimestamp,
+                    finalHash: this.getRunningHash()
+                }
+            });
+
+            // If you need to process the response later, you can add handling here
+            const data = await response.json();
+            console.log('Request completed:', data);
+
+        } catch (error) {
+            console.error('Request failed:', error);
+        }
+
+        return;
+    }
+}
+
+function calculateRunningHash(prevHash: string, tweet: any): string {
+    const prevHashBytes = base64ToArrayBuffer(prevHash);
+    const runningHashLength = prevHashBytes.length;
+    const encodedTweet = stringToUint8Array(toTweetKey(tweet));
+    const combinedArray = new Uint8Array(runningHashLength + encodedTweet.length);
+    if (runningHashLength > 0) {
+        combinedArray.set(prevHashBytes);
+    }
+    combinedArray.set(encodedTweet, runningHashLength);
+
+    return arrayBufferToBase64(blake2b(combinedArray, undefined, 20));
 }
 
 function toTweetKey(tweet: Tweet): string {
-    return `${tweet.tweetID}|${tweet.likesCount}|${tweet.tweetContent}`
+    return `${tweet.tweetID}`
 }
 
 function stringToUint8Array(str: string): Uint8Array {

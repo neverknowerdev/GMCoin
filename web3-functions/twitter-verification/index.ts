@@ -61,7 +61,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         const twitterUser = userResponse as any;
         const twitterUserID = twitterUser.data.id;
 
-        console.log(`twitterUser ${twitterUser} twitterUserID ${twitterUserID}`);
+        console.log(`twitterUserID ${twitterUserID} twitterUsername ${twitterUser.username}`);
 
         if (!twitterUserID) {
             return await returnError(verifierContract, userID, wallet, `Failed to retrieve user from Twitter`);

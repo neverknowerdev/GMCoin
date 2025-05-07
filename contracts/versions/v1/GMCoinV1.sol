@@ -5,16 +5,36 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "./TwitterOracle.sol";
+import "./TwitterOracleV1.sol";
 
-import {GMWeb3Functions} from "./GelatoWeb3Functions.sol";
-import {GMStorage} from "./Storage.sol";
+import {GMStorageV1} from "./StorageV1.sol";
 
-contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracle
+contract GMCoinV1 is GMStorageV1, Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracleV1
 {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
+    }
+
+    function initialize(
+        address _owner,
+        address _feeAddress,
+        address _treasuryAddress,
+        address _relayServerAddress,
+        uint256 coinsMultiplicator,
+        uint _epochDays
+    ) public initializer {
+        feeConfig.feeAddress = _feeAddress;
+        feeConfig.treasuryAddress = _treasuryAddress;
+
+        feeConfig.feePercentage = 100; // 1% fee of transaction
+        feeConfig.treasuryPercentage = 1000; // 10% of minted coins
+
+        __Ownable_init(_owner);
+        __UUPSUpgradeable_init();
+        __GelatoWeb3Functions__init(_owner);
+        __ERC20_init("GM Coin", "GM");
+        __TwitterOracle__init(coinsMultiplicator, dedicatedMsgSender, _relayServerAddress, _epochDays);
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {

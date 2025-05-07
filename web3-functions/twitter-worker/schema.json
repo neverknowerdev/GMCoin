@@ -7,11 +7,9 @@
   "retryDelay": 60,
   "userArgs": {
     "contractAddress": "string",
-    "searchPath": "string",
-    "convertToUsernamesPath": "string",
     "tweetLookupURL": "string",
     "concurrencyLimit": "number",
     "twitterOptimizedServerHost": "string",
-    "serverSaveTweetsURL": "string"
+    "serverURLPrefix": "string"
   }
 }

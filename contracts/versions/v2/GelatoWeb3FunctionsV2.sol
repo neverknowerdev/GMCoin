@@ -6,18 +6,16 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import "@openzeppelin/contracts/utils/introspection/ERC165.sol";
-import "./vendor/gelato/AutomateModuleHelper.sol";
-import "./vendor/gelato/AutomateTaskCreatorUpgradeable.sol";
-import "./vendor/gelato/Types.sol";
-import {GMStorage} from "./Storage.sol";
+import "../../vendor/gelato/AutomateModuleHelper.sol";
+import "../../vendor/gelato/AutomateTaskCreatorUpgradeable.sol";
+import "../../vendor/gelato/Types.sol";
+import {GMStorageV2} from "./StorageV2.sol";
 
-contract GMWeb3Functions is GMStorage, ERC165, IERC1271, Initializable, OwnableUpgradeable, AutomateTaskCreatorUpgradeable {
+contract GMWeb3FunctionsV2 is GMStorageV2, ERC165, IERC1271, Initializable, OwnableUpgradeable, AutomateTaskCreatorUpgradeable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
-
-    event Web3FunctionChanged(bytes32 oldHash, bytes32 newHash);
 
     function __GelatoWeb3Functions__init(address _owner) public onlyInitializing {
         __Ownable_init(_owner);
@@ -33,35 +31,29 @@ contract GMWeb3Functions is GMStorage, ERC165, IERC1271, Initializable, OwnableU
     function createTwitterVerificationFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner {
         // for devs purpose. Until contact will go to Live finally
 //        require(twitterVerificationTaskId == bytes32(""), "task already initialized");
-        bytes32 oldGelatoId = gelatoConfig.gelatoTaskId_twitterVerification;
         if (gelatoConfig.gelatoTaskId_twitterVerification != bytes32("")) {
             _cancelTask(gelatoConfig.gelatoTaskId_twitterVerification);
         }
 
         gelatoConfig.gelatoTaskId_twitterVerification = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
-        emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_twitterVerification);
     }
 
     function createTwitterWorkerFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner {
 //        require(twitterWorkerTaskId == bytes32(""), "task already initialized");
-        bytes32 oldGelatoId = gelatoConfig.gelatoTaskId_twitterWorker;
         if (gelatoConfig.gelatoTaskId_twitterWorker != bytes32("")) {
             _cancelTask(gelatoConfig.gelatoTaskId_twitterWorker);
         }
 
         gelatoConfig.gelatoTaskId_twitterWorker = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
-        emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_twitterWorker);
     }
 
     function createDailyFunction(uint128 startTime, uint128 interval, bytes calldata execData) public onlyOwner {
 //        require(dailyTriggerTaskId == bytes32(""), "task already initialized");
-        bytes32 oldGelatoId = gelatoConfig.gelatoTaskId_dailyTrigger;
         if (gelatoConfig.gelatoTaskId_dailyTrigger != bytes32("")) {
             _cancelTask(gelatoConfig.gelatoTaskId_dailyTrigger);
         }
 
         gelatoConfig.gelatoTaskId_dailyTrigger = createWeb3FunctionTime(startTime, interval, execData);
-        emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_dailyTrigger);
     }
 
     function createWeb3FunctionEvent(string calldata _gelatoW3fHash, bytes calldata w3fArgsHash, bytes32[][] memory topics) private returns (bytes32) {

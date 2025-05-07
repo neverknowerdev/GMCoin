@@ -1,9 +1,7 @@
 {
   "contractAddress": "",
-  "searchPath": "/Search",
-  "convertToUsernamesPath": "/UserResultsByRestIds",
   "tweetLookupURL": "https://api.twitter.com/2/tweets",
-  "serverSaveTweetsURL": "",
+  "serverURLPrefix": "",
   "concurrencyLimit": 10,
   "twitterOptimizedServerHost": ""
 }

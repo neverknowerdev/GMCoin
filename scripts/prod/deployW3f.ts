@@ -11,15 +11,7 @@ import {encodeUserArgs, loadEnvVariables, setSecretsForW3f} from "./utils";
 const {w3f} = hre;
 
 async function main() {
-    const contractAddress = "0x26f36F365E5EB6483DF4735e40f87E96e15e0007";
-
-    if (hre.network.name !== "base") {
-        throw new Error(`This script must be run on the 'base' network. Current network: ${hre.network.name}`);
-    }
-
-    if (contractAddress == "") {
-        throw new Error(`contractAddress must be set`);
-    }
+    const contractAddress = hre.network.name == "base" ? "0x26f36F365E5EB6483DF4735e40f87E96e15e0007" : "0x19bD68AD19544FFA043B2c3A5064805682783E91";
 
     const [owner, feeAddress] = await ethers.getSigners();
     //
@@ -47,7 +39,7 @@ async function main() {
         "searchPath": "/Search",
         "tweetLookupURL": "https://api.twitter.com/2/tweets",
         "convertToUsernamesPath": "/UserResultsByRestIds",
-        "serverSaveTweetsURL": "https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/mainnet/SaveTweets",
+        "serverURLPrefix": "https://ue63semz7f.execute-api.eu-central-1.amazonaws.com/mainnet/",
         "concurrencyLimit": 10,
         "twitterOptimizedServerHost": ""
     });
@@ -71,10 +63,12 @@ async function main() {
     await tx.wait()
 
     console.log('calling GMCoin.createDailyFunction..');
-    const secondsUntil2AM = secondsUntilNext2AM();
+    const currentTimestamp = Math.floor(Date.now() / 1000);
+    const nextDay2AM = currentTimestamp + secondsUntilNext2AM();
+    console.log('secondsUntil2AM', nextDay2AM);
     const interval = 60 * 60 * 24; // 1 day
     const execData = GMCoin.interface.encodeFunctionData("startMinting", []);
-    tx = await GMCoin.createDailyFunction(secondsUntil2AM, interval, execData);
+    tx = await GMCoin.createDailyFunction(nextDay2AM, interval, execData);
     await tx.wait();
 
 

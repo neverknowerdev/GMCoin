@@ -7,10 +7,6 @@ import {ethers, upgrades} from "hardhat";
 
 
 async function main(): Promise<void> {
-    if (hre.network.name !== "base") {
-        throw new Error(`This script must be run on the 'base' network. Current network: ${hre.network.name}`);
-    }
-
     const contract = await ethers.getContractFactory("GMCoin");
 
     const [owner, feeAddress] = await ethers.getSigners();

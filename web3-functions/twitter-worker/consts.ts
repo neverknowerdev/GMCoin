@@ -1,3 +1,5 @@
+import {forEach} from "lodash";
+
 export const ContractABI = [
     {
         "inputs": [
@@ -210,6 +212,14 @@ export interface Batch {
     endIndex: number;
     nextCursor: string;
     errorCount: number;
+}
+
+export function BatchToString(initBatches: Batch[]): string {
+    let res: string = '';
+    for (const batch of initBatches) {
+        res += `[${batch.startIndex},${batch.endIndex},${batch.nextCursor},${batch.errorCount}],`
+    }
+    return '[' + res + ']';
 }
 
 export interface Tweet {

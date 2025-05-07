@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-contract GMStorage {
+contract GMStorageV2 {
     uint256 __unused;
     address constant gelatoAutomateTaskCreator = 0x2A6C106ae13B558BB9E2Ec64Bd2f1f7BEFF3A5E0;
 
@@ -13,13 +13,12 @@ contract GMStorage {
     FeeConfig public feeConfig;
     GelatoConfig public gelatoConfig;
     MintingConfig public mintingConfig;
+
+    /// @custom:oz-retyped-from GMStorageV1.MintingData
     MintingData internal mintingData;
 
-    // -3 - negative points delta 3 weeks in a row, 3 - positive points delta 3 weeks in a row
-    int32 public pointsDeltaStreak;
-    uint256 public totalPoints;
+    uint256[255] __gap;
 
-    uint256[253] __gap;
 
     struct UserTwitterData {
         uint64 userIndex;
@@ -80,7 +79,7 @@ contract GMStorage {
     }
 
     struct MintingData {
-        mapping(string => address) wallets;
+        uint256 __gap__wallets; // deprecated
         string[] allTwitterUsers;
 
         mapping(address => string) usersByWallets;
@@ -102,7 +101,9 @@ contract GMStorage {
         bytes32 gelatoTaskId_dailyTrigger;
         address trustedSigner;
 
-        uint256[55] __gap;
+        uint256 newVariable;
+
+        uint256[54] __gap;
     }
 
     function COINS_MULTIPLICATOR() public view returns (uint256) {
@@ -139,17 +140,5 @@ contract GMStorage {
 
     function gelatoTaskId_dailyTrigger() public view returns (bytes32) {
         return gelatoConfig.gelatoTaskId_dailyTrigger;
-    }
-
-    function epochStartedAt() public view returns (uint32) {
-        return mintingData.epochStartedAt;
-    }
-
-    function currentEpochPoints() public view returns (uint256) {
-        return mintingData.currentEpochPoints;
-    }
-
-    function lastEpochPoints() public view returns (uint256) {
-        return mintingData.lastEpochPoints;
     }
 }
