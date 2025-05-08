@@ -52,7 +52,6 @@
     "crypto-browserify": "^3.12.1",
     "dotenv": "^16.4.7",
     "ethers": "6",
-    "hardhat-gas-reporter": "^2.2.2",
     "ky": "^0.33.3",
     "p-limit": "^3.1.0",
     "siwe": "^2.3.2"
