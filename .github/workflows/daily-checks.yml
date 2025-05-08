@@ -1,0 +1,38 @@
+name: Daily Smart Contract Checks
+
+on:
+  schedule:
+    - cron: '0 7 * * *'  # Run at 9 AM Warsaw time (UTC+2)
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  CONTRACT_ADDRESS: '0x26f36F365E5EB6483DF4735e40f87E96e15e0007'
+  TREASURY_ADDRESS: '0xBADfB4AdCF5ADB939B25fba58db544860c45A1e5'
+
+jobs:
+  check-contract:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install -g ethers@5.7.2
+        
+      - name: Run tests
+        run: npm test
+        
+      - name: Check smart contract events
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
+        run: node .github/workflows/check-contract.js 
