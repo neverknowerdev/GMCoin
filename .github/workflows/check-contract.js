@@ -175,9 +175,16 @@ async function main() {
     })
     .join('\n');
   
+  // Format test results
+  const testStatus = process.env.TEST_STATUS === '0' ? '✅' : '❌';
+  const workflowUrl = process.env.WORKFLOW_URL || '';
+  
   // Prepare message
   const message = `
 🔍 Daily Smart Contract Check Report
+
+🧪 Test Status: ${testStatus}
+${process.env.TEST_STATUS !== '0' ? `🔗 Workflow URL: ${workflowUrl}` : ''}
 
 👥 Total users(+new users per 24h): 
 ${totalUsers.toString()} (+${verificationEvents.length})
