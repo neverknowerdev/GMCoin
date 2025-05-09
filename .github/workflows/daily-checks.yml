@@ -28,10 +28,10 @@ jobs:
 
       - name: Create environment files
         run: |
-          echo "${{ secrets.TWITTER_VERIFICATION_ENV }}" > ./web3-functions/twitter-verification/.env
-          echo "${{ secrets.TWITTER_WORKER_ENV }}" > ./web3-functions/twitter-worker/.env
-          echo "${{ secrets.TWITTER_WORKER_PROD_ENV }}" > ./web3-functions/twitter-worker/prod.env
-          echo "${{ secrets.TEST_ENV }}" > ./test/.env
+          printf "%s" "${{ secrets.TWITTER_VERIFICATION_ENV }}" > ./web3-functions/twitter-verification/.env
+          printf "%s" "${{ secrets.TWITTER_WORKER_ENV }}" > ./web3-functions/twitter-worker/.env
+          printf "%s" "${{ secrets.TWITTER_WORKER_PROD_ENV }}" > ./web3-functions/twitter-worker/prod.env
+          printf "%s" "${{ secrets.TEST_ENV }}" > ./test/.env
         
       - name: Run tests
         id: tests
