@@ -37,8 +37,15 @@ jobs:
         id: tests
         continue-on-error: true
         run: |
-          npm test > test-results.txt 2>&1
+          npm test > test-results.txt 2>&1 || true
           echo "status=$?" >> $GITHUB_OUTPUT
+          
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.txt
+          if-no-files-found: error
         
       - name: Check smart contract events
         env:

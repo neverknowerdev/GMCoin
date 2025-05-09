@@ -83,7 +83,7 @@ async function getTwitterUsernames(userIds) {
 }
 
 async function main() {
-  const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
+  const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
   const contractAddress = process.env.CONTRACT_ADDRESS;
   const treasuryAddress = process.env.TREASURY_ADDRESS;
   
@@ -119,12 +119,12 @@ async function main() {
   const verificationEvents = await contract.queryFilter(verificationFilter, dayAgo, now);
   
   // Check Transfer events (minting)
-  const transferFilter = contract.filters.Transfer(ethers.constants.AddressZero);
+  const transferFilter = contract.filters.Transfer(ethers.ZeroAddress);
   const transferEvents = await contract.queryFilter(transferFilter, dayAgo, now);
   
   // Process minting transfers
   const mintingStats = new Map();
-  let totalMinted = ethers.BigNumber.from(0);
+  let totalMinted = ethers.parseEther("0");
   
   transferEvents.forEach(event => {
     const to = event.args.to;
@@ -136,16 +136,16 @@ async function main() {
     }
     
     // Add to total minted
-    totalMinted = totalMinted.add(value);
+    totalMinted = totalMinted + value;
     
     // Update wallet stats
-    const currentAmount = mintingStats.get(to) || ethers.BigNumber.from(0);
-    mintingStats.set(to, currentAmount.add(value));
+    const currentAmount = mintingStats.get(to) || ethers.parseEther("0");
+    mintingStats.set(to, currentAmount + value);
   });
   
   // Sort wallets by minted amount
   const sortedWallets = Array.from(mintingStats.entries())
-    .sort((a, b) => b[1].sub(a[1]).toNumber())
+    .sort((a, b) => Number(b[1] - a[1]))
     .slice(0, 10); // Get top 10 wallets
   
   // Get Twitter user IDs for all wallets
@@ -171,7 +171,7 @@ async function main() {
     .map(([wallet, amount], index) => {
       const userId = walletToUserId.get(wallet);
       const username = userIdToUsername.get(userId) || userId;
-      return `${index + 1}. @${username} (${wallet}): ${ethers.utils.formatEther(amount)} tokens`;
+      return `${index + 1}. @${username} (${wallet}): ${ethers.formatEther(amount)} tokens`;
     })
     .join('\n');
   
@@ -190,7 +190,7 @@ ${process.env.TEST_STATUS !== '0' ? `🔗 Workflow URL: ${workflowUrl}` : ''}
 ${totalUsers.toString()} (+${verificationEvents.length})
 
 💰 Minting Statistics:
-• Total minted: ${ethers.utils.formatEther(totalMinted)} tokens
+• Total minted: ${ethers.formatEther(totalMinted)} tokens
 • Number of minting transfers: ${transferEvents.length}
 
 🏆 Top 10 Users by Minted Amount:
