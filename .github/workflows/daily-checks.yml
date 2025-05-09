@@ -39,9 +39,6 @@ jobs:
         run: |
           npm test > test-results.txt 2>&1
           echo "status=$?" >> $GITHUB_OUTPUT
-          echo "results<<EOF" >> $GITHUB_OUTPUT
-          cat test-results.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
         
       - name: Check smart contract events
         env:
@@ -50,6 +47,5 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
           TEST_STATUS: ${{ steps.tests.outputs.status }}
-          TEST_RESULTS: ${{ steps.tests.outputs.results }}
           WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node .github/workflows/check-contract.js 
