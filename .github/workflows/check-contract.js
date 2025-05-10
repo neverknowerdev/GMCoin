@@ -5,6 +5,24 @@ async function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+async function withRetry(operation, maxRetries = 3, delayMs = 1000) {
+    let lastError;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await operation();
+        } catch (error) {
+            lastError = error;
+            if (error.message.includes('rate limit') || error.message.includes('too many requests') || error.message.includes('request limit reached')) {
+                console.log(`Attempt ${attempt}/${maxRetries} failed with rate limit, retrying in ${delayMs}ms...`);
+                await sleep(delayMs * attempt); // Exponential backoff
+                continue;
+            }
+            throw error; // Re-throw if it's not a rate limit error
+        }
+    }
+    throw lastError; // If all retries failed
+}
+
 async function getTwitterUsernames(userIds) {
     const userMap = new Map();
 
@@ -64,16 +82,6 @@ async function getTwitterUsernames(userIds) {
     return userMap;
 }
 
-async function queryEventsInChunks(contract, filter, startBlock, endBlock, chunkSize = 9900) {
-    const events = [];
-    for (let fromBlock = startBlock; fromBlock < endBlock; fromBlock += chunkSize) {
-        const toBlock = Math.min(fromBlock + chunkSize - 1, endBlock);
-        console.log(`Querying events from block ${fromBlock} to ${toBlock}`);
-        const chunk = await contract.queryFilter(filter, fromBlock, toBlock);
-        events.push(...chunk);
-    }
-    return events;
-}
 
 async function getTopUsersByTransfers(transferEvents, contractAddress) {
     const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
@@ -111,7 +119,8 @@ async function getTopUsersByTransfers(transferEvents, contractAddress) {
     for (const [wallet] of sortedWallets) {
         try {
             await sleep(100); // Throttle to avoid rate limit
-            userIds.push(await contract.userByWallet(wallet));
+            const userId = await withRetry(() => contract.userByWallet(wallet));
+            userIds.push(userId);
         } catch (error) {
             console.error(`Failed to get user ID for wallet ${wallet}:`, error);
             userIds.push(null);
@@ -204,7 +213,7 @@ async function scanContractEvents(contractAddress, treasuryAddress, provider) {
     const nowTs = Math.floor(Date.now() / 1000);
 
     // Get latest block and its timestamp
-    const latestBlock = await provider.getBlockNumber();
+    const latestBlock = await withRetry(() => provider.getBlockNumber());
     // Find block numbers for these timestamps
     const earliestBlock = 0;
     const yesterdayMidnightBlock = await getBlockByTimestamp(provider, yesterdayMidnightTs, earliestBlock, latestBlock);
@@ -217,7 +226,7 @@ async function scanContractEvents(contractAddress, treasuryAddress, provider) {
     const blockTimestampCache = {};
     for (const blockNumber of uniqueBlockNumbers) {
         await sleep(100); // Throttle to 10 requests/sec
-        const block = await provider.getBlock(blockNumber);
+        const block = await withRetry(() => provider.getBlock(blockNumber));
         blockTimestampCache[blockNumber] = block.timestamp;
     }
 
@@ -241,7 +250,7 @@ async function scanContractEvents(contractAddress, treasuryAddress, provider) {
     }
 
     // Get total users from contract
-    const totalUsers = await contract.totalUsersCount();
+    const totalUsers = await withRetry(() => contract.totalUsersCount());
 
     // Get new users in last 24h (from verificationEvents)
     const newUsers24h = verificationEvents
@@ -290,7 +299,7 @@ async function main() {
         const contract = new ethers.Contract(contractAddress, ABI, provider);
 
         // Get minting difficulty
-        const mintingDifficulty = await contract.COINS_MULTIPLICATOR();
+        const mintingDifficulty = await withRetry(() => contract.COINS_MULTIPLICATOR());
 
         const {
             totalUsers,
@@ -311,8 +320,7 @@ async function main() {
         const message = `
 🔍 Daily Smart Contract Check Report
 
-🧪 Test Status: ${testStatus}
-${process.env.TEST_STATUS !== '0' ? `🔗 Workflow URL: ${workflowUrl}` : ''}
+🧪 Test Status: ${testStatus}${process.env.TEST_STATUS !== '0' ? `\n🔗 Workflow URL: ${workflowUrl}` : ''}
 
 👥 Total users(+new users per 24h): 
 ${totalUsers.toString()} (+${verificationEvents.length})
