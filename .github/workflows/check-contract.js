@@ -7,10 +7,10 @@ async function sleep(ms) {
 
 async function getTwitterUsernames(userIds) {
     const userMap = new Map();
-    const maxRetries = 3;
 
-    const rapidApiHost = process.env.RAPIDAPI_HOST;
-    const rapidApiKey = process.env.RAPIDAPI_KEY;
+    const twitterApiHost = process.env.TWITTER_HOST;
+    const twitterApiKey = process.env.TWITTER_API_KEY;
+    const twitterServerName = process.env.TWITTER_SERVER_NAME;
 
     // Filter out null/empty userIds
     const filteredUserIds = userIds.filter(id => id && id !== '');
@@ -22,17 +22,17 @@ async function getTwitterUsernames(userIds) {
 
     try {
         const response = await fetch(
-            `https://${rapidApiHost}/UserResultsByRestIds?user_ids=${encodeURIComponent(filteredUserIds)}`,
+            `https://${twitterApiHost}/UserResultsByRestIds?user_ids=${encodeURIComponent(filteredUserIds)}`,
             {
                 method: 'GET',
                 headers: {
-                    'x-rapidapi-host': rapidApiHost,
-                    'x-rapidapi-key': rapidApiKey,
+                    [`x-${twitterServerName}-host`]: twitterApiHost,
+                    [`x-${twitterServerName}-key`]: twitterApiKey,
                 },
             }
         );
 
-        console.log('RapidAPI response code:', response.status);
+        console.log('Twitter response code:', response.status);
 
         if (!response.ok) {
             const errorText = await response.text();

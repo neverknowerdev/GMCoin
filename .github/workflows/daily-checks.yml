@@ -55,4 +55,8 @@ jobs:
           TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
           TEST_STATUS: ${{ steps.tests.outputs.status }}
           WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BASESCAN_API_KEY: ${{ secrets.BASESCAN_API_KEY }}
+          TWITTER_HOST: ${{ secrets.TWITTER_HOST }}
+          TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
+          TWITTER_SERVER_NAME: ${{ secrets.TWITTER_SERVER_NAME }}
         run: node .github/workflows/check-contract.js 
