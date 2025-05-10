@@ -185,14 +185,14 @@ const ABI = [
     'event MintingFinished_TweetsUploadedToIPFS(uint32 indexed mintingDayTimestamp, string runningHash, string cid)',
     'event TwitterVerificationResult(string userID, address indexed wallet, bool isSuccess, string errorMsg)',
     'event Transfer(address indexed from, address indexed to, uint256 value)',
-    'function totalUsersCount() view returns (uint256)'
+    'function totalUsersCount() view returns (uint256)',
+    'function COINS_MULTIPLICATOR() view returns (uint256)'
 ];
 
-async function scanContractEvents(contractAddress, treasuryAddress) {
+async function scanContractEvents(contractAddress, treasuryAddress, provider) {
     console.log('Scanning contract:', contractAddress);
     console.log('Treasury address:', treasuryAddress);
 
-    const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
     const contract = new ethers.Contract(contractAddress, ABI, provider);
 
     // Calculate timestamps
@@ -286,6 +286,12 @@ async function main() {
         const contractAddress = process.env.CONTRACT_ADDRESS;
         const treasuryAddress = process.env.TREASURY_ADDRESS;
 
+        const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+        const contract = new ethers.Contract(contractAddress, ABI, provider);
+
+        // Get minting difficulty
+        const mintingDifficulty = await contract.COINS_MULTIPLICATOR();
+
         const {
             totalUsers,
             verificationEvents,
@@ -293,7 +299,7 @@ async function main() {
             transferEvents,
             mintingEvents,
             tweetsEvents
-        } = await scanContractEvents(contractAddress, treasuryAddress, process.env.RPC_URL);
+        } = await scanContractEvents(contractAddress, treasuryAddress, provider);
 
         // Format test results
         const testStatus = process.env.TEST_STATUS === '0' ? '✅' : '❌';
@@ -313,6 +319,7 @@ ${totalUsers.toString()} (+${verificationEvents.length})
 
 💰 Minting Statistics:
 • Total minted: ${ethers.formatEther(minted24h)} $GM
+• Minting difficulty: ${ethers.formatEther(mintingDifficulty)} $GM per tweet/like
 
 🏆 Top Users by Transfer Amount:
 ${topUsers.map((user, index) => 
