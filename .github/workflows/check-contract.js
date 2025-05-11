@@ -331,7 +331,7 @@ ${totalUsers.toString()} (+${verificationEvents.length})
 
 🏆 Top Users by Transfer Amount:
 ${topUsers.map((user, index) => 
-    `${index + 1}. ${user.displayName || user.wallet}: ${user.amount} $GM`
+    `${index + 1}. ${user.displayName ? `<a href="https://x.com/${user.displayName.slice(1)}">${user.displayName}</a>` : user.wallet}: ${user.amount} $GM`
 ).join('\n')}
 
 ${mintingEvents.length === 0 ? '⚠️ Warning: No MintingFinished events in last 24h' : '✅ MintingFinished events found'}
