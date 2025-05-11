@@ -194,6 +194,7 @@ const ABI = [
     'event MintingFinished_TweetsUploadedToIPFS(uint32 indexed mintingDayTimestamp, string runningHash, string cid)',
     'event TwitterVerificationResult(string userID, address indexed wallet, bool isSuccess, string errorMsg)',
     'event Transfer(address indexed from, address indexed to, uint256 value)',
+    'event changedComplexity(uint256 newMultiplicator, uint256 previousEpochPoints, uint256 currentEpochPoints)',
     'function totalUsersCount() view returns (uint256)',
     'function COINS_MULTIPLICATOR() view returns (uint256)'
 ];
@@ -235,6 +236,7 @@ async function scanContractEvents(contractAddress, treasuryAddress, provider) {
     const tweetsEvents = [];
     const verificationEvents = [];
     const transferEvents = [];
+    const complexityEvents = [];
 
     for (const event of allEvents) {
         const ts = blockTimestampCache[event.blockNumber];
@@ -246,6 +248,8 @@ async function scanContractEvents(contractAddress, treasuryAddress, provider) {
             verificationEvents.push(event);
         } else if (event.name === 'Transfer' && ts >= todayMidnightTs) {
             transferEvents.push(event);
+        } else if (event.name === 'changedComplexity' && ts >= todayMidnightTs) {
+            complexityEvents.push(event);
         }
     }
 
@@ -280,7 +284,8 @@ async function scanContractEvents(contractAddress, treasuryAddress, provider) {
         verificationEvents,
         transferEvents: filteredTransferEvents,
         mintingEvents,
-        tweetsEvents
+        tweetsEvents,
+        complexityEvents
     };
 }
 
@@ -307,7 +312,8 @@ async function main() {
             minted24h,
             transferEvents,
             mintingEvents,
-            tweetsEvents
+            tweetsEvents,
+            complexityEvents
         } = await scanContractEvents(contractAddress, treasuryAddress, provider);
 
         // Format test results
@@ -327,7 +333,7 @@ ${totalUsers.toString()} (+${verificationEvents.length})
 
 💰 Minting Statistics:
 • Total minted: ${ethers.formatEther(minted24h)} $GM
-• Minting difficulty: ${ethers.formatEther(mintingDifficulty)} $GM per tweet/like
+• Minting difficulty: ${ethers.formatEther(mintingDifficulty)} $GM per tweet/like${complexityEvents.length > 0 ? `\n• Complexity changed: ${ethers.formatEther(complexityEvents[0].args.previousEpochPoints)} points prev-last epoch → ${ethers.formatEther(complexityEvents[0].args.currentEpochPoints)} points last epoch` : ''}
 
 🏆 Top Users by Transfer Amount:
 ${topUsers.map((user, index) => 
