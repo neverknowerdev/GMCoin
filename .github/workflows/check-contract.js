@@ -340,8 +340,8 @@ ${topUsers.map((user, index) =>
     `${index + 1}. ${user.displayName ? `<a href="https://x.com/${user.displayName.slice(1)}">${user.displayName}</a>` : user.wallet}: ${user.amount} $GM`
 ).join('\n')}
 
-${mintingEvents.length === 0 ? '⚠️ Warning: No MintingFinished events in last 24h' : '✅ MintingFinished events found'}
-${tweetsEvents.length === 0 ? '⚠️ Warning: No TweetsUploadedToIPFS events in last 24h' : '✅ TweetsUploadedToIPFS events found'}
+${mintingEvents.length === 0 ? '⚠️ Warning: No MintingFinished events in last 24h' : '✅ MintingFinished event found'}
+${tweetsEvents.length === 0 ? '⚠️ Warning: No TweetsUploadedToIPFS events in last 24h' : `✅ TweetsUploadedToIPFS events found (${tweetsEvents.length} events))`}
     `;
 
         console.log('Sending Telegram message...');
