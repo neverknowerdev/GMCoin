@@ -72,7 +72,7 @@ const config = {
         polygon: {
             url: "https://polygon-bor-rpc.publicnode.com",
             chainId: 137,
-            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_PRIVATE_KEY]
+            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_LEARNING_PRIVATE_KEY]
         },
         polygonAmoy: {
             url: "https://rpc-amoy.polygon.technology",

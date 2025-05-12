@@ -5,13 +5,14 @@ async function main(): Promise<void> {
 
     const gelato1BalanceAddress = "0x7506C12a824d73D9b08564d5Afc22c949434755e";
     const usdcAddress = "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359";
-    const GMContractAddress = "0x6Ec55d72eAA6792380a627a2a4aD1aae8EC96F2d";
+    const GMContractAddress = "0x26f36F365E5EB6483DF4735e40f87E96e15e0007";
 
     const usdcContract = new ethers.Contract(usdcAddress, usdcAbi, owner);
     const gelatoContract = new ethers.Contract(gelato1BalanceAddress, gelato1BalanceAbi, owner);
-    const amount = ethers.parseUnits("5", 6);
+    const amount = ethers.parseUnits("10", 6);
 
-    // await usdcContract.approve(gelato1BalanceAddress, amount);
+    const approveTx = await usdcContract.approve(gelato1BalanceAddress, amount);
+    approveTx.wait();
     // await usdcContract.approve(gelato1BalanceAddress, amount);
     const tx = await gelatoContract.depositToken(GMContractAddress, usdcAddress, amount);
     console.log('transaction sent, waiting..', tx.hash);
