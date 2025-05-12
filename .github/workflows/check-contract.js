@@ -150,7 +150,7 @@ async function getTopUsersByTransfers(transferEvents, contractAddress) {
 async function getBlockByTimestamp(provider, targetTimestamp, startBlock, endBlock) {
     const apiKey = process.env.BASESCAN_API_KEY;
     const url = `https://api.basescan.org/api?module=block&action=getblocknobytime&timestamp=${targetTimestamp}&closest=before&apikey=${apiKey}`;
-    
+
     const response = await fetch(url);
     const data = await response.json();
     if (data.status === "1") {
@@ -336,12 +336,12 @@ ${totalUsers.toString()} (+${verificationEvents.length})
 • Minting difficulty: ${ethers.formatEther(mintingDifficulty)} $GM per tweet/like${complexityEvents.length > 0 ? `\n• Complexity changed: ${ethers.formatEther(complexityEvents[0].args.previousEpochPoints)} points prev-last epoch → ${ethers.formatEther(complexityEvents[0].args.currentEpochPoints)} points last epoch` : ''}
 
 🏆 Top Users by Transfer Amount:
-${topUsers.map((user, index) => 
-    `${index + 1}. ${user.displayName ? `<a href="https://x.com/${user.displayName.slice(1)}">${user.displayName}</a>` : user.wallet}: ${user.amount} $GM`
-).join('\n')}
+${topUsers.map((user, index) =>
+            `${index + 1}. ${user.displayName ? `<a href="https://x.com/${user.displayName.slice(1)}">${user.displayName}</a>` : user.wallet}: ${user.amount} $GM`
+        ).join('\n')}
 
 ${mintingEvents.length === 0 ? '⚠️ Warning: No MintingFinished events in last 24h' : '✅ MintingFinished event found'}
-${tweetsEvents.length === 0 ? '⚠️ Warning: No TweetsUploadedToIPFS events in last 24h' : `✅ TweetsUploadedToIPFS events found (${tweetsEvents.length} events))`}
+${tweetsEvents.length === 0 ? '⚠️ Warning: No TweetsUploadedToIPFS events in last 24h' : `✅ TweetsUploadedToIPFS events found (${tweetsEvents.length} events)`}
     `;
 
         console.log('Sending Telegram message...');
