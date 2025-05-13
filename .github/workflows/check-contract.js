@@ -333,7 +333,7 @@ ${totalUsers.toString()} (+${verificationEvents.length})
 
 💰 Minting Statistics:
 • Total minted: ${ethers.formatEther(minted24h)} $GM
-• Minting difficulty: ${ethers.formatEther(mintingDifficulty)} $GM per tweet/like${complexityEvents.length > 0 ? `\n• Complexity changed: ${ethers.formatEther(complexityEvents[0].args.previousEpochPoints)} points prev-last epoch → ${ethers.formatEther(complexityEvents[0].args.currentEpochPoints)} points last epoch` : ''}
+• Minting difficulty: ${ethers.formatEther(mintingDifficulty)} $GM per tweet/like${complexityEvents.length > 0 ? `\n• Complexity changed: ${complexityEvents[0].args.previousEpochPoints} points prev-last epoch → ${complexityEvents[0].args.currentEpochPoints} points last epoch` : ''}
 
 🏆 Top Users by Transfer Amount:
 ${topUsers.map((user, index) =>
