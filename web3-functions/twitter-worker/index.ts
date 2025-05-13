@@ -1,18 +1,35 @@
 import {Interface} from "@ethersproject/abi";
 import {Storage} from './storage';
-import {Web3Function, Web3FunctionEventContext, Web3FunctionResult} from "@gelatonetwork/web3-functions-sdk";
+import {
+    Web3Function,
+    Web3FunctionEventContext,
+    Web3FunctionFailContext,
+    Web3FunctionResult
+} from "@gelatonetwork/web3-functions-sdk";
 import {Contract, ContractRunner} from "ethers";
 import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
-import {Batch, BatchToString, ContractABI, defaultResult, Result, Tweet, TweetProcessingType} from "./consts";
+import {ContractABI, defaultResult, Result, Tweet, TweetProcessingType} from "./consts";
 import {BatchManager} from "./batchManager";
 import {TwitterRequester} from "./twitterRequester";
 import {SmartContractConnector} from "./smartContractConnector";
 import {BatchUploader} from "./batchUploader";
-import ky from "ky";
 
 const KEYWORD = "gm";
 const verifyTweetBatchSize = 300;
 
+Web3Function.onFail(async (context: Web3FunctionFailContext) => {
+    const {reason} = context;
+
+    if (reason === "ExecutionReverted") {
+        console.log(`onFail: ${reason} txHash: ${context.transactionHash}`);
+    } else if (reason === "SimulationFailed") {
+        console.log(
+            `onFail: ${reason} callData: ${JSON.stringify(context.callData)}`
+        );
+    } else {
+        console.log(`onFail: ${reason}`);
+    }
+});
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
     // Get event log from Web3FunctionEventContext
     const {log, userArgs, multiChainProvider, storage: w3fStorage} = context;

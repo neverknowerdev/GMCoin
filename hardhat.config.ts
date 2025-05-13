@@ -1,9 +1,8 @@
 import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-verify";
-import '@openzeppelin/hardhat-upgrades';
-import "hardhat-gas-reporter";
-import '@typechain/hardhat';
 import "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
+import '@openzeppelin/hardhat-upgrades';
+import '@typechain/hardhat';
 
 import "./tasks/addTwitterUser";
 import "./tasks/tweetCountStat";
