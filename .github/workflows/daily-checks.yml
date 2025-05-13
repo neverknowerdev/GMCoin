@@ -2,7 +2,7 @@ name: Daily Smart Contract Checks
 
 on:
   schedule:
-    - cron: '0 7 * * *'  # Run at 9 AM Warsaw time (UTC+2)
+    - cron: '0 5 * * *'  # Run at 7 AM Warsaw time (UTC+2)
   workflow_dispatch:  # Allow manual triggering
 
 env:
@@ -15,13 +15,13 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-          
+
       - name: Install dependencies
         run: |
           npm ci
@@ -32,21 +32,21 @@ jobs:
           printf "%s" "${{ secrets.TWITTER_WORKER_ENV }}" > ./web3-functions/twitter-worker/.env
           printf "%s" "${{ secrets.TWITTER_WORKER_PROD_ENV }}" > ./web3-functions/twitter-worker/prod.env
           printf "%s" "${{ secrets.TEST_ENV }}" > ./test/.env
-        
+
       - name: Run tests
         id: tests
         continue-on-error: true
         run: |
           npm test > test-results.txt 2>&1 || true
           echo "status=$?" >> $GITHUB_OUTPUT
-          
+
       - name: Upload test results
         uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: test-results.txt
           if-no-files-found: error
-        
+
       - name: Check smart contract events
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
