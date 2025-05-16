@@ -28,25 +28,6 @@ interface TwitterResponseV2 {
     author_id: string;
 }
 
-function getTweetContentAndAuthorId(response: any): { tweetContent: string; authorId: string } | null {
-    // Check for V1 format
-    if (response.data?.tweet_result?.result?.legacy) {
-        return {
-            tweetContent: response.data.tweet_result.result.legacy.full_text,
-            authorId: response.data.tweet_result.result.legacy.user_id_str
-        };
-    }
-
-    // Check for V2 format
-    if (response.text && response.author_id) {
-        return {
-            tweetContent: response.text,
-            authorId: response.author_id
-        };
-    }
-
-    return null;
-}
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
     const { log, userArgs, multiChainProvider } = context;
@@ -66,6 +47,12 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     const { wallet, authCode, tweetID, userID } = event.args;
     console.log('tweetID', tweetID);
     console.log(`Verifying Twitter for address ${wallet}..`);
+
+    // Validate auth code format and wallet letters
+    const authCodeValidation = validateAuthCode(authCode, wallet);
+    if (!authCodeValidation.isValid) {
+        return await returnError(verifierContract, userID, wallet, authCodeValidation.error || "Invalid auth code");
+    }
 
     const tweetFetchURL = await context.secrets.get("TWITTER_GET_TWEET_URL");
     if (!tweetFetchURL) {
@@ -149,4 +136,53 @@ async function returnError(contract: Contract, userID: string, userWallet: strin
             },
         ],
     }
-} 
+}
+
+function getTweetContentAndAuthorId(response: any): { tweetContent: string; authorId: string } | null {
+    // Check for V1 format
+    if (response.data?.tweet_result?.result?.legacy) {
+        return {
+            tweetContent: response.data.tweet_result.result.legacy.full_text,
+            authorId: response.data.tweet_result.result.legacy.user_id_str
+        };
+    }
+
+    // Check for V2 format
+    if (response.text && response.author_id) {
+        return {
+            tweetContent: response.text,
+            authorId: response.author_id
+        };
+    }
+
+    return null;
+}
+
+function validateAuthCode(authCode: string, walletAddress: string): { isValid: boolean; error?: string } {
+    // Auth code format: GM${walletStartingLetterNumberStr}${wallet10Letters}${random2}
+    if (!authCode.startsWith('GM')) {
+        return { isValid: false, error: "Auth code must start with 'GM'" };
+    }
+
+    // Extract wallet starting letter number (2 digits)
+    const walletStartingLetterNumberStr = authCode.substring(2, 4);
+    if (!/^\d{2}$/.test(walletStartingLetterNumberStr)) {
+        return { isValid: false, error: "Invalid wallet starting letter number format" };
+    }
+
+    // Extract wallet 10 letters
+    const wallet10Letters = authCode.substring(4, 14);
+    if (!/^[a-fA-F0-9]{10}$/.test(wallet10Letters)) {
+        return { isValid: false, error: "Invalid wallet letters format" };
+    }
+
+    // Get the actual wallet letters from the wallet address
+    const walletStartingLetterNumber = parseInt(walletStartingLetterNumberStr);
+    const actualWalletLetters = walletAddress.substring(walletStartingLetterNumber + 2, walletStartingLetterNumber + 10 + 2);
+
+    if (wallet10Letters.toLowerCase() !== actualWalletLetters.toLowerCase()) {
+        return { isValid: false, error: "Wallet letters in auth code do not match the wallet address" };
+    }
+
+    return { isValid: true };
+}
