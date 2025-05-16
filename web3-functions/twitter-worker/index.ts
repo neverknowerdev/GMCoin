@@ -1,13 +1,13 @@
-import {Interface} from "@ethersproject/abi";
-import {Storage} from './storage';
-import {Web3Function, Web3FunctionEventContext, Web3FunctionResult} from "@gelatonetwork/web3-functions-sdk";
-import {Contract, ContractRunner} from "ethers";
-import {Web3FunctionResultCallData} from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
-import {Batch, BatchToString, ContractABI, defaultResult, Result, Tweet, TweetProcessingType} from "./consts";
-import {BatchManager} from "./batchManager";
-import {TwitterRequester} from "./twitterRequester";
-import {SmartContractConnector} from "./smartContractConnector";
-import {BatchUploader} from "./batchUploader";
+import { Interface } from "@ethersproject/abi";
+import { Storage } from './storage';
+import { Web3Function, Web3FunctionEventContext, Web3FunctionResult } from "@gelatonetwork/web3-functions-sdk";
+import { Contract, ContractRunner } from "ethers";
+import { Web3FunctionResultCallData } from "@gelatonetwork/web3-functions-sdk/dist/lib/types/Web3FunctionResult";
+import { Batch, BatchToString, ContractABI, defaultResult, Result, Tweet, TweetProcessingType } from "./consts";
+import { BatchManager } from "./batchManager";
+import { TwitterRequester } from "./twitterRequester";
+import { SmartContractConnector } from "./smartContractConnector";
+import { BatchUploader } from "./batchUploader";
 import ky from "ky";
 
 const KEYWORD = "gm";
@@ -15,33 +15,33 @@ const verifyTweetBatchSize = 300;
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
     // Get event log from Web3FunctionEventContext
-    const {log, userArgs, multiChainProvider, storage: w3fStorage} = context;
+    const { log, userArgs, multiChainProvider, storage: w3fStorage } = context;
 
     const CONCURRENCY_LIMIT = userArgs.concurrencyLimit as number;
     const serverURLPrefix = userArgs.serverURLPrefix as string;
 
     const bearerToken = await context.secrets.get("TWITTER_BEARER");
     if (!bearerToken)
-        return {canExec: false, message: `TWITTER_BEARER not set in secrets`};
+        return { canExec: false, message: `TWITTER_BEARER not set in secrets` };
 
     const secretKey = await context.secrets.get("TWITTER_OPTIMIZED_SERVER_KEY");
     if (!secretKey) {
-        throw new Error('Missing TWITTER_OPTIMIZED_SERVER_KEY environment variable');
+        return { canExec: false, message: `Missing TWITTER_OPTIMIZED_SERVER_KEY environment variable` };
     }
 
     const twitterOptimizedServerHost = userArgs.twitterOptimizedServerHost !== '' ? userArgs.twitterOptimizedServerHost : await context.secrets.get("TWITTER_OPTIMIZED_SERVER_HOST");
     if (!twitterOptimizedServerHost) {
-        throw new Error('Missing TWITTER_OPTIMIZED_SERVER_HOST environment variable');
+        return { canExec: false, message: `Missing TWITTER_OPTIMIZED_SERVER_HOST environment variable` };
     }
 
     const twitterOptimizedServerAuthHeaderName = await context.secrets.get("TWITTER_OPTIMIZED_SERVER_AUTH_HEADER_NAME");
     if (!twitterOptimizedServerAuthHeaderName) {
-        throw new Error('Missing TWITTER_OPTIMIZED_SERVER_AUTH_HEADER_NAME environment variable');
+        return { canExec: false, message: `Missing TWITTER_OPTIMIZED_SERVER_AUTH_HEADER_NAME environment variable` };
     }
 
     const serverApiKey = await context.secrets.get("SERVER_API_KEY");
     if (!serverApiKey) {
-        throw new Error('Missing SERVER_API_KEY env variable');
+        return { canExec: false, message: `Missing SERVER_API_KEY env variable` };
     }
 
     try {
@@ -56,7 +56,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         const event = contract.parseLog(log);
 
 
-        const {mintingDayTimestamp, batches: eventBatches} = event.args;
+        const { mintingDayTimestamp, batches: eventBatches } = event.args;
 
         let storage = new Storage(w3fStorage, mintingDayTimestamp);
 
@@ -137,7 +137,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                     continue;
                 }
 
-                let result = UserResults.get(tweets[i].userIndex) || {...defaultResult};
+                let result = UserResults.get(tweets[i].userIndex) || { ...defaultResult };
                 result.userIndex = tweets[i].userIndex;
                 const processingType = calculateTweetByKeyword(result, tweets[i].likesCount, foundKeyword);
 
@@ -259,7 +259,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                     const verifiedTweets = await twitterRequester.fetchTweetsByIDs(tweetsToVerify);
                     console.log('verifiedTweets', verifiedTweets.length);
                     for (let i = 0; i < verifiedTweets.length; i++) {
-                        const result = UserResults.get(verifiedTweets[i].userIndex) || {...defaultResult};
+                        const result = UserResults.get(verifiedTweets[i].userIndex) || { ...defaultResult };
 
                         let tweetProcessResult = calculateTweetByKeyword(result, verifiedTweets[i].likesCount, findKeywordWithPrefix(verifiedTweets[i].tweetContent));
                         batchUploader.add(verifiedTweets[i], tweetProcessResult);
