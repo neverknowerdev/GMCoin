@@ -74,4 +74,151 @@ describe("GelatoW3F Twitter Verification Thirdweb", function () {
         expect(resultWallet).to.equal(walletAddressSmartAccount);
     });
 
+    it('twitter-verification authcode success', async function () {
+        const {
+            coinContract: smartContract,
+            owner,
+            feeAddr,
+            gelatoAddr,
+            otherAcc1: userAddr
+        } = await loadFixture(deployGMCoinWithProxy);
+
+        const userID = "1796129942104657921";
+        const walletAddress = "0xbe25A5869EDFAe90Ce28451e78b4acC6acBEbFF1";
+        const authCode = "GM123456";
+        const tweetID = "1768778186186195177";
+
+        // Mock Twitter API response
+        mockServer.mock(`/tweet/${tweetID}`, 'GET', {
+            data: {
+                tweet_result: {
+                    result: {
+                        legacy: {
+                            full_text: `Verifying my GMCoin account with code: ${authCode}`,
+                            user_id_str: userID
+                        }
+                    }
+                }
+            }
+        });
+
+        const verifierAddress = await smartContract.getAddress();
+        console.log(`deployed GMCoin to ${verifierAddress}`);
+
+        // Generate event log for verifyTwitterByAuthCodeRequested
+        const log = await generateEventLog('verifyTwitterByAuthCodeRequested', [walletAddress, authCode, tweetID, userID]);
+
+        // Get the web3-function
+        let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification-authcode");
+
+        let { result } = await oracleW3f.run("onRun", {
+            userArgs: {
+                verifierContractAddress: verifierAddress
+            },
+            log: log,
+            secrets: {
+                TWITTER_GET_TWEET_URL: "http://localhost:8118/tweet/",
+                HEADER_NAME: "Authorization",
+                TWITTER_BEARER: "test-bearer-token"
+            }
+        });
+        result = result as Web3FunctionResultV2;
+
+        console.log('result', result);
+        expect(result.canExec).to.equal(true);
+
+        if (result.canExec) {
+            for (let calldata of result.callData) {
+                await gelatoAddr.sendTransaction({ to: calldata.to, data: calldata.data });
+            }
+        }
+
+        let resultWallet = await smartContract.getWalletByUserID(userID as any);
+        expect(resultWallet).to.equal(walletAddress);
+    });
+
+    it('twitter-verification authcode error - auth code not found', async function () {
+        const {
+            coinContract: smartContract,
+            owner,
+            feeAddr,
+            gelatoAddr,
+            otherAcc1: userAddr
+        } = await loadFixture(deployGMCoinWithProxy);
+
+        const userID = "1796129942104657921";
+        const walletAddress = "0xbe25A5869EDFAe90Ce28451e78b4acC6acBEbFF1";
+        const authCode = "GM123456";
+        const tweetID = "1768778186186195177";
+        const bearerToken = "test-bearer-token";
+        const bearerHeader = `Bearer ${bearerToken}`;
+
+        // Mock Twitter API response with different auth code
+        mockServer.mockFunc(`/tweet/${tweetID}`, 'GET', (url, headers) => {
+            expect(headers.authorization).to.equal(bearerHeader);
+            return {
+                data: {
+                    tweet_result: {
+                        result: {
+                            legacy: {
+                                full_text: "Verifying my GMCoin account with code: DIFFERENT_CODE",
+                                user_id_str: userID
+                            }
+                        }
+                    }
+                }
+            };
+        });
+
+        const verifierAddress = await smartContract.getAddress();
+        console.log(`deployed GMCoin to ${verifierAddress}`);
+
+        // Generate event log for verifyTwitterByAuthCodeRequested
+        const log = await generateEventLog('verifyTwitterByAuthCodeRequested', [walletAddress, authCode, tweetID, userID]);
+
+        // Get the web3-function
+        let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification-authcode");
+
+        let { result } = await oracleW3f.run("onRun", {
+            userArgs: {
+                verifierContractAddress: verifierAddress
+            },
+            log: log,
+            secrets: {
+                TWITTER_GET_TWEET_URL: "http://localhost:8118/tweet/",
+                HEADER_NAME: "Authorization",
+                TWITTER_BEARER: bearerHeader
+            }
+        });
+        result = result as Web3FunctionResultV2;
+
+        console.log('result', result);
+        expect(result.canExec).to.equal(true);
+
+        if (result.canExec) {
+            for (let calldata of result.callData) {
+                const tx = await gelatoAddr.sendTransaction({ to: calldata.to, data: calldata.data });
+                const receipt = await tx.wait();
+
+                // Check for TwitterVerificationResult event
+                const event = receipt?.logs.find(
+                    log => log.topics[0] === smartContract.interface.getEvent('TwitterVerificationResult').topicHash
+                );
+                expect(event).to.not.be.undefined;
+
+                const decodedEvent = smartContract.interface.parseLog({
+                    topics: event?.topics as string[],
+                    data: event?.data as string
+                });
+
+                expect(decodedEvent?.args.isSuccess).to.be.false;
+                expect(decodedEvent?.args.errorMsg).to.equal("Auth code not found in tweet");
+                expect(decodedEvent?.args.userID).to.equal(userID);
+                expect(decodedEvent?.args.wallet).to.equal(walletAddress);
+            }
+        }
+
+        let resultWallet = await smartContract.getWalletByUserID(userID as any);
+        expect(resultWallet).to.equal("0x0000000000000000000000000000000000000000");
+    });
 }); 
