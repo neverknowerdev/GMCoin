@@ -1,7 +1,7 @@
 const hre = require("hardhat");
 
-import {ethers, upgrades} from "hardhat";
-import {run} from "hardhat";
+import { ethers, upgrades } from "hardhat";
+import { run } from "hardhat";
 
 async function main(): Promise<void> {
     // Get the ContractFactory for "TwitterCoin"
@@ -35,12 +35,12 @@ async function main(): Promise<void> {
 
     const proxyContract = await ethers.getContractAt("GMCoinTestnet", "0x19bD68AD19544FFA043B2c3A5064805682783E91");
 
-    
+
     console.log('forceTimelockUpdateTestnet..');
     const tx = await proxyContract.forceTimeLockUpdateTestnet(deployedContractAddress);
     await tx.wait()
     console.log('upgradeToAndCall..');
-    const tx2 = await proxyContract.upgradeToAndCall(deployedContractAddress, proxyContract.interface.encodeFunctionData("clearUser"));
+    const tx2 = await proxyContract.upgradeToAndCall(deployedContractAddress, '0x');
     await tx2.wait();
 }
 
