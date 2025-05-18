@@ -1,7 +1,7 @@
-import {AutomateModule} from "@gelatonetwork/automate-sdk";
-import {ethers} from "hardhat";
-import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
-import {SiweMessage} from "siwe";
+import { AutomateModule } from "@gelatonetwork/automate-sdk";
+import { ethers } from "hardhat";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { SiweMessage } from "siwe";
 import axios from "axios";
 import path from "path";
 import fs from "fs";
@@ -46,23 +46,23 @@ export async function setSecretsForW3f(contractAddress: string, signer: HardhatE
     const signature = await signer.signMessage(message);
 
     const authToken = Buffer.from(
-        JSON.stringify({message, signature})
+        JSON.stringify({ message, signature })
     ).toString("base64");
 
     try {
         await axios.post(
             `https://api.gelato.digital/automate/users/users/${contractAddress}/secrets/${chainId}/${taskId}`,
-            {...secrets},
+            { ...secrets },
             {
-                headers: {Authorization: `Bearer ${authToken}`},
+                headers: { Authorization: `Bearer ${authToken}` },
             }
         );
         console.log("Secrets set successfully!");
 
-        const {data} = await axios.get(
+        const { data } = await axios.get(
             `https://api.gelato.digital/automate/users/users/${contractAddress}/secrets/${chainId}/${taskId}`,
             {
-                headers: {Authorization: `Bearer ${authToken}`},
+                headers: { Authorization: `Bearer ${authToken}` },
             }
         );
 
@@ -84,7 +84,7 @@ export function loadEnvVariables(functionName: string, env: string): Record<stri
     }
 
     // Read the file content
-    const envContent = fs.readFileSync(envFilePath, {encoding: "utf8"});
+    const envContent = fs.readFileSync(envFilePath, { encoding: "utf8" });
 
     // Parse the environment variables using dotenv
     const envVars = dotenv.parse(envContent);

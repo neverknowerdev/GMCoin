@@ -17,6 +17,9 @@ async function main(): Promise<void> {
         // call: {
         //     fn: "clearUsers"
         // }
+        unsafeAllow: [
+            'struct-definition'
+        ]
     })
     // const GMCoin = await upgrades.deployProxy(contract,
     //     [owner.address, 500_000, 'Qme39LGvEnhLJ5dLkthrkqFcu9Dcp5ibb6RvnpqYvWoUXA', 'https://l4xtgdsal5.execute-api.eu-central-1.amazonaws.com/default/GMSecrets'],
@@ -38,6 +41,6 @@ async function main(): Promise<void> {
 
 // Execute the main function and handle potential errors
 main().catch((error: Error) => {
-    console.error("Error deploying GGCoin:", error);
+    console.error("Error deploying GMCoin:", error);
     process.exitCode = 1;
 });
