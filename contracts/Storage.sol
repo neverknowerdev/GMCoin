@@ -11,8 +11,12 @@ contract GMStorage {
 
   TimeLockConfig public timeLockConfig;
   FeeConfig public feeConfig;
+
+  /// @custom:oz-retyped-from GMStorageV1.GelatoConfig
   GelatoConfig public gelatoConfig;
   MintingConfig public mintingConfig;
+
+  /// @custom:oz-retyped-from GMStorageV1.MintingData
   MintingData internal mintingData;
 
   // -3 - negative points delta 3 weeks in a row, 3 - positive points delta 3 weeks in a row

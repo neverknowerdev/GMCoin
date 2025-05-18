@@ -1,14 +1,14 @@
 // test/deployment.test.ts
 
-import {expect} from "chai";
-import {ethers, network, upgrades} from "hardhat";
-import {Contract, ContractFactory, Signer, Wallet, Provider, HDNodeWallet, Result} from "ethers";
-import {time, loadFixture} from "@nomicfoundation/hardhat-network-helpers";
-import {GMCoin, GMCoinExposed} from "../typechain";
+import { expect } from "chai";
+import { ethers, network, upgrades } from "hardhat";
+import { Contract, ContractFactory, Signer, Wallet, Provider, HDNodeWallet, Result } from "ethers";
+import { time, loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { GMCoin, GMCoinExposed } from "../typechain";
 import hre from "hardhat";
-import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
-import {createGMCoinFixture, deployGMCoinWithProxy} from "./tools/deployContract";
-import {smock} from "@neverknowerdev/smock";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { createGMCoinFixture, deployGMCoinWithProxy } from "./tools/deployContract";
+import { smock } from "@neverknowerdev/smock";
 
 
 describe("GM", function () {

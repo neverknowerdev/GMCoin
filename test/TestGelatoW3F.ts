@@ -1,32 +1,32 @@
-import {expect, use} from "chai";
+import { expect, use } from "chai";
 import hre from "hardhat";
 import isEqual from 'lodash/isEqual';
-import {gcm} from '@noble/ciphers/aes';
-import {utf8ToBytes, bytesToUtf8, bytesToHex, hexToBytes} from "@noble/ciphers/utils";
-import {randomBytes} from '@noble/ciphers/webcrypto';
+import { gcm } from '@noble/ciphers/aes';
+import { utf8ToBytes, bytesToUtf8, bytesToHex, hexToBytes } from "@noble/ciphers/utils";
+import { randomBytes } from '@noble/ciphers/webcrypto';
 
 import dotenv from 'dotenv';
 
-const {ethers, w3f, upgrades} = hre;
+const { ethers, w3f, upgrades } = hre;
 import {
     Web3FunctionUserArgs,
     Web3FunctionResultV2,
 } from "@gelatonetwork/web3-functions-sdk";
-import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
-import {GMCoinExposed} from "../typechain";
-import {MockHttpServer} from './tools/mockServer';
-import {Provider, HDNodeWallet, EventLog, Contract, JsonRpcProvider} from "ethers";
-import {generateEventLog} from './tools/helpers';
-import {deployGMCoinWithProxy} from "./tools/deployContract";
-import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers";
-import {FakeContract, smock} from '@neverknowerdev/smock';
+import { Web3FunctionHardhat } from "@gelatonetwork/web3-functions-sdk/hardhat-plugin";
+import { GMCoinExposed } from "../typechain";
+import { MockHttpServer } from './tools/mockServer';
+import { Provider, HDNodeWallet, EventLog, Contract, JsonRpcProvider } from "ethers";
+import { generateEventLog } from './tools/helpers';
+import { deployGMCoinWithProxy } from "./tools/deployContract";
+import { loadFixture, time } from "@nomicfoundation/hardhat-network-helpers";
+import { FakeContract, smock } from '@neverknowerdev/smock';
 import * as url from 'url';
 import fs from "fs";
-import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
-import {IncomingHttpHeaders} from "http";
-import {blake2b} from "blakejs";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { IncomingHttpHeaders } from "http";
+import { blake2b } from "blakejs";
 import axios from "axios";
-import {loadEnvVariables} from "../scripts/prod/utils";
+import { loadEnvVariables } from "../scripts/prod/utils";
 
 
 describe("GelatoW3F", function () {
@@ -49,8 +49,8 @@ describe("GelatoW3F", function () {
     });
 
     it('should post to the mock server and validate the response', async function () {
-        mockServer.mock('/api/test', 'GET', {message: 'Mocked GET response'}, 200, 'application/json');
-        mockServer.mock('/api/submit', 'POST', {success: true}, 201, 'application/json');
+        mockServer.mock('/api/test', 'GET', { message: 'Mocked GET response' }, 200, 'application/json');
+        mockServer.mock('/api/submit', 'POST', { success: true }, 201, 'application/json');
 
         {
             const response = await fetch('http://localhost:8118/api/test');
@@ -66,8 +66,8 @@ describe("GelatoW3F", function () {
         {
             const response = await fetch('http://localhost:8118/api/submit', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({data: 'example'}),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data: 'example' }),
             });
             const data = await response.json();
 
@@ -80,7 +80,7 @@ describe("GelatoW3F", function () {
     });
 
     it("twitter-verification error /oauth2/token", async function () {
-        const {coinContract: smartContract, owner, feeAddr, gelatoAddr} = await loadFixture(deployGMCoinWithProxy);
+        const { coinContract: smartContract, owner, feeAddr, gelatoAddr } = await loadFixture(deployGMCoinWithProxy);
 
         const accessToken = "authCodeTest";
         const userID = "1796129942104657002";
@@ -104,7 +104,7 @@ describe("GelatoW3F", function () {
 
         let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification");
 
-        let {result} = await oracleW3f.run("onRun", {
+        let { result } = await oracleW3f.run("onRun", {
             userArgs: {
                 verifierContractAddress: verifierAddress,
                 twitterHost: "http://localhost:8118",
@@ -121,7 +121,7 @@ describe("GelatoW3F", function () {
             let eventIsSuccess = false;
             let eventUserId = '';
             for (let calldata of result.callData) {
-                const tx = await gelatoAddr.sendTransaction({to: calldata.to, data: calldata.data});
+                const tx = await gelatoAddr.sendTransaction({ to: calldata.to, data: calldata.data });
                 const receipt = await tx.wait();
 
                 // 4. Parse each log in the receipt
@@ -197,7 +197,7 @@ describe("GelatoW3F", function () {
         const log = await generateEventLog('VerifyTwitterRequested', [accessTokenEncrypted, userID, walletAddress]);
         let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification");
 
-        let {result} = await oracleW3f.run("onRun", {
+        let { result } = await oracleW3f.run("onRun", {
             userArgs: {
                 verifierContractAddress: verifierAddress,
                 twitterHost: "http://localhost:8118/success",
@@ -212,7 +212,7 @@ describe("GelatoW3F", function () {
 
         if (result.canExec) {
             for (let calldata of result.callData) {
-                await gelatoAddr.sendTransaction({to: calldata.to, data: calldata.data});
+                await gelatoAddr.sendTransaction({ to: calldata.to, data: calldata.data });
             }
         }
 
@@ -291,7 +291,7 @@ describe("GelatoW3F", function () {
             // console.log('query', q);
             // console.log('cursor', cursor);
 
-            const {filteredTweets, nextCursor} = filterUserTweets(allUserTweetsByUsername, usernamesList, cursor, 20);
+            const { filteredTweets, nextCursor } = filterUserTweets(allUserTweetsByUsername, usernamesList, cursor, 20);
 
             // console.log('nextCursor', nextCursor);
             // console.log('generateResponse', 'nextCursor', nextCursor, userIDList, filteredTweets);
@@ -314,7 +314,7 @@ describe("GelatoW3F", function () {
             const idList = url.query["user_ids"] as string;
             const userIDs = idList.split(',');
 
-            let response = {data: {users: []}};
+            let response = { data: { users: [] } };
             for (const userID of userIDs) {
                 response.data.users.push({
                     result: {
@@ -329,7 +329,7 @@ describe("GelatoW3F", function () {
             return response;
         });
 
-        mockServer.mock('/SaveTweets', 'POST', {success: true});
+        mockServer.mock('/SaveTweets', 'POST', { success: true });
 
         mockServer.mockFunc('/UploadTweetsToIPFS', 'POST', (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => {
             const receivedJSON = JSON.parse(body);
@@ -490,7 +490,7 @@ describe("GelatoW3F", function () {
             const cursor = url.query["cursor"] as string;
             const usernamesList = extractUserIDs(q);
 
-            const {filteredTweets, nextCursor} = filterUserTweets(allUserTweetsByUsername, usernamesList, cursor, 20);
+            const { filteredTweets, nextCursor } = filterUserTweets(allUserTweetsByUsername, usernamesList, cursor, 20);
 
             let response = generateResponse(filteredTweets, nextCursor, cursor == '');
             return response;
@@ -510,7 +510,7 @@ describe("GelatoW3F", function () {
             const idList = url.query["user_ids"] as string;
             const userIDs = idList.split(',');
 
-            let response = {data: {users: []}};
+            let response = { data: { users: [] } };
             for (const userID of userIDs) {
                 response.data.users.push({
                     result: {
@@ -737,7 +737,7 @@ describe("GelatoW3F", function () {
             if (events.length > 0) {
                 let lastEvent = events.reverse()[0] as EventLog;
 
-                const {mintingDayTimestamp, runningHash, cid} = lastEvent.args;
+                const { mintingDayTimestamp, runningHash, cid } = lastEvent.args;
                 if (runningHash == finalRunningHash) {
                     foundEvent = lastEvent;
                     break;
@@ -748,12 +748,12 @@ describe("GelatoW3F", function () {
         }
 
 
-        const {mintingDayTimestamp, runningHash, cid} = foundEvent.args;
+        const { mintingDayTimestamp, runningHash, cid } = foundEvent.args;
 
         const url = `https://${cid}.ipfs.w3s.link/`;
 
         // Make an HTTP GET request using Axios.
-        const ipfsResponse = await axios.get(url, {responseType: 'text'});
+        const ipfsResponse = await axios.get(url, { responseType: 'text' });
 
         const ipfsContent = JSON.parse(ipfsResponse.data);
         expect(ipfsContent.finalHash).to.be.equal(finalRunningHash);
@@ -775,34 +775,34 @@ describe("GelatoW3F", function () {
     it('filterUserTweets', async function () {
         let userTweetsMap: UserTweetsMap = new Map();
         userTweetsMap.set("1", [
-            {text: "1_1", likesCount: 10, author_id: "", tweet_id: ""},
-            {text: "1_2", likesCount: 10, author_id: "", tweet_id: ""},
-            {text: "1_3", likesCount: 10, author_id: "", tweet_id: ""},
-            {text: "1_4", likesCount: 10, author_id: "", tweet_id: ""},
-            {text: "1_5", likesCount: 10, author_id: "", tweet_id: ""},
+            { text: "1_1", likesCount: 10, author_id: "", tweet_id: "" },
+            { text: "1_2", likesCount: 10, author_id: "", tweet_id: "" },
+            { text: "1_3", likesCount: 10, author_id: "", tweet_id: "" },
+            { text: "1_4", likesCount: 10, author_id: "", tweet_id: "" },
+            { text: "1_5", likesCount: 10, author_id: "", tweet_id: "" },
         ])
         userTweetsMap.set("2", [
-            {text: "2_1", likesCount: 20, author_id: "", tweet_id: ""},
-            {text: "2_2", likesCount: 20, author_id: "", tweet_id: ""},
-            {text: "2_3", likesCount: 20, author_id: "", tweet_id: ""},
+            { text: "2_1", likesCount: 20, author_id: "", tweet_id: "" },
+            { text: "2_2", likesCount: 20, author_id: "", tweet_id: "" },
+            { text: "2_3", likesCount: 20, author_id: "", tweet_id: "" },
         ])
         userTweetsMap.set("3", [
-            {text: "3_1", likesCount: 20, author_id: "", tweet_id: ""},
-            {text: "3_2", likesCount: 20, author_id: "", tweet_id: ""},
-            {text: "3_3", likesCount: 20, author_id: "", tweet_id: ""},
-            {text: "3_4", likesCount: 20, author_id: "", tweet_id: ""},
+            { text: "3_1", likesCount: 20, author_id: "", tweet_id: "" },
+            { text: "3_2", likesCount: 20, author_id: "", tweet_id: "" },
+            { text: "3_3", likesCount: 20, author_id: "", tweet_id: "" },
+            { text: "3_4", likesCount: 20, author_id: "", tweet_id: "" },
         ])
         let userIDList = ["1", "2", "3", "4", "5"];
-        let {filteredTweets, nextCursor} = filterUserTweets(userTweetsMap, userIDList, "", 5);
+        let { filteredTweets, nextCursor } = filterUserTweets(userTweetsMap, userIDList, "", 5);
         // const filteredUserIDs = Array.from(filteredTweets.keys());
         // expect(filteredUserIDs).to.be.equal(['1']);
 
         expect(JSON.stringify(filteredTweets.get("1"))).to.be.equal(JSON.stringify([
-            {text: "1_1", likesCount: 10, author_id: "", tweet_id: ""},
-            {text: "1_2", likesCount: 10, author_id: "", tweet_id: ""},
-            {text: "1_3", likesCount: 10, author_id: "", tweet_id: ""},
-            {text: "1_4", likesCount: 10, author_id: "", tweet_id: ""},
-            {text: "1_5", likesCount: 10, author_id: "", tweet_id: ""},
+            { text: "1_1", likesCount: 10, author_id: "", tweet_id: "" },
+            { text: "1_2", likesCount: 10, author_id: "", tweet_id: "" },
+            { text: "1_3", likesCount: 10, author_id: "", tweet_id: "" },
+            { text: "1_4", likesCount: 10, author_id: "", tweet_id: "" },
+            { text: "1_5", likesCount: 10, author_id: "", tweet_id: "" },
         ]))
         expect(nextCursor).to.be.equal('cursor(1-5):1:5');
 
@@ -814,13 +814,13 @@ describe("GelatoW3F", function () {
 
 
         expect(JSON.stringify(filteredTweets2.get("2"))).to.be.equal(JSON.stringify([
-            {text: "2_1", likesCount: 20, author_id: "", tweet_id: ""},
-            {text: "2_2", likesCount: 20, author_id: "", tweet_id: ""},
-            {text: "2_3", likesCount: 20, author_id: "", tweet_id: ""},
+            { text: "2_1", likesCount: 20, author_id: "", tweet_id: "" },
+            { text: "2_2", likesCount: 20, author_id: "", tweet_id: "" },
+            { text: "2_3", likesCount: 20, author_id: "", tweet_id: "" },
         ]));
         expect(JSON.stringify(filteredTweets2.get("3"))).to.be.equal(JSON.stringify([
-            {text: "3_1", likesCount: 20, author_id: "", tweet_id: ""},
-            {text: "3_2", likesCount: 20, author_id: "", tweet_id: ""},
+            { text: "3_1", likesCount: 20, author_id: "", tweet_id: "" },
+            { text: "3_2", likesCount: 20, author_id: "", tweet_id: "" },
         ]));
 
         expect(nextCursor2).to.be.equal('cursor(1-5):3:2');
@@ -833,8 +833,8 @@ describe("GelatoW3F", function () {
 
 
         expect(JSON.stringify(filteredTweets3.get("3"))).to.be.equal(JSON.stringify([
-            {text: "3_3", likesCount: 20, author_id: "", tweet_id: ""},
-            {text: "3_4", likesCount: 20, author_id: "", tweet_id: ""},
+            { text: "3_3", likesCount: 20, author_id: "", tweet_id: "" },
+            { text: "3_4", likesCount: 20, author_id: "", tweet_id: "" },
         ]));
 
         expect(nextCursor3).to.be.equal('');
@@ -866,7 +866,7 @@ describe("GelatoW3F", function () {
         let treasuryMintingLogsCount = 0;
         while (hasLogsToProcess) {
             const oracleW3f: Web3FunctionHardhat = w3f.get("twitter-worker");
-            let {result, storage} = await oracleW3f.run("onRun", {
+            let { result, storage } = await oracleW3f.run("onRun", {
                 userArgs: userArgs,
                 storage: actualStorage,
                 log: overrideLog,
@@ -881,7 +881,7 @@ describe("GelatoW3F", function () {
 
                 hasLogsToProcess = false;
                 for (let calldata of result.callData) {
-                    const tx = await gelatoAddr.sendTransaction({to: calldata.to, data: calldata.data});
+                    const tx = await gelatoAddr.sendTransaction({ to: calldata.to, data: calldata.data });
                     const receipt = await tx.wait();
                     console.log('receipt.logs', receipt.logs.length);
                     for (const log of receipt.logs) {
@@ -1041,7 +1041,7 @@ describe("GelatoW3F", function () {
             }
         }
 
-        return {filteredTweets, nextCursor};
+        return { filteredTweets, nextCursor };
     }
 
     function generateResponseForTweetLookup(tweetMap: Map<string, Tweet>, tweetIDs: string[], likesDelta: number): any {

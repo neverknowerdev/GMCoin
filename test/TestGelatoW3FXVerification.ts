@@ -258,7 +258,7 @@ describe("GelatoW3F Twitter Verification Thirdweb", function () {
         // Generate event log for verifyTwitterByAuthCodeRequested
         const log = await generateEventLog('verifyTwitterByAuthCodeRequested', [walletAddress, authCode, tweetID, userID]);
 
-        // Get the web3-function
+        // Get the web3-function 
         let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification-authcode");
 
         let { result } = await oracleW3f.run("onRun", {

@@ -1,7 +1,7 @@
-import {randomBytes} from "@noble/ciphers/webcrypto";
-import {gcm} from "@noble/ciphers/aes";
-import {bytesToHex, hexToBytes} from "@noble/ciphers/utils";
-import {expect} from "chai";
+import { randomBytes } from "@noble/ciphers/webcrypto";
+import { gcm } from "@noble/ciphers/aes";
+import { bytesToHex, hexToBytes } from "@noble/ciphers/utils";
+import { expect } from "chai";
 
 describe("Encryption", function () {
     it('access_token encrypt/decrypt random', function () {
