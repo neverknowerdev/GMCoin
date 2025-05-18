@@ -28,10 +28,8 @@ const ContractABI = [
 ];
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
-    console.log('run here');
     const { userArgs, secrets, log, multiChainProvider } = context;
 
-    // Get contract address and chain ID from userArgs
     const contractAddress = userArgs.verifierContractAddress as string;
     const chainId = userArgs.chainId as number;
     const chain = chainId == base.id ? base : baseSepolia;

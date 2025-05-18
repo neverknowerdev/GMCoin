@@ -1,7 +1,7 @@
 const hre = require("hardhat");
 
-import {ethers, upgrades} from "hardhat";
-import {run} from "hardhat";
+import { ethers, upgrades } from "hardhat";
+import { run } from "hardhat";
 
 async function main(): Promise<void> {
 
@@ -17,8 +17,10 @@ async function main(): Promise<void> {
         // call: {
         //     fn: "clearUsers"
         // }
+
         unsafeAllow: [
-            'struct-definition'
+            'struct-definition',
+            'enum-definition'
         ]
     })
     // const GMCoin = await upgrades.deployProxy(contract,
