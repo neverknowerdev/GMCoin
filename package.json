@@ -6,7 +6,7 @@
     "test-twitter-worker": "hardhat test --grep 'twitter-worker success'",
     "test-twitter-worker-realworld": "hardhat test --grep 'twitter-worker real-world'",
     "test-filter": "hardhat test --grep 'filterUserTweets'",
-    "coverage": "nyc hardhat test"
+    "coverage": "hardhat test"
   },
   "devDependencies": {
     "@neverknowerdev/smock": "https://github.com/neverknowerdev/smock#dev",
