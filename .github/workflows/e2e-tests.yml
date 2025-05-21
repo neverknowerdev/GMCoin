@@ -49,23 +49,7 @@ jobs:
         id: test-run
         continue-on-error: true
         run: |
-          yarn coverage > test-output.log 2>&1
-          echo "status=$?" >> $GITHUB_OUTPUT
-          # Extract coverage percentage
-          if [ -f coverage/coverage-final.json ]; then
-            COVERAGE=$(jq -r '.total.statements.pct' coverage/coverage-final.json)
-            echo "coverage=${COVERAGE}%" >> $GITHUB_OUTPUT
-          else
-            echo "coverage=N/A" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Upload coverage log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-log
-          path: test-output.log
-          retention-days: 14
+          yarn coverage
 
       - name: Set job status
         if: always()
@@ -75,47 +59,3 @@ jobs:
           else
             exit 1
           fi
-
-      - name: Debug Event Context
-        run: |
-          echo "Event name: ${{ github.event_name }}"
-          echo "PR number: ${{ github.event.pull_request.number }}"
-          echo "Ref: ${{ github.ref }}"
-
-      - name: Comment PR
-        if: always() && ${{ github.event.pull_request }}
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const status = '${{ steps.test-run.outputs.status }}';
-            const testStatus = status === '0' ? '✅ PASSED' : (status ? '❌ FAILED' : '⚠️ UNKNOWN');
-            const coverage = '${{ steps.test-run.outputs.coverage }}' || 'N/A';
-            
-            let testOutput = '';
-            try {
-              testOutput = fs.readFileSync('test-output.log', 'utf8');
-            } catch (error) {
-              console.log('Could not read test output:', error);
-            }
-            
-            const failedTests = testOutput.match(/FAIL.*\n.*\n.*/g) || [];
-            
-            let comment = `## Test Results\n\n`;
-            comment += `### Status: ${testStatus}\n\n`;
-            comment += `### Coverage: ${coverage}\n\n`;
-            
-            if (failedTests.length > 0) {
-              comment += `### Failed Tests:\n\`\`\`\n${failedTests.join('\n')}\n\`\`\`\n\n`;
-            }
-            
-            const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
-            comment += `\n[View full test report](${runUrl})`;
-            
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
-            });
