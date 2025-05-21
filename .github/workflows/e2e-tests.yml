@@ -45,50 +45,11 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          yarn test ${{ github.event_name == 'workflow_dispatch' && inputs.run_coverage && '--coverage' || '' }} --testResultsProcessor=jest-junit
-        env:
-          JEST_JUNIT_OUTPUT_DIR: ./test-results
-          JEST_JUNIT_OUTPUT_NAME: junit.xml
+          yarn coverage | tee coverage.log
 
-      - name: Publish Test Results
-        uses: mikepenz/action-junit-report@v4
-        if: always()
-        with:
-          report_paths: '**/junit.xml'
-          check_name: 'Test Results'
-          fail_on_failure: true
-
-      - name: Upload coverage reports
+      - name: Upload coverage log
         uses: actions/upload-artifact@v4
-        if: always() && (github.event_name != 'workflow_dispatch' || inputs.run_coverage)
         with:
-          name: coverage-report
-          path: |
-            coverage/
-            test-results/
+          name: coverage-log
+          path: coverage.log
           retention-days: 14
-
-      - name: Comment PR with Test Summary
-        uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
-        with:
-          script: |
-            const fs = require('fs');
-            const coverage = JSON.parse(fs.readFileSync('./coverage/coverage-summary.json', 'utf8'));
-            
-            const summary = `## Test Results Summary
-            
-            ### Coverage Report
-            - Statements: ${coverage.total.statements.pct}%
-            - Branches: ${coverage.total.branches.pct}%
-            - Functions: ${coverage.total.functions.pct}%
-            - Lines: ${coverage.total.lines.pct}%
-            
-            Detailed coverage report is available in the workflow artifacts.`;
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: summary
-            });
