@@ -94,7 +94,8 @@ jobs:
               comment += `### Failed Tests:\n\`\`\`\n${failedTests.join('\n')}\n\`\`\`\n\n`;
             }
             
-            comment += `### Full Test Output\n\`\`\`\n${testOutput}\n\`\`\``;
+            const runUrl = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}';
+            comment += `\n[View full test report](${runUrl})`;
             
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
