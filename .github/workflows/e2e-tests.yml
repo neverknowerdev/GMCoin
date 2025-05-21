@@ -48,6 +48,9 @@ jobs:
         run: |
           yarn coverage > test-output.log 2>&1
           echo "status=$?" >> $GITHUB_OUTPUT
+          # Extract coverage percentage
+          COVERAGE=$(grep -o "Statements.*%" coverage/coverage-summary.json | grep -o "[0-9]*\.[0-9]*%" | head -1)
+          echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
 
       - name: Upload coverage log
         uses: actions/upload-artifact@v4
@@ -66,3 +69,31 @@ jobs:
           else
             exit 1
           fi
+
+      - name: Comment PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const testStatus = '${{ steps.test-run.outputs.status }}' === '0' ? '✅ PASSED' : '❌ FAILED';
+            const coverage = '${{ steps.test-run.outputs.coverage }}';
+            const testOutput = fs.readFileSync('test-output.log', 'utf8');
+            const failedTests = testOutput.match(/FAIL.*\n.*\n.*/g) || [];
+            
+            let comment = `## Test Results\n\n`;
+            comment += `### Status: ${testStatus}\n\n`;
+            comment += `### Coverage: ${coverage}\n\n`;
+            
+            if (failedTests.length > 0) {
+              comment += `### Failed Tests:\n\`\`\`\n${failedTests.join('\n')}\n\`\`\`\n\n`;
+            }
+            
+            comment += `### Full Test Output\n\`\`\`\n${testOutput}\n\`\`\``;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
