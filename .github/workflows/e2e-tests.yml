@@ -60,9 +60,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-log
-          path: |
-            coverage.log
-            test-output.log
+          path: test-output.log
           retention-days: 14
 
       - name: Set job status
