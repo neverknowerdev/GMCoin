@@ -5,7 +5,7 @@ on:
     branches-ignore:
       - main
       - master
-  workflow_dispatch:
+  workflow_call:
     inputs:
       branch:
         description: 'Branch to run tests on'
@@ -44,12 +44,25 @@ jobs:
           printf "%s" "${{ secrets.TEST_ENV }}" > ./test/.env
 
       - name: Run tests with coverage
+        id: test-run
         run: |
-          yarn coverage report
+          yarn coverage > test-output.log 2>&1
+          echo "status=$?" >> $GITHUB_OUTPUT
 
       - name: Upload coverage log
         uses: actions/upload-artifact@v4
         with:
           name: coverage-log
-          path: coverage.log
+          path: |
+            coverage.log
+            test-output.log
           retention-days: 14
+
+      - name: Set job status
+        if: always()
+        run: |
+          if [[ "${{ steps.test-run.outputs.status }}" == "0" ]]; then
+            exit 0
+          else
+            exit 1
+          fi
