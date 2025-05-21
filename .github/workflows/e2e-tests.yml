@@ -80,6 +80,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const fs = require('fs');
             const testStatus = '${{ steps.test-run.outputs.status }}' === '0' ? '✅ PASSED' : '❌ FAILED';
             const coverage = '${{ steps.test-run.outputs.coverage }}';
             const testOutput = fs.readFileSync('test-output.log', 'utf8');
