@@ -50,6 +50,7 @@
     "@web3-storage/w3up-client": "^17.1.2",
     "axios": "^1.7.9",
     "blakejs": "^1.2.1",
+    "coverage": "^0.4.1",
     "crypto-browserify": "^3.12.1",
     "dotenv": "^16.4.7",
     "ethers": "6",
