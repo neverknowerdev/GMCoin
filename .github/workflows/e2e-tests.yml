@@ -49,8 +49,9 @@ jobs:
         id: test-run
         continue-on-error: true
         run: |
-          yarn coverage
-
+          yarn coverage 2>&1
+          echo "status=$?" >> $GITHUB_OUTPUT
+          
       - name: Set job status
         if: always()
         run: |
