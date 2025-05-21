@@ -48,9 +48,9 @@ jobs:
           yarn coverage > test-output.log 2>&1
           echo "status=$?" >> $GITHUB_OUTPUT
           # Extract coverage percentage
-          if [ -f coverage/coverage-summary.json ]; then
-            COVERAGE=$(grep -o "Statements.*%" coverage/coverage-summary.json | grep -o "[0-9]*\.[0-9]*%" | head -1)
-            echo "coverage=$COVERAGE" >> $GITHUB_OUTPUT
+          if [ -f coverage/coverage-final.json ]; then
+            COVERAGE=$(jq -r '.total.statements.pct' coverage/coverage-final.json)
+            echo "coverage=${COVERAGE}%" >> $GITHUB_OUTPUT
           else
             echo "coverage=N/A" >> $GITHUB_OUTPUT
           fi
