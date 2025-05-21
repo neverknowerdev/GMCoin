@@ -45,7 +45,7 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          yarn coverage | tee coverage.log
+          yarn coverage report
 
       - name: Upload coverage log
         uses: actions/upload-artifact@v4
