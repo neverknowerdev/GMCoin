@@ -14,38 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Run E2E Tests
+        id: e2e-tests
+        uses: ./.github/workflows/e2e-tests.yml
         with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: |
-          npm ci
-
-      - name: Create environment files
-        run: |
-          printf "%s" "${{ secrets.TWITTER_VERIFICATION_ENV }}" > ./web3-functions/twitter-verification/.env
-          printf "%s" "${{ secrets.TWITTER_WORKER_ENV }}" > ./web3-functions/twitter-worker/.env
-          printf "%s" "${{ secrets.TWITTER_WORKER_PROD_ENV }}" > ./web3-functions/twitter-worker/prod.env
-          printf "%s" "${{ secrets.TEST_ENV }}" > ./test/.env
-
-      - name: Run tests
-        id: tests
-        continue-on-error: true
-        run: |
-          npm test > test-results.txt 2>&1 || true
-          echo "status=$?" >> $GITHUB_OUTPUT
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: test-results.txt
-          if-no-files-found: error
+          branch: main
+          run_coverage: true
 
       - name: Check smart contract events
         env:
@@ -53,7 +27,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
-          TEST_STATUS: ${{ steps.tests.outputs.status }}
+          TEST_STATUS: ${{ steps.e2e-tests.outcome == 'success' && '0' || '1' }}
           WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           BASESCAN_API_KEY: ${{ secrets.BASESCAN_API_KEY }}
           TWITTER_HOST: ${{ secrets.TWITTER_HOST }}
