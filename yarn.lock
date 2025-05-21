@@ -1063,9 +1063,9 @@
     multiformats "^13.0.0"
     murmurhash3js-revisited "^3.0.0"
 
-"@neverknowerdev/smock@github:neverknowerdev/smock#dev":
+"@neverknowerdev/smock@https://github.com/neverknowerdev/smock#dev":
   version "2.5.1"
-  resolved "git+ssh://git@github.com/neverknowerdev/smock.git#7a19e875138339de4d7d63adcf9507bb135cbeb6"
+  resolved "https://github.com/neverknowerdev/smock#7a19e875138339de4d7d63adcf9507bb135cbeb6"
   dependencies:
     "@nomicfoundation/ethereumjs-util" "^9.0.4"
     diff "^5.2.0"
