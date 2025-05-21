@@ -1,6 +1,8 @@
 name: E2E Tests
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
   push:
     branches-ignore:
       - main
@@ -70,8 +72,14 @@ jobs:
             exit 1
           fi
 
+      - name: Debug Event Context
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          echo "PR number: ${{ github.event.pull_request.number }}"
+          echo "Ref: ${{ github.ref }}"
+
       - name: Comment PR
-        if: github.event_name == 'pull_request'
+        if: ${{ github.event.pull_request }}
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -91,7 +99,7 @@ jobs:
             
             comment += `### Full Test Output\n\`\`\`\n${testOutput}\n\`\`\``;
             
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
