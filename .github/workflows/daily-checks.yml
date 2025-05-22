@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Run E2E Tests
         id: e2e-tests
-        uses: ./.github/workflows/e2e-tests.yml
+        uses: GMCoin/GMCoin/.github/workflows/e2e-tests.yml@main
         with:
           branch: main
           run_coverage: true
