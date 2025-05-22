@@ -62,7 +62,7 @@ const config = {
         baseSepolia: {
             url: "https://sepolia.base.org", // RPC URL for Base Sepolia
             chainId: 84532, // Base Sepolia's chain ID
-            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET2_PRIVATE_KEY],
+            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_PRIVATE_KEY, process.env.BASE_TESTNET2_PRIVATE_KEY],
         },
         base: {
             url: "https://mainnet.base.org",

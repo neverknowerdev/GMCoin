@@ -1,17 +1,17 @@
-import {AutomateModule} from "@gelatonetwork/automate-sdk";
-import hre, {ethers} from "hardhat";
-import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
-import {SiweMessage} from "siwe";
+import { AutomateModule } from "@gelatonetwork/automate-sdk";
+import hre, { ethers } from "hardhat";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { SiweMessage } from "siwe";
 import axios from "axios";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
-import {encodeUserArgs, loadEnvVariables, setSecretsForW3f} from "./utils";
+import { encodeUserArgs, loadEnvVariables, setSecretsForW3f } from "./utils";
 
-const {w3f} = hre;
+const { w3f } = hre;
 
 async function main() {
-    const contractAddress = hre.network.name == "base" ? "0x26f36F365E5EB6483DF4735e40f87E96e15e0007" : "0x19bD68AD19544FFA043B2c3A5064805682783E91";
+    const contractAddress = hre.network.name == "base" ? "0x26f36F365E5EB6483DF4735e40f87E96e15e0007" : "0xc5Da77c0C7933Aef5878dF571a4DdC4F3e9090f7";
 
     const [owner, feeAddress] = await ethers.getSigners();
     //

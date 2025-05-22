@@ -7,7 +7,7 @@ async function main(): Promise<void> {
 
     const contractV3 = await ethers.getContractFactory("GMCoin");
 
-    const contractAddress = hre.network.name == "base" ? "0x26f36F365E5EB6483DF4735e40f87E96e15e0007" : "0x19bD68AD19544FFA043B2c3A5064805682783E91";
+    const contractAddress = hre.network.name == "base" ? "0x26f36F365E5EB6483DF4735e40f87E96e15e0007" : "0xc5Da77c0C7933Aef5878dF571a4DdC4F3e9090f7";
 
     const [owner] = await ethers.getSigners();
 

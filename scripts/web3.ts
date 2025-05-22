@@ -1,21 +1,23 @@
 const hre = require("hardhat");
 
-import {ethers} from "hardhat";
-import {run} from "hardhat";
+import { ethers } from "hardhat";
+import { run } from "hardhat";
 
 async function main(): Promise<void> {
 
-    if (hre.network.name !== "base") {
+    if (hre.network.name !== "baseSepolia") {
         throw new Error(`This script must be run on the 'baseSepolia' network. Current network: ${hre.network.name}`);
     }
 
-    const contractAddress = "0x26f36F365E5EB6483DF4735e40f87E96e15e0007";
+    const contractAddress = "0xc5Da77c0C7933Aef5878dF571a4DdC4F3e9090f7";
 
     const [owner, feeAddress,] = await ethers.getSigners();
     // Get the contract instance
     const contract = await ethers.getContractAt("GMCoin", contractAddress);
-    // const tx = await contract.continueMintingForADay();
-    // await tx.wait()
+    const tx = await contract.cancelAllTasks();
+    await tx.wait()
+
+    return;
 
     console.log('encoding twitter-worker event topics..');
     const twitterMintingProcessedEvent = contract.interface.getEvent('changedComplexity');

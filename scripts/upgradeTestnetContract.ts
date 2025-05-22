@@ -33,12 +33,12 @@ async function main(): Promise<void> {
     })
     console.log('successfully verified');
 
-    const proxyContract = await ethers.getContractAt("GMCoinTestnet", "0x19bD68AD19544FFA043B2c3A5064805682783E91");
+    const proxyContract = await ethers.getContractAt("GMCoinTestnet", "0xc5Da77c0C7933Aef5878dF571a4DdC4F3e9090f7");
 
 
-    console.log('forceTimelockUpdateTestnet..');
-    const tx = await proxyContract.forceTimeLockUpdateTestnet(deployedContractAddress);
-    await tx.wait()
+    // console.log('forceTimelockUpdateTestnet..');
+    // const tx = await proxyContract.forceTimeLockUpdateTestnet(deployedContractAddress);
+    // await tx.wait()
     console.log('upgradeToAndCall..');
     const tx2 = await proxyContract.upgradeToAndCall(deployedContractAddress, '0x');
     await tx2.wait();
