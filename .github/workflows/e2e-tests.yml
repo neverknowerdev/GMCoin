@@ -15,7 +15,16 @@ on:
         required: false
         default: true
         type: boolean
-
+    secrets:
+      TWITTER_VERIFICATION_ENV:
+        required: true
+      TWITTER_WORKER_ENV:
+        required: true
+      TWITTER_WORKER_PROD_ENV:
+        required: true
+      TEST_ENV:
+        required: true
+        
 concurrency:
   group: e2e-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
