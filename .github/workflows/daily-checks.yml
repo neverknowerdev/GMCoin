@@ -11,7 +11,7 @@ env:
 
 jobs:
   e2e-tests:
-    uses: GMCoin/GMCoin/.github/workflows/e2e-tests.yml@main
+    uses: ./.github/workflows/e2e-tests.yml
     with:
       branch: main
       run_coverage: true
