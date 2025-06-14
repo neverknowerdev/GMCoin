@@ -85,7 +85,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         let batchUploader = new BatchUploader(mintingDayTimestamp, storage, serverURLPrefix, serverApiKey);
         await batchUploader.loadStateFromStorage();
 
-        console.log('onRun!', mintingDayTimestamp);
         // console.log('received batches', BatchToString(initBatches));
 
         let {

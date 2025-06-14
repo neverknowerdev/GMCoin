@@ -33,6 +33,14 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     _disableInitializers();
   }
 
+  function isTwitterUserRegistered(string calldata userID) public view returns (bool) {
+    return mintingData.registeredWallets[mintingData.walletsByUserIDs[userID]];
+  }
+
+  function isWalletRegistered(address wallet) public view returns (bool) {
+    return mintingData.registeredWallets[wallet];
+  }
+
   function walletByTwitterUser(string calldata username) internal view returns (address) {
     return mintingData.walletsByUserIDs[username];
   }
@@ -80,7 +88,7 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
   event verifyTwitterByAuthCodeRequested(address wallet, string authCode, string tweetID, string userID);
 
   function requestTwitterVerificationThirdweb(string calldata userID) public {
-    require(mintingData.walletsByUserIDs[userID] == address(0), 'wallet already linked for that user');
+    require(mintingData.walletsByUserIDs[userID] == address(0), 'user has different wallet linked');
     require(mintingData.registeredWallets[_msgSender()] == false, 'wallet already linked for that user');
 
     emit verifyTwitterThirdwebRequested(_msgSender(), userID);
@@ -91,7 +99,7 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     string calldata userID,
     string calldata tweetID
   ) public {
-    require(mintingData.walletsByUserIDs[userID] == address(0), 'wallet already linked for that user');
+    require(mintingData.walletsByUserIDs[userID] == address(0), 'user has different wallet linked');
     require(mintingData.registeredWallets[_msgSender()] == false, 'wallet already linked for that user');
 
     emit verifyTwitterByAuthCodeRequested(_msgSender(), authCode, tweetID, userID);
@@ -100,27 +108,27 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
   function requestTwitterVerification(string calldata accessCodeEncrypted, string calldata userID) public {
     require(mintingData.walletsByUserIDs[userID] == address(0), 'wallet already linked for that user');
 
-    emit VerifyTwitterRequested(accessCodeEncrypted, userID, msg.sender);
+    emit VerifyTwitterRequested(accessCodeEncrypted, userID, _msgSender());
   }
 
-  function requestTwitterVerificationFromRelayer(
-    string calldata userID,
-    address wallet,
-    bytes calldata signature,
-    string calldata accessTokenEncrypted
-  ) public onlyServerRelayer {
-    address recoveredSigner = ECDSA.recover(
-      MessageHashUtils.toEthSignedMessageHash(bytes('I confirm that I want to verify my Twitter account with GMCoin')),
-      signature
-    );
-
-    require(recoveredSigner != address(0), 'empty signer');
-    require(recoveredSigner == wallet, 'wrong signer or signature');
-    require(mintingData.walletsByUserIDs[userID] == address(0), 'wallet already linked for that user');
-    require(!mintingData.registeredWallets[recoveredSigner], 'wallet already verified and linked to Twitter');
-
-    emit VerifyTwitterRequested(accessTokenEncrypted, userID, recoveredSigner);
-  }
+  //    function requestTwitterVerificationFromRelayer(
+  //        string calldata userID,
+  //        address wallet,
+  //        bytes calldata signature,
+  //        string calldata accessTokenEncrypted
+  //    ) public onlyServerRelayer {
+  //        address recoveredSigner = ECDSA.recover(
+  //            MessageHashUtils.toEthSignedMessageHash(bytes('I confirm that I want to verify my Twitter account with GMCoin')),
+  //            signature
+  //        );
+  //
+  //        require(recoveredSigner != address(0), 'empty signer');
+  //        require(recoveredSigner == wallet, 'wrong signer or signature');
+  //        require(mintingData.walletsByUserIDs[userID] == address(0), 'wallet already linked for that user');
+  //        require(!mintingData.registeredWallets[recoveredSigner], 'wallet already verified and linked to Twitter');
+  //
+  //        emit VerifyTwitterRequested(accessTokenEncrypted, userID, recoveredSigner);
+  //    }
 
   function twitterVerificationError(
     address wallet,

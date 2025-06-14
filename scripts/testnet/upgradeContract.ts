@@ -11,6 +11,7 @@ async function main(): Promise<void> {
         throw new Error(`This script must be run on the 'baseSepolia' network. Current network: ${hre.network.name}`);
     }
 
+    console.log('upgrading contract...');
     const contractAddress = "0xc5Da77c0C7933Aef5878dF571a4DdC4F3e9090f7";
 
     const [owner] = await ethers.getSigners();

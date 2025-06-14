@@ -47,6 +47,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     const { wallet, authCode, tweetID, userID } = event.args;
     console.log('tweetID', tweetID);
     console.log(`Verifying Twitter for address ${wallet}..`);
+    console.log('authCode', authCode);
 
     // Validate auth code format and wallet letters
     const authCodeValidation = validateAuthCode(authCode, wallet);
@@ -59,7 +60,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         return await returnError(verifierContract, userID, wallet, "TWITTER_GET_TWEET_URL not set in secrets");
     }
 
-    const headerName = await context.secrets.get("HEADER_NAME");
+    const headerName = await context.secrets.get("TWITTER_HEADER_NAME");
     if (!headerName) {
         return await returnError(verifierContract, userID, wallet, "HEADER_NAME not set in secrets");
     }
@@ -71,7 +72,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
     try {
         // Fetch tweet using Twitter API
-        const response = await ky.get(`${tweetFetchURL}${tweetID}`, {
+        const response = await ky.get(`https://${tweetFetchURL}?tweet_id=${tweetID}`, {
             headers: {
                 [headerName as string]: twitterBearer,
             },
@@ -122,7 +123,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
 async function returnError(contract: Contract, userID: string, userWallet: string, errorMsg: string): Promise<Web3FunctionResult> {
     const contractAddress = await contract.getAddress();
-    console.log('returnError here', contractAddress, errorMsg);
     return {
         canExec: true,
         callData: [
@@ -140,10 +140,10 @@ async function returnError(contract: Contract, userID: string, userWallet: strin
 
 function getTweetContentAndAuthorId(response: any): { tweetContent: string; authorId: string } | null {
     // Check for V1 format
-    if (response.data?.tweet_result?.result?.legacy) {
+    if (response.data?.tweet_results?.result?.legacy) {
         return {
-            tweetContent: response.data.tweet_result.result.legacy.full_text,
-            authorId: response.data.tweet_result.result.legacy.user_id_str
+            tweetContent: response.data.tweet_results.result.legacy.full_text,
+            authorId: response.data.tweet_results.result.legacy.user_id_str
         };
     }
 
@@ -178,7 +178,7 @@ function validateAuthCode(authCode: string, walletAddress: string): { isValid: b
 
     // Get the actual wallet letters from the wallet address
     const walletStartingLetterNumber = parseInt(walletStartingLetterNumberStr);
-    const actualWalletLetters = walletAddress.substring(walletStartingLetterNumber + 2, walletStartingLetterNumber + 10 + 2);
+    const actualWalletLetters = walletAddress.substring(walletStartingLetterNumber, walletStartingLetterNumber + 10);
 
     if (wallet10Letters.toLowerCase() !== actualWalletLetters.toLowerCase()) {
         return { isValid: false, error: "Wallet letters in auth code do not match the wallet address" };

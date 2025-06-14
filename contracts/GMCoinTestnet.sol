@@ -63,4 +63,31 @@ contract GMCoinTestnet is GMCoin {
     timeLockConfig.plannedNewImplementation = newImplementation;
     timeLockConfig.plannedNewImplementationTime = block.timestamp - 1 minutes;
   }
+
+  function triggerTwitterVerificationResult(
+    string calldata userID,
+    address wallet,
+    bool isVerified,
+    string calldata errorMessage
+  ) public onlyOwner {
+    emit TwitterVerificationResult(userID, wallet, isVerified, errorMessage);
+  }
+
+  function triggerVerifyTwitter(string calldata userID, address wallet) public onlyOwner {
+    mintingData.usersByWallets[wallet] = userID;
+    mintingData.registeredWallets[wallet] = true;
+
+    if (mintingData.walletsByUserIDs[userID] == address(0)) {
+      mintingData.walletsByUserIDs[userID] = wallet;
+      mintingData.allTwitterUsers.push(userID);
+      mintingData.userIndexByUserID[userID] = mintingData.allTwitterUsers.length - 1;
+
+      _mintForUserByIndex(
+        mintingData.allTwitterUsers.length - 1,
+        mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET
+      ); // mint welcome coins
+
+      emit TwitterVerificationResult(userID, wallet, true, '');
+    }
+  }
 }

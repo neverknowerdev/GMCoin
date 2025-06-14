@@ -303,4 +303,65 @@ describe("GelatoW3F Twitter Verification Thirdweb", function () {
         let resultWallet = await smartContract.getWalletByUserID(userID as any);
         expect(resultWallet).to.equal("0x0000000000000000000000000000000000000000");
     });
+
+    it('twitter-verification authCode real data', async function () {
+        const {
+            coinContract: smartContract,
+            owner,
+            feeAddr,
+            gelatoAddr,
+            otherAcc1: userAddr
+        } = await loadFixture(deployGMCoinWithProxy);
+
+        const userID = "1796129942104657921";
+        const walletAddress = "0x7Bf09e0B40D1A4be1ff703f0fd85B47B4e08758E";
+        const authCode = "GM21703F0FD85BF3";
+        const tweetID = "1933866787050770476";
+
+        const verifierAddress = await smartContract.getAddress();
+        console.log(`deployed GMCoin to ${verifierAddress}`);
+
+        // Generate event log for verifyTwitterByAuthCodeRequested
+        const log = await generateEventLog('verifyTwitterByAuthCodeRequested', [walletAddress, authCode, tweetID, userID]);
+
+        // Get the web3-function
+        let oracleW3f: Web3FunctionHardhat = w3f.get("twitter-verification-authcode");
+
+        let { result } = await oracleW3f.run("onRun", {
+            userArgs: {
+                verifierContractAddress: verifierAddress
+            },
+            log: log
+        });
+        result = result as Web3FunctionResultV2;
+
+        console.log('result', result);
+        expect(result.canExec).to.equal(true);
+
+        if (result.canExec) {
+            for (let calldata of result.callData) {
+                const tx = await gelatoAddr.sendTransaction({ to: calldata.to, data: calldata.data });
+                const receipt = await tx.wait();
+
+                // Check for TwitterVerificationResult event
+                const event = receipt?.logs.find(
+                    log => log.topics[0] === smartContract.interface.getEvent('TwitterVerificationResult').topicHash
+                );
+                expect(event).to.not.be.undefined;
+
+                const decodedEvent = smartContract.interface.parseLog({
+                    topics: event?.topics as string[],
+                    data: event?.data as string
+                });
+
+                console.log('decodedEvent', decodedEvent);
+                expect(decodedEvent?.args.isSuccess).to.be.true;
+                expect(decodedEvent?.args.userID).to.equal(userID);
+                expect(decodedEvent?.args.wallet).to.equal(walletAddress);
+            }
+        }
+
+        let resultWallet = await smartContract.getWalletByUserID(userID as any);
+        expect(resultWallet).to.equal(walletAddress);
+    });
 }); 
