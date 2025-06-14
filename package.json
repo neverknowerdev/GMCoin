@@ -8,7 +8,7 @@
     "test-filter": "hardhat test --grep 'filterUserTweets'"
   },
   "devDependencies": {
-    "@neverknowerdev/smock": "github:neverknowerdev/smock#dev",
+    "@neverknowerdev/smock": "https://github.com/neverknowerdev/smock.git#dev",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.8",
     "@nomicfoundation/hardhat-ethers": "^3.0.8",
     "@nomicfoundation/hardhat-ignition": "^0.15.5",
@@ -39,7 +39,7 @@
     "@ceramicnetwork/http-client": "^6.4.0",
     "@ceramicnetwork/stream-tile": "^6.4.0",
     "@gelatonetwork/automate-sdk": "^3.0.2",
-    "@gelatonetwork/web3-functions-sdk": "github:neverknowerdev/web3-functions-sdk#hardfix_local",
+    "@gelatonetwork/web3-functions-sdk": "https://github.com/neverknowerdev/web3-functions-sdk.git#hardfix_local",
     "@noble/ciphers": "1.2.0",
     "@openzeppelin/contracts": "^5.0.2",
     "@openzeppelin/contracts-upgradeable": "^5.0.2",
