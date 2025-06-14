@@ -45,10 +45,13 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          yarn test ${{ github.event_name == 'workflow_dispatch' && inputs.run_coverage && '--coverage' || '' }} --testResultsProcessor=jest-junit
+          yarn test ${{ github.event_name == 'workflow_dispatch' && inputs.run_coverage && '--coverage' || '' }}
         env:
           JEST_JUNIT_OUTPUT_DIR: ./test-results
           JEST_JUNIT_OUTPUT_NAME: junit.xml
+
+      - name: Install mocha-junit-reporter
+        run: yarn add --dev mocha-junit-reporter
 
       - name: Publish Test Results
         uses: mikepenz/action-junit-report@v4
