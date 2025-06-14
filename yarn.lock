@@ -1165,9 +1165,9 @@
     ethers "^5.5.2"
     siwe "^1.1.6"
 
-"@gelatonetwork/web3-functions-sdk@github:neverknowerdev/web3-functions-sdk#hardfix_local":
+"@gelatonetwork/web3-functions-sdk@https://github.com/neverknowerdev/web3-functions-sdk.git#hardfix_local":
   version "2.4.4"
-  resolved "git+ssh://git@github.com/neverknowerdev/web3-functions-sdk.git#27bf64eb0347d9ccc992b4bfd6fbbad737aad90d"
+  resolved "https://github.com/neverknowerdev/web3-functions-sdk.git#27bf64eb0347d9ccc992b4bfd6fbbad737aad90d"
   dependencies:
     "@ethersproject/address" "^5.7.0"
     "@ethersproject/contracts" "^5.7.0"
@@ -1326,9 +1326,9 @@
     multiformats "^13.0.0"
     murmurhash3js-revisited "^3.0.0"
 
-"@neverknowerdev/smock@github:neverknowerdev/smock#dev":
+"@neverknowerdev/smock@https://github.com/neverknowerdev/smock.git#dev":
   version "2.5.1"
-  resolved "git+ssh://git@github.com/neverknowerdev/smock.git#7a19e875138339de4d7d63adcf9507bb135cbeb6"
+  resolved "https://github.com/neverknowerdev/smock.git#7a19e875138339de4d7d63adcf9507bb135cbeb6"
   dependencies:
     "@nomicfoundation/ethereumjs-util" "^9.0.4"
     diff "^5.2.0"
