@@ -36,6 +36,14 @@ jobs:
       - name: Install dependencies
         run: yarn install --frozen-lockfile
         
+      - name: Validate IPFS tweets
+        id: validate-ipfs
+        env:
+          RPC_URL: ${{ secrets.RPC_URL }}
+          BASESCAN_API_KEY: ${{ secrets.BASESCAN_API_KEY }}
+        run: node .github/workflows/validate-ipfs-tweets.js
+        continue-on-error: true
+        
       - name: Check smart contract events
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
@@ -48,4 +56,5 @@ jobs:
           TWITTER_HOST: ${{ secrets.TWITTER_HOST }}
           TWITTER_API_KEY: ${{ secrets.TWITTER_API_KEY }}
           TWITTER_SERVER_NAME: ${{ secrets.TWITTER_SERVER_NAME }}
+          IPFS_VALIDATION_STATUS: ${{ steps.validate-ipfs.outcome == 'success' && '0' || '1' }}
         run: node .github/workflows/check-contract.js 

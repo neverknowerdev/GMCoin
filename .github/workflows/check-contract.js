@@ -1,4 +1,4 @@
-const {ethers} = require('ethers');
+const { ethers } = require('ethers');
 const Interface = ethers.Interface;
 
 async function sleep(ms) {
@@ -349,7 +349,7 @@ ${tweetsEvents.length === 0 ? '⚠️ Warning: No TweetsUploadedToIPFS events in
         const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`;
         const response = await fetch(telegramUrl, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 chat_id: process.env.TELEGRAM_CHAT_ID,
                 text: message,
