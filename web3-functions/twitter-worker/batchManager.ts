@@ -1,7 +1,8 @@
-import {Batch} from "./consts"; // Assuming w3fStorage is defined in consts
-import {Storage} from "./storage";
-import {SmartContractConnector} from "./smartContractConnector";
-import {TwitterRequester} from "./twitterRequester";
+import { Batch } from "./consts"; // Assuming w3fStorage is defined in consts
+import { Storage } from "./storage";
+import { SmartContractConnector } from "./smartContractConnector";
+import { TwitterRequester } from "./twitterRequester";
+import { Logger } from "./cloudwatch";
 
 const MAX_TWITTER_SEARCH_QUERY_LENGTH = 512;
 const KEYWORD = "gm";
@@ -11,15 +12,16 @@ export class BatchManager {
     private mintingDayTimestamp: number;
     private concurrencyLimit: number;
     private contractConnector: SmartContractConnector;
-
+    private logger: Logger;
     private queryList: string[] = [];
     private userIndexByUsername: Map<string, number> = new Map();
 
-    constructor(storage: Storage, contractConnector: SmartContractConnector, mintingDayTimestamp: number, concurrencyLimit: number) {
+    constructor(logger: Logger, storage: Storage, contractConnector: SmartContractConnector, mintingDayTimestamp: number, concurrencyLimit: number) {
         this.storage = storage;
         this.mintingDayTimestamp = mintingDayTimestamp;
         this.concurrencyLimit = concurrencyLimit;
         this.contractConnector = contractConnector;
+        this.logger = logger;
     }
 
     async generateNewBatches(requester: TwitterRequester, mintingDayTimestamp: number, batches: Batch[]): Promise<{
@@ -32,14 +34,19 @@ export class BatchManager {
             .sort((a, b) => Number(a.startIndex - b.startIndex));
 
         for (let i = 0; i < batches.length; i++) {
+            this.logger.info(`restoreBatch`, i, batches[i]);
             const cur = batches[i];
 
             // cache userIDs for batches
             // fetch them here
             const batchUsernames = await this.storage.getUsernamesForBatch(cur.startIndex, cur.endIndex);
+            this.logger.info(`batchUsernames`, batchUsernames.length, batchUsernames);
+
             const generatedQuery = createUserQueryStringStatic(batchUsernames, mintingDayTimestamp, KEYWORD);
             this.queryList.push(generatedQuery);
-            fillUserIndexByUsernames(this.userIndexByUsername, batchUsernames, cur.startIndex);
+
+            this.logger.info(`userIndexByUsername`, batchUsernames.length, cur.startIndex, batchUsernames);
+            fillUserIndexByUsernames(this.logger, this.userIndexByUsername, batchUsernames, cur.startIndex);
         }
 
         if (batches.length < this.concurrencyLimit) {
@@ -49,11 +56,16 @@ export class BatchManager {
             const maxEndIndex = await this.storage.getMaxEndIndex();
             let startIndex = maxEndIndex;
 
+            this.logger.info(`generateNewBatches`, newCursorsCount);
             let remainingUsernames = await this.contractConnector.getNextUsernames(requester, startIndex, newCursorsCount * 50);
+            this.logger.info(`remainingUsernames fetched from smart-contract`, remainingUsernames.length, remainingUsernames);
+
             for (let i = 0; i < newCursorsCount; i++) {
                 if (remainingUsernames.length == 0) {
                     break;
                 }
+
+                this.logger.info(`generateNewBatches`, i, remainingUsernames.length);
 
                 const {
                     queryString,
@@ -83,11 +95,13 @@ export class BatchManager {
 
                 const batchUsernames = remainingUsernames.slice(0, recordInsertedCount);
 
-                await fillUserIndexByUsernames(this.userIndexByUsername, batchUsernames, newBatch.startIndex);
+                this.logger.info(`batchUsernames`, batchUsernames.length, newBatch.startIndex, batchUsernames);
+                fillUserIndexByUsernames(this.logger, this.userIndexByUsername, batchUsernames, newBatch.startIndex);
 
                 await this.storage.setUsernamesForBatch(newBatch.startIndex, newBatch.endIndex, batchUsernames);
 
                 remainingUsernames = remainingUsernames.slice(recordInsertedCount);
+                this.logger.info(`remainingUsernames final`, remainingUsernames.length, remainingUsernames);
             }
 
             await this.storage.saveRemainingUsernames(remainingUsernames);
@@ -101,7 +115,7 @@ export class BatchManager {
     }
 }
 
-function createUserQueryString(userIDs: string[], mintingDayTimestamp: number, maxLength: number, queryPrefix: string): {
+function createUserQueryString(usernames: string[], mintingDayTimestamp: number, maxLength: number, queryPrefix: string): {
     queryString: string;
     recordInsertedCount: number
 } {
@@ -110,9 +124,14 @@ function createUserQueryString(userIDs: string[], mintingDayTimestamp: number, m
     let queryString = `${queryPrefix} since:${sinceDayStr} until:${untilDayStr} AND (`;
     let recordInsertedCount = 0;
 
-    for (let i = 0; i < userIDs.length; i++) {
-        const userID = userIDs[i];
-        const nextPart = `from:${userID}`;
+    for (let i = 0; i < usernames.length; i++) {
+        const username = usernames[i];
+        if (username == '') {
+            recordInsertedCount++;
+            continue;
+        }
+
+        const nextPart = `from:${username}`;
 
         if (queryString.length + nextPart.length + 1 + 4 > maxLength) {
             break;
@@ -130,18 +149,22 @@ function createUserQueryString(userIDs: string[], mintingDayTimestamp: number, m
     queryString += ')';
 
     // Close the final query string with parentheses
-    return {queryString, recordInsertedCount};
+    return { queryString, recordInsertedCount };
 }
 
-function createUserQueryStringStatic(userIDs: string[], mintingDayTimestamp: number, queryPrefix: string): string {
+function createUserQueryStringStatic(usernames: string[], mintingDayTimestamp: number, queryPrefix: string): string {
     const untilDayStr = formatDay(mintingDayTimestamp, 1);
     const sinceDayStr = formatDay(mintingDayTimestamp, 0);
     let queryString = `${queryPrefix} since:${sinceDayStr} until:${untilDayStr} AND (`;
-    for (let i = 0; i < userIDs.length; i++) {
+    for (let i = 0; i < usernames.length; i++) {
+        if (usernames[i] == '') {
+            continue;
+        }
+
         if (i > 0) {
             queryString += ` OR `;
         }
-        queryString += `from:${userIDs[i]}`;
+        queryString += `from:${usernames[i]}`;
     }
 
     queryString += `)`;
@@ -161,8 +184,13 @@ function formatDay(timestamp: number, addDays: number): string {
     return formatter.format(date);
 }
 
-function fillUserIndexByUsernames(userIndexByUsernames: Map<string, number>, batchUsernames: string[], startIndex: number) {
+function fillUserIndexByUsernames(logger: Logger, userIndexByUsernames: Map<string, number>, batchUsernames: string[], startIndex: number) {
     for (let i = 0; i < batchUsernames.length; i++) {
+        logger.info(`fillUserIndexByUsernames`, batchUsernames[i], startIndex + i);
+        if (batchUsernames[i] == '') {
+            continue;
+        }
+
         userIndexByUsernames.set(batchUsernames[i], startIndex + i);
     }
 }

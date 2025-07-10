@@ -1,7 +1,7 @@
 const hre = require("hardhat");
 
-import {ethers, upgrades} from "hardhat";
-import {run} from "hardhat";
+import { ethers, upgrades } from "hardhat";
+import { run } from "hardhat";
 
 async function main(): Promise<void> {
     const contractAddress = "0x26f36F365E5EB6483DF4735e40f87E96e15e0007";
@@ -10,8 +10,11 @@ async function main(): Promise<void> {
 
     // Get the contract instance
     const contract = await ethers.getContractAt("GMCoin", contractAddress);
-    const resp = await contract.startMinting();
-    console.log('resp', resp);
+    const tx = await contract.continueMintingForADay();
+    await tx.wait();
+
+    console.log('tx', tx);
+    console.log('Done');
 }
 
 // Execute the main function and handle potential errors

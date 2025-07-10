@@ -41,6 +41,10 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     return mintingData.registeredWallets[wallet];
   }
 
+  function getWalletByUserID(string calldata username) public view returns (address) {
+    return walletByTwitterUser(username);
+  }
+
   function walletByTwitterUser(string calldata username) internal view returns (address) {
     return mintingData.walletsByUserIDs[username];
   }

@@ -67,7 +67,7 @@ const config = {
         base: {
             url: "https://mainnet.base.org",
             chainId: 8453,
-            accounts: process.env.CI ? [] : [process.env.BASE_PROD_PRIVATE_KEY, process.env.BASE_PROD_FEE_PRIVATE_KEY],
+            accounts: process.env.CI ? [] : [process.env.BASE_PROD_PRIVATE_KEY, process.env.BASE_PROD_FEE_PRIVATE_KEY, process.env.BASE_FARCASTER_ACC_PRIVATE_KEY],
         },
         polygon: {
             url: "https://polygon-bor-rpc.publicnode.com",
@@ -91,6 +91,11 @@ const config = {
     mocha: {
         timeout: 100000000,
         parallel: false,
+        reporter: 'mocha-junit-reporter',
+        reporterOptions: {
+            mochaFile: './test-results/junit.xml',
+            toConsole: true
+        }
     },
 };
 

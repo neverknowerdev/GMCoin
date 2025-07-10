@@ -43,10 +43,6 @@ contract GMCoinTestnet is GMCoin {
     }
   }
 
-  function getWalletByUserID(string calldata username) public view returns (address) {
-    return walletByTwitterUser(username);
-  }
-
   function getCurrentComplexity() public view returns (uint256) {
     return mintingConfig.COINS_MULTIPLICATOR;
   }

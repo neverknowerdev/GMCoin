@@ -175,12 +175,10 @@ describe("GelatoW3F", function () {
 
         const userArgs = {
             contractAddress: verifierAddress,
-            searchPath: "/Search",
-            tweetLookupURL: "http://localhost:8118/tweet-lookup/",
-            // convertToUsernamesPath: "/convert-ids-to-usernames/",
             concurrencyLimit: concurrencyLimit,
             twitterOptimizedServerHost: "http://localhost:8118",
             serverURLPrefix: 'http://localhost:8118/',
+            tweetLookupURL: "http://localhost:8118/tweet-lookup/",
         };
         //
         // const currentTimestamp = await time.latest();
@@ -1002,7 +1000,7 @@ function generateResponseForTweetLookup(tweetMap: Map<string, Tweet>, tweetIDs: 
             }
         };
 
-        console.log("lookupTweet", tweet.author_id, tweetID, res);
+        // console.log("lookupTweet", tweet.author_id, tweetID, res);
 
         response.data.push(res);
     }

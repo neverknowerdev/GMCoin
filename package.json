@@ -28,6 +28,7 @@
     "hardhat": "^2.22.19",
     "http-request-mock": "^2.0.2",
     "lodash": "^4.17.21",
+    "mocha-junit-reporter": "^2.2.1",
     "solidity-coverage": "^0.8.13",
     "ts-node": "^10.9.2",
     "twitter-api-v2": "^1.19.0",
@@ -36,6 +37,7 @@
   },
   "dependencies": {
     "@3id/connect": "^0.4.1",
+    "@aws-sdk/client-cloudwatch-logs": "^3.840.0",
     "@ceramicnetwork/http-client": "^6.4.0",
     "@ceramicnetwork/stream-tile": "^6.4.0",
     "@gelatonetwork/automate-sdk": "^3.0.2",
@@ -52,6 +54,7 @@
     "crypto-browserify": "^3.12.1",
     "dotenv": "^16.4.7",
     "ethers": "6",
+    "hardhat-gas-reporter": "^2.3.0",
     "ky": "^0.33.3",
     "p-limit": "^3.1.0",
     "siwe": "^2.3.2",

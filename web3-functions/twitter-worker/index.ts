@@ -8,12 +8,65 @@ import { BatchManager } from "./batchManager";
 import { TwitterRequester } from "./twitterRequester";
 import { SmartContractConnector } from "./smartContractConnector";
 import { BatchUploader } from "./batchUploader";
-import ky from "ky";
+import { CloudwatchLogger } from "./cloudwatch";
+
 
 const KEYWORD = "gm";
 const verifyTweetBatchSize = 300;
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
+    console.log('onRun');
+
+    const awsAccessKeyID = await context.secrets.get("AWS_ACCESS_KEY_ID");
+    if (!awsAccessKeyID) {
+        return { canExec: false, message: `Missing AWS_ACCESS_KEY_ID environment variable` };
+    }
+
+    const awsSecretAccessKey = await context.secrets.get("AWS_SECRET_ACCESS_KEY");
+    if (!awsSecretAccessKey) {
+        return { canExec: false, message: `Missing AWS_SECRET_ACCESS_KEY environment variable` };
+    }
+
+    const env = await context.secrets.get("ENV") || 'local';
+
+    const logStreamName = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+
+    const logGroupName = env === 'mainnet' ? `TwitterWorkerGelatoLogs-prod` : `TwitterWorkerGelatoLogs`;
+
+    const logger = new CloudwatchLogger({
+        region: 'eu-central-1',
+        accessKeyId: awsAccessKeyID,
+        secretAccessKey: awsSecretAccessKey,
+        logGroupName: logGroupName,
+        logStreamName: logStreamName,
+        bufferSize: 100,
+        flushInterval: 0,
+        enabled: env !== 'local'
+    });
+
+    try {
+        const result = await executeTwitterWorker(logger, context);
+        if (!result.canExec) {
+            logger.error(`result ${JSON.stringify(result)}`);
+        } else {
+            logger.info(`result.canExec true`);
+        }
+
+        await logger.flushAndSend(1);
+        return result;
+    } catch (error: any) {
+        logger.error(`Error in onRun: ${error}`);
+        await logger.flushAndSend(1);
+        return {
+            canExec: false,
+            message: 'Unexpected error in onRun: ' + error.message,
+        };
+    }
+});
+
+async function executeTwitterWorker(logger: CloudwatchLogger, context: Web3FunctionEventContext): Promise<Web3FunctionResult> {
+    logger.info('Starting Twitter worker execution');
+
     // Get event log from Web3FunctionEventContext
     const { log, userArgs, multiChainProvider, storage: w3fStorage } = context;
 
@@ -45,7 +98,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     }
 
     try {
-        const provider = multiChainProvider.default() as ContractRunner;
+        const provider = multiChainProvider.default() as unknown as ContractRunner;
         const smartContract = new Contract(
             userArgs.contractAddress as string,
             ContractABI,
@@ -71,21 +124,21 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             twitterSearchByQueryURL: `${twitterOptimizedServerHost}/Search`,
         });
 
-        let contractConnector = new SmartContractConnector(provider, smartContract, storage);
+        let contractConnector = new SmartContractConnector(provider, smartContract, storage, logger);
 
-        let batchManager = new BatchManager(storage, contractConnector, mintingDayTimestamp, CONCURRENCY_LIMIT);
+        let batchManager = new BatchManager(logger, storage, contractConnector, mintingDayTimestamp, CONCURRENCY_LIMIT);
 
-        const initBatches = eventBatches.map(item => ({
+        const initBatches = eventBatches.map((item: any) => ({
             startIndex: item.startIndex.toNumber(),
             endIndex: item.endIndex.toNumber(),
             nextCursor: item.nextCursor,
             errorCount: item.errorCount,
         }));
 
-        let batchUploader = new BatchUploader(mintingDayTimestamp, storage, serverURLPrefix, serverApiKey);
+        let batchUploader = new BatchUploader(mintingDayTimestamp, storage, serverURLPrefix, serverApiKey, logger);
         await batchUploader.loadStateFromStorage();
 
-        // console.log('received batches', BatchToString(initBatches));
+        logger.info(`received batches:`, BatchToString(initBatches));
 
         let {
             batchesToProcess,
@@ -93,7 +146,9 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             userIndexByUsername
         } = await batchManager.generateNewBatches(twitterRequester, mintingDayTimestamp, initBatches);
 
-        // console.log('generateNewBatches', batchesToProcess.length, BatchToString(batchesToProcess));
+        logger.info(`userIndexByUsername size:`, userIndexByUsername.size, `content:`, userIndexByUsername);
+        logger.info(`generateNewBatches count:`, batchesToProcess.length, `batches:`, BatchToString(batchesToProcess));
+        logger.info(`queryList count:`, queryList.length, `queries:`, queryList);
 
         let transactions: any[] = [];
 
@@ -102,6 +157,8 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         let tweetsToVerify: Tweet[] = await storage.getTweetsToVerify();
 
         if (batchesToProcess.length > 0) { // process batches
+            logger.info(`Processing`, batchesToProcess.length, `batches`);
+
             // Processing tweets here..
             const {
                 tweets,
@@ -111,8 +168,8 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
             batchesToProcess = batches;
 
-            // console.log('batchesToProcess', batchesToProcess.length, 'errorBatches', errorBatches.length);
-            console.log('tweets fetched', tweets.length);
+            logger.info(`batchesToProcess:`, batchesToProcess.length, `errorBatches:`, errorBatches.length);
+            logger.info(`Fetched`, tweets.length, `tweets`);
 
             let minLikesCount = tweetsToVerify.length > 0 ? tweetsToVerify[tweetsToVerify.length - 1].likesCount : 0;
             let isNewTweetsToVerify = false;
@@ -121,6 +178,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 if (foundKeyword == "") {
                     continue;
                 }
+                logger.info(`tweets[i] ${JSON.stringify(tweets[i])}`);
 
                 // add to verifyTweets only tweets with more that 100 likes and more that the last element(with least likes) in tweetsToVerify array
                 if (tweets[i].likesCount > 100 && tweets[i].likesCount > minLikesCount) {
@@ -143,7 +201,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 batchUploader.add(tweets[i], processingType);
 
                 if (processingType == TweetProcessingType.Skipped) {
-                    console.log('skipping tweet', tweets[i].tweetID, tweets[i].tweetContent);
+                    logger.warn(`skipping tweet ${tweets[i].tweetID} ${tweets[i].tweetContent}`);
                     continue;
                 }
 
@@ -204,7 +262,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             }
             await batchUploader.saveStateToStorage();
 
-            console.log('sortedResults', sortedResults.length);
+            logger.info(`sortedResults ${JSON.stringify(sortedResults)}`);
 
             // retry errored batches that has less that 3 retries
             const batchesToRetry = errorBatches.filter((b) => b.errorCount < 3);
@@ -225,7 +283,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 })
             }
             if (errorBatchesToLog.length > 0) {
-                console.log('logErrorBatches', errorBatches);
+                logger.info(`logErrorBatches ${errorBatches.length}`);
                 transactions.push({
                     to: userArgs.contractAddress as string,
                     data: smartContract.interface.encodeFunctionData("logErrorBatches", [
@@ -235,7 +293,8 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 })
             }
 
-            console.log('sending txs..', transactions.length);
+            logger.info(`sending txs.. ${transactions.length}`);
+            logger.info(`transactions ${JSON.stringify(transactions)}`);
             if (transactions.length > 0) {
                 return {
                     canExec: true,
@@ -250,13 +309,13 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         }
         // minting finished
         if (batchesToProcess.length == 0) {
-            console.log('mintingFinished');
+            logger.info('mintingFinished');
 
             let transactions: Web3FunctionResultCallData[] = [];
             try {
                 if (tweetsToVerify.length > 0) {
                     const verifiedTweets = await twitterRequester.fetchTweetsByIDs(tweetsToVerify);
-                    console.log('verifiedTweets', verifiedTweets.length);
+                    logger.info(`verifiedTweets ${verifiedTweets.length}`);
                     for (let i = 0; i < verifiedTweets.length; i++) {
                         const result = UserResults.get(verifiedTweets[i].userIndex) || { ...defaultResult };
 
@@ -289,7 +348,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 }
             } catch (error) {
                 // Handle errors for this batch
-                console.error('Error fetching batch for verifyTweets:', error);
+                logger.error(`Error fetching batch for verifyTweets: ${error}`);
 
                 return {
                     canExec: false,
@@ -298,7 +357,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             }
 
             const finalHash = batchUploader.getRunningHash();
-            console.log('finalHash', finalHash);
+            logger.info(`finalHash ${finalHash}`);
 
             const uploaded = await batchUploader.uploadToServer();
             if (!uploaded) {
@@ -321,6 +380,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 ]),
             });
 
+            logger.info(`transactions to send ${JSON.stringify(transactions)}`);
 
             return {
                 canExec: true,
@@ -328,19 +388,24 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             }
         }
 
+        return {
+            canExec: false,
+            message: 'No batches to process and minting not finished',
+        };
+
     } catch (error: any) {
         if (error.code === 'CALL_EXCEPTION' && error.reason) {
-            console.log(error);
-            console.error(`transaction reverted: ${error.reason}`);
+            logger.error(error);
+            logger.error(`transaction reverted: ${error.reason}`);
         }
 
-        console.error('Error in twitter-worker:', error);
+        logger.error(`Error in twitter-worker: ${error}`);
         return {
             canExec: false,
             message: 'Unexpected error in twitter-worker: ' + error.message,
         };
     }
-});
+}
 
 function calculateTweetByKeyword(result: Result, likesCount: number, keyword: string): TweetProcessingType {
     let processingType = TweetProcessingType.Skipped;

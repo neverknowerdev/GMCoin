@@ -13,7 +13,7 @@ async function main() {
         // await setupTwitterVerification(contractAddress, owner);
         // console.log('setting up twitter verification thirdweb..', owner.address);
         // await setupTwitterVerificationThirdweb(contractAddress, owner);
-        // await setupTwitterVerificationAuthcode(contractAddress, owner, feeAddress);
+        // await setupTwitterVerificationAuthcode(contractAddress, owner);
         await setupTwitterWorker(contractAddress, owner);
         // await setupDailyFunction(contractAddress);
 
