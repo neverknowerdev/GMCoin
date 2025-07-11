@@ -10,10 +10,22 @@ import { SmartContractConnector } from "./smartContractConnector";
 import { BatchUploader } from "./batchUploader";
 import { CloudwatchLogger } from "./cloudwatch";
 
-
 const KEYWORD = "gm";
 const verifyTweetBatchSize = 300;
 
+Web3Function.onFail(async (context: Web3FunctionFailContext) => {
+    const { reason } = context;
+
+    if (reason === "ExecutionReverted") {
+        console.log(`onFail: ${reason} txHash: ${context.transactionHash}`);
+    } else if (reason === "SimulationFailed") {
+        console.log(
+            `onFail: ${reason} callData: ${JSON.stringify(context.callData)}`
+        );
+    } else {
+        console.log(`onFail: ${reason}`);
+    }
+});
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
     console.log('onRun');
 

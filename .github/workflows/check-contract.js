@@ -1,4 +1,4 @@
-const {ethers} = require('ethers');
+const { ethers } = require('ethers');
 const Interface = ethers.Interface;
 
 async function sleep(ms) {
@@ -83,7 +83,7 @@ async function getTwitterUsernames(userIds) {
 }
 
 
-async function getTopUsersByTransfers(transferEvents, contractAddress) {
+async function getTopUsersByTransfers(transferEvents, contractAddress, limit = 10) {
     const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
     const contract = new ethers.Contract(contractAddress, [
         'function userByWallet(address wallet) view returns (string)'
@@ -112,7 +112,7 @@ async function getTopUsersByTransfers(transferEvents, contractAddress) {
     // Sort wallets by transfer amount (descending)
     const sortedWallets = Array.from(walletTransfers.entries())
         .sort((a, b) => Number(b[1] - a[1]))
-        .slice(0, 10);
+        .slice(0, limit);
 
     // Get user IDs for each wallet (throttled)
     const userIds = [];
@@ -320,7 +320,7 @@ async function main() {
         const testStatus = process.env.TEST_STATUS === '0' ? '✅' : '❌';
         const workflowUrl = process.env.WORKFLOW_URL || '';
 
-        const topUsers = await getTopUsersByTransfers(transferEvents, contractAddress);
+        const topUsers = await getTopUsersByTransfers(transferEvents, contractAddress, 20);
 
         // Prepare message
         const message = `
@@ -349,7 +349,7 @@ ${tweetsEvents.length === 0 ? '⚠️ Warning: No TweetsUploadedToIPFS events in
         const telegramUrl = `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`;
         const response = await fetch(telegramUrl, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 chat_id: process.env.TELEGRAM_CHAT_ID,
                 text: message,

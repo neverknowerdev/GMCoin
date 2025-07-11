@@ -10,6 +10,7 @@ async function main(): Promise<void> {
 
     // Get the contract instance
     const contract = await ethers.getContractAt("GMCoin", contractAddress);
+
     const tx = await contract.continueMintingForADay();
     await tx.wait();
 

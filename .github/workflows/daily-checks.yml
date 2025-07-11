@@ -10,50 +10,39 @@ env:
   TREASURY_ADDRESS: '0xBADfB4AdCF5ADB939B25fba58db544860c45A1e5'
 
 jobs:
+  e2e-tests:
+    uses: ./.github/workflows/e2e-tests.yml
+    with:
+      branch: main
+      run_coverage: true
+      # Pass env variables as inputs
+    secrets: inherit
+
+    
   check-contract:
     runs-on: ubuntu-latest
-    
+    needs: e2e-tests
+    if: always()
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: 'yarn'
 
       - name: Install dependencies
-        run: |
-          yarn install --frozen-lockfile
-
-      - name: Create environment files
-        run: |
-          printf "%s" "${{ secrets.TWITTER_VERIFICATION_ENV }}" > ./web3-functions/twitter-verification/.env
-          printf "%s" "${{ secrets.TWITTER_WORKER_ENV }}" > ./web3-functions/twitter-worker/.env
-          printf "%s" "${{ secrets.TWITTER_WORKER_PROD_ENV }}" > ./web3-functions/twitter-worker/prod.env
-          printf "%s" "${{ secrets.TEST_ENV }}" > ./test/.env
-
-      - name: Run tests
-        id: tests
-        continue-on-error: true
-        run: |
-          yarn test:ci > test-results.txt 2>&1 || true
-          echo "status=$?" >> $GITHUB_OUTPUT
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-results
-          path: test-results.txt
-          if-no-files-found: error
-
+        run: yarn install --frozen-lockfile
+        
       - name: Check smart contract events
         env:
           RPC_URL: ${{ secrets.RPC_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TWITTER_BEARER_TOKEN: ${{ secrets.TWITTER_BEARER_TOKEN }}
-          TEST_STATUS: ${{ steps.tests.outputs.status }}
+          TEST_STATUS: ${{ needs.e2e-tests.result == 'success' && '0' || '1' }}
           WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           BASESCAN_API_KEY: ${{ secrets.BASESCAN_API_KEY }}
           TWITTER_HOST: ${{ secrets.TWITTER_HOST }}
