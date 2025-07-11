@@ -22,9 +22,8 @@ interface ThirdwebUserDetails {
 }
 
 const ContractABI = [
-    "function verifyTwitter(string calldata userID, address wallet, bool isSubscribed) public",
+    "function verifyTwitter(string calldata userID, address wallet) public",
     "function twitterVerificationError(address wallet, string calldata userID, string calldata errorMsg) public",
-    "event verifyTwitterThirdwebRequested(address wallet, string userID)",
 ];
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
@@ -116,7 +115,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                         data: verifierContract.interface.encodeFunctionData("verifyTwitter", [
                             userID,
                             wallet,
-                            false,
                         ]),
                     },
                 ],

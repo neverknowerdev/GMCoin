@@ -5,7 +5,7 @@ import { Web3FunctionResult } from "@gelatonetwork/web3-functions-sdk/types";
 import ky, { HTTPError } from "ky";
 
 const VerifierContractABI = [
-    "function verifyTwitter(string calldata userID, address wallet, bool isSubscribed) public",
+    "function verifyTwitter(string calldata userID, address wallet) public",
     "function twitterVerificationError(address wallet, string calldata userID, string calldata errorMsg) public",
     "event verifyTwitterByAuthCodeRequested(address wallet, string authCode, string tweetID, string userID)",
 ];
@@ -51,6 +51,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
     // Validate auth code format and wallet letters
     const authCodeValidation = validateAuthCode(authCode, wallet);
+    console.log('authCodeValidation', authCodeValidation);
     if (!authCodeValidation.isValid) {
         return await returnError(verifierContract, userID, wallet, authCodeValidation.error || "Invalid auth code");
     }
@@ -70,18 +71,29 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         return await returnError(verifierContract, userID, wallet, "TWITTER_BEARER not set in secrets");
     }
 
+    console.log('tweetFetchURL', tweetFetchURL);
+    console.log('headerName', headerName);
+    console.log('twitterBearer', twitterBearer);
+
+    console.log('here');
+
     try {
         // Fetch tweet using Twitter API
-        const response = await ky.get(`https://${tweetFetchURL}?tweet_id=${tweetID}`, {
+        const response = await ky.get(`${tweetFetchURL}?tweet_id=${tweetID}`, {
             headers: {
                 [headerName as string]: twitterBearer,
             },
         }).json<any>();
 
+        console.log('response', response);
+
         const tweetData = getTweetContentAndAuthorId(response);
         if (!tweetData) {
+            console.log('Failed to parse tweet data');
             return await returnError(verifierContract, userID, wallet, "Failed to parse tweet data");
         }
+
+        console.log('tweetData', tweetData);
 
         const { tweetContent, authorId } = tweetData;
         console.log('Tweet content:', tweetContent);
@@ -104,13 +116,13 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                     to: userArgs.verifierContractAddress as string,
                     data: verifierContract.interface.encodeFunctionData("verifyTwitter", [
                         userID,
-                        wallet,
-                        false,
+                        wallet
                     ]),
                 },
             ],
         };
     } catch (error: any) {
+        console.log('error', error);
         if (error instanceof HTTPError) {
             // Attempt to read the error response as JSON
             const errorBody = await error.response.json();

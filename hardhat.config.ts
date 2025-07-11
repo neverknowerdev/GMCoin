@@ -90,12 +90,7 @@ const config = {
     },
     mocha: {
         timeout: 100000000,
-        parallel: false,
-        reporter: 'mocha-junit-reporter',
-        reporterOptions: {
-            mochaFile: './test-results/junit.xml',
-            toConsole: true
-        }
+        parallel: false
     },
 };
 

@@ -88,15 +88,7 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
   event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet);
   event TwitterVerificationResult(string userID, address indexed wallet, bool isSuccess, string errorMsg);
 
-  event verifyTwitterThirdwebRequested(address wallet, string userID);
   event verifyTwitterByAuthCodeRequested(address wallet, string authCode, string tweetID, string userID);
-
-  function requestTwitterVerificationThirdweb(string calldata userID) public {
-    require(mintingData.walletsByUserIDs[userID] == address(0), 'user has different wallet linked');
-    require(mintingData.registeredWallets[_msgSender()] == false, 'wallet already linked for that user');
-
-    emit verifyTwitterThirdwebRequested(_msgSender(), userID);
-  }
 
   function requestTwitterVerificationByAuthCode(
     string calldata authCode,
@@ -142,7 +134,7 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     emit TwitterVerificationResult(userID, wallet, false, errorMsg);
   }
 
-  function verifyTwitter(string calldata userID, address wallet, bool isSubscribed) public onlyGelato {
+  function verifyTwitter(string calldata userID, address wallet) public onlyGelato {
     mintingData.usersByWallets[wallet] = userID;
     mintingData.registeredWallets[wallet] = true;
 

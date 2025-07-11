@@ -3,6 +3,7 @@
   "scripts": {
     "format": "prettier --write */**/*.*{js,sol,json,md,ts}",
     "test": "hardhat test",
+    "test:ci": "hardhat test --reporter mocha-junit-reporter --reporter-options mochaFile=./test-results/results.xml",
     "test-twitter-worker": "hardhat test --grep 'twitter-worker success'",
     "test-twitter-worker-realworld": "hardhat test --grep 'twitter-worker real-world'",
     "test-filter": "hardhat test --grep 'filterUserTweets'"

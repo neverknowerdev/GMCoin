@@ -24,7 +24,7 @@ describe("GM minting", function () {
         const wallets = await generateWallets(ethers.provider, batchSize);
 
         for (let i = 0; i < batchSize; i++) {
-            await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address, false);
+            await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address);
         }
 
         const usernamesToProcess = await coinContract.connect(gelatoAddr).getTwitterUsers(0, batchSize);
@@ -125,7 +125,7 @@ describe("GM minting", function () {
         const wallets = await generateWallets(ethers.provider, batchSize);
 
         for (let i = 0; i < batchSize; i++) {
-            await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address, false);
+            await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address);
         }
 
         const usernamesToProcess = await coinContract.connect(gelatoAddr).getTwitterUsers(0, batchSize);
@@ -204,7 +204,7 @@ describe("GM minting", function () {
         const users = generateNewUsers(10);
 
         for (let i = 0; i < users.length; i++) {
-            await gelatoContract.verifyTwitter(users[i].username, users[i].wallet, false);
+            await gelatoContract.verifyTwitter(users[i].username, users[i].wallet);
         }
 
         const userData = generateRandomUserData(10);
@@ -526,7 +526,7 @@ async function simulateDayFull(dayTimestamp: number, users: User[], userData: Tw
     let alreadyExistingTwitterUsernames = await gelatoContract.getTwitterUsers(0, users.length);
     if (users.length > alreadyExistingTwitterUsernames.length) {
         for (let i = alreadyExistingTwitterUsernames.length; i < users.length; i++) {
-            await gelatoContract.verifyTwitter(users[i].username, users[i].wallet, false);
+            await gelatoContract.verifyTwitter(users[i].username, users[i].wallet);
         }
 
         alreadyExistingTwitterUsernames = await gelatoContract.getTwitterUsers(0, users.length);

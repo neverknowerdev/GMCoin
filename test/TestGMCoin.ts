@@ -207,42 +207,6 @@ describe("GM", function () {
         expect(await coin.balanceOf(treasuryAddr)).to.be.equal(10000);
     });
 
-    it('relayer', async function () {
-        const {
-            coinContract,
-            owner,
-            feeAddr,
-            relayerServerAcc,
-            gelatoAddr,
-            otherAcc1: userAddr,
-            otherAcc2
-        } = await loadFixture(deployGMCoinWithProxy);
-
-        const userID = "user1";
-        const accessTokenEncrypted = "encryptedAccessToken";
-
-        const message = "I confirm that I want to verify my Twitter account with GMCoin";
-        const signature = await userAddr.signMessage(message);
-
-        const recoveredAddress = ethers.verifyMessage(message, signature);
-        expect(recoveredAddress).to.be.equal(userAddr.address);
-
-        const serverRelayContract = coinContract.connect(relayerServerAcc);
-
-        // success scenario
-        await expect(serverRelayContract.requestTwitterVerificationFromRelayer(userID, userAddr.address, signature, accessTokenEncrypted)).to.emit(serverRelayContract, 'VerifyTwitterRequested').withArgs(accessTokenEncrypted, userID, userAddr.address);
-
-        // wrong wallet
-        await expect(serverRelayContract.requestTwitterVerificationFromRelayer(userID, otherAcc2.address, signature, accessTokenEncrypted)).to.be.revertedWith("wrong signer or signature");
-
-        const signatureWrong = await userAddr.signMessage(ethers.getBytes(ethers.solidityPackedKeccak256(
-            ["string"],
-            ["wrong signature"]
-        )));
-
-        // wrong signature
-        await expect(serverRelayContract.requestTwitterVerificationFromRelayer(userID, userAddr.address, signatureWrong, accessTokenEncrypted)).to.be.revertedWith("wrong signer or signature");
-    })
 
     it('removeMe', async function () {
         const {
@@ -260,10 +224,10 @@ describe("GM", function () {
         const wallet3 = await createRandomWallet();
         const wallet4 = await createRandomWallet();
 
-        await gelatoContract.verifyTwitter("user1" as any, wallet1 as any, false as any);
-        await gelatoContract.verifyTwitter("user2" as any, wallet2 as any, false as any);
-        await gelatoContract.verifyTwitter("user3" as any, wallet3 as any, false as any);
-        await gelatoContract.verifyTwitter("user4" as any, wallet4 as any, false as any);
+        await gelatoContract.verifyTwitter("user1" as any, wallet1 as any);
+        await gelatoContract.verifyTwitter("user2" as any, wallet2 as any);
+        await gelatoContract.verifyTwitter("user3" as any, wallet3 as any);
+        await gelatoContract.verifyTwitter("user4" as any, wallet4 as any);
 
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal(["user1", "user2", "user3", "user4"]);
         await coinContract.connect(wallet4).removeMe();
@@ -280,8 +244,8 @@ describe("GM", function () {
         await expect(coinContract.connect(wallet3).removeMe()).to.revertedWith("msgSender's wallet is not registered");
         await expect(coinContract.connect(wallet4).removeMe()).to.revertedWith("msgSender's wallet is not registered");
 
-        await gelatoContract.verifyTwitter("user1" as any, wallet1 as any, false as any);
-        await gelatoContract.verifyTwitter("user2" as any, wallet2 as any, false as any);
+        await gelatoContract.verifyTwitter("user1" as any, wallet1 as any);
+        await gelatoContract.verifyTwitter("user2" as any, wallet2 as any);
 
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal(["user1", "user2"]);
 

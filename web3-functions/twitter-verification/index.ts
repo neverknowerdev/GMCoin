@@ -1,33 +1,33 @@
-import {Interface} from "@ethersproject/abi";
+import { Interface } from "@ethersproject/abi";
 import {
     Web3Function,
     Web3FunctionEventContext,
     Web3FunctionResult
 } from "@gelatonetwork/web3-functions-sdk";
-import {Contract} from "ethers";
-import ky, {HTTPError} from "ky";
+import { Contract } from "ethers";
+import ky, { HTTPError } from "ky";
 
-import {gcm} from '@noble/ciphers/aes';
-import {bytesToHex, hexToBytes, toBytes} from '@noble/ciphers/utils';
+import { gcm } from '@noble/ciphers/aes';
+import { bytesToHex, hexToBytes, toBytes } from '@noble/ciphers/utils';
 
 // Define Twitter API endpoint
 const TWITTER_ME_URL = '/2/users/me';
 
 const VerifierContractABI = [
-    "function verifyTwitter(string calldata userID, address wallet, bool isSubscribed) public",
+    "function verifyTwitter(string calldata userID, address wallet) public",
     "function twitterVerificationError(address wallet, string calldata userID, string calldata errorMsg) public",
     "event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet)",
 ];
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
     // Get event log from Web3FunctionEventContext
-    const {log, userArgs, multiChainProvider} = context;
+    const { log, userArgs, multiChainProvider } = context;
 
     const TwitterApiURL = userArgs.twitterHost;
 
     const decryptionKey = await context.secrets.get("DECRYPTION_KEY");
     if (!decryptionKey) {
-        return {canExec: false, message: `DECRYPTION_KEY not set in secrets`};
+        return { canExec: false, message: `DECRYPTION_KEY not set in secrets` };
     }
 
     console.log(`verifier address is ${userArgs.verifierContractAddress}`);
@@ -44,7 +44,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     const event = contract.parseLog(log);
 
     // Handle event data
-    const {accessCodeEncrypted, userID, wallet} = event.args;
+    const { accessCodeEncrypted, userID, wallet } = event.args;
     console.log('userID', userID);
     console.log(`Veryfing Twitter for address ${wallet}..`);
 
@@ -70,9 +70,6 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             return await returnError(verifierContract, userID, wallet, 'userID returned by Twitter is different');
         }
 
-        const isSubscribed = false;
-
-
         return {
             canExec: true,
             callData: [
@@ -80,8 +77,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                     to: userArgs.verifierContractAddress as string,
                     data: verifierContract.interface.encodeFunctionData("verifyTwitter", [
                         userID,
-                        wallet,
-                        isSubscribed
+                        wallet
                     ]),
                 },
             ],

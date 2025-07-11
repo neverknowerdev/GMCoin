@@ -76,7 +76,7 @@ describe("GelatoW3F", function () {
         let usernameByWallet: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
             const userID = String(i + 1)
-            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any, false as any);
+            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any);
             walletByUsername.set(userID, generatedWallets[i].address);
             usernameByWallet.set(generatedWallets[i].address, userID);
 
@@ -290,7 +290,7 @@ describe("GelatoW3F", function () {
         let walletByUsername: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
             const userID = String(i + 1)
-            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any, false as any);
+            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any);
             walletByUsername.set(userID, generatedWallets[i].address);
 
             expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);
@@ -479,7 +479,7 @@ describe("GelatoW3F", function () {
         let walletByUsername: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
             const userID = userIDs[i];
-            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any, false as any);
+            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any);
             walletByUsername.set(userID, generatedWallets[i].address);
 
             expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);

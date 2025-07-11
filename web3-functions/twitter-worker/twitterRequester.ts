@@ -145,8 +145,6 @@ export class TwitterRequester {
         let errorBatches: Batch[] = [];
         let finalSuccessBatches: Batch[] = [];
 
-        console.log('userIndexByUsername 2', userIndexByUsername.size, userIndexByUsername);
-
         await Promise.all(
             batchesToProcess.map(async (cur, index) => {
                 try {

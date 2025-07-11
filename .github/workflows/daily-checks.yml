@@ -24,7 +24,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm ci
+          yarn install --frozen-lockfile
 
       - name: Create environment files
         run: |
@@ -37,7 +37,7 @@ jobs:
         id: tests
         continue-on-error: true
         run: |
-          npm test > test-results.txt 2>&1 || true
+          yarn test:ci > test-results.txt 2>&1 || true
           echo "status=$?" >> $GITHUB_OUTPUT
 
       - name: Upload test results
