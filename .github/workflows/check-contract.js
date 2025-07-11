@@ -320,7 +320,7 @@ async function main() {
         const testStatus = process.env.TEST_STATUS === '0' ? '✅' : '❌';
         const workflowUrl = process.env.WORKFLOW_URL || '';
 
-        const topUsers = await getTopUsersByTransfers(transferEvents, contractAddress, 25);
+        const topUsers = await getTopUsersByTransfers(transferEvents, contractAddress, 20);
 
         // Prepare message
         const message = `
