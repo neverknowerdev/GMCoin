@@ -10,7 +10,7 @@ import "./tasks/tweetCountStat";
 // Process Env Variables
 import * as dotenv from "dotenv";
 
-dotenv.config({path: __dirname + "/.env"});
+dotenv.config({ path: __dirname + "/.env" });
 
 const config = {
     solidity: {
@@ -61,12 +61,12 @@ const config = {
         baseSepolia: {
             url: "https://sepolia.base.org", // RPC URL for Base Sepolia
             chainId: 84532, // Base Sepolia's chain ID
-            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_PRIVATE_KEY, process.env.BASE_TESTNET_LEARNING_PRIVATE_KEY],
+            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_PRIVATE_KEY, process.env.BASE_TESTNET2_PRIVATE_KEY],
         },
         base: {
             url: "https://mainnet.base.org",
             chainId: 8453,
-            accounts: process.env.CI ? [] : [process.env.BASE_PROD_PRIVATE_KEY, process.env.BASE_PROD_FEE_PRIVATE_KEY],
+            accounts: process.env.CI ? [] : [process.env.BASE_PROD_PRIVATE_KEY, process.env.BASE_PROD_FEE_PRIVATE_KEY, process.env.BASE_FARCASTER_ACC_PRIVATE_KEY],
         },
         polygon: {
             url: "https://polygon-bor-rpc.publicnode.com",
@@ -89,7 +89,7 @@ const config = {
     },
     mocha: {
         timeout: 100000000,
-        parallel: false,
+        parallel: false
     },
 };
 

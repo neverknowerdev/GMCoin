@@ -1,13 +1,13 @@
 const hre = require("hardhat");
 
-import {ethers, upgrades} from "hardhat";
-import {run} from "hardhat";
+import { ethers, upgrades } from "hardhat";
+import { run } from "hardhat";
 
 async function main(): Promise<void> {
 
     const contractV3 = await ethers.getContractFactory("GMCoin");
 
-    const contractAddress = hre.network.name == "base" ? "0x26f36F365E5EB6483DF4735e40f87E96e15e0007" : "0x19bD68AD19544FFA043B2c3A5064805682783E91";
+    const contractAddress = hre.network.name == "base" ? "0x26f36F365E5EB6483DF4735e40f87E96e15e0007" : "0xc5Da77c0C7933Aef5878dF571a4DdC4F3e9090f7";
 
     const [owner] = await ethers.getSigners();
 
@@ -17,6 +17,11 @@ async function main(): Promise<void> {
         // call: {
         //     fn: "clearUsers"
         // }
+
+        unsafeAllow: [
+            'struct-definition',
+            'enum-definition'
+        ]
     })
     // const GMCoin = await upgrades.deployProxy(contract,
     //     [owner.address, 500_000, 'Qme39LGvEnhLJ5dLkthrkqFcu9Dcp5ibb6RvnpqYvWoUXA', 'https://l4xtgdsal5.execute-api.eu-central-1.amazonaws.com/default/GMSecrets'],
@@ -38,6 +43,6 @@ async function main(): Promise<void> {
 
 // Execute the main function and handle potential errors
 main().catch((error: Error) => {
-    console.error("Error deploying GGCoin:", error);
+    console.error("Error deploying GMCoin:", error);
     process.exitCode = 1;
 });

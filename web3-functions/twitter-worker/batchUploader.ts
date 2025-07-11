@@ -1,9 +1,10 @@
-import {Tweet, TweetProcessingType} from "./consts";
-import {Storage} from "./storage";
+import { Tweet, TweetProcessingType } from "./consts";
+import { Storage } from "./storage";
+import { Logger } from "./cloudwatch";
 
-import {blake2b} from "blakejs";
+import { blake2b } from "blakejs";
 
-import ky, {HTTPError} from "ky";
+import ky, { HTTPError } from "ky";
 
 class ServerTweet {
     tweetOrder: number
@@ -29,11 +30,14 @@ export class BatchUploader {
 
     private tweetIndex: number = 0;
 
-    constructor(mintingDayTimestamp: number, storage: Storage, serverURL: string, apiKey: string) {
+    private logger: Logger;
+
+    constructor(mintingDayTimestamp: number, storage: Storage, serverURL: string, apiKey: string, logger: Logger) {
         this.mintingDayTimestamp = mintingDayTimestamp;
         this.storage = storage;
         this.serverURLPrefix = serverURL;
         this.serverApiKey = apiKey;
+        this.logger = logger;
     }
 
     public getRunningHash(): string {
@@ -72,18 +76,18 @@ export class BatchUploader {
 
     async uploadToServer(): Promise<boolean> {
         if (this.buffer.length == 0) {
-            console.log('uploadToServer buffer length == 0, skip')
+            this.logger.info('uploadToServer buffer length == 0, skip')
             return true;
         }
 
-        console.log('uploadToServer', this.runningHash, this.buffer.length, this.buffer.map((t => t.tweetID)));
+        this.logger.info('uploadToServer', this.runningHash, this.buffer.length, this.buffer.map((t => t.tweetID)));
 
         try {
             const request = {
                 tweets: this.buffer,
                 mintingDayTimestamp: this.mintingDayTimestamp
             }
-            console.log('serverURL', this.serverURLPrefix + "SaveTweets");
+            this.logger.info('serverURL', this.serverURLPrefix + "SaveTweets");
             const response = await ky.post(this.serverURLPrefix + "SaveTweets", {
                 headers: {
                     'Content-Type': 'application/json',
@@ -97,16 +101,16 @@ export class BatchUploader {
             if (responseData.success == true) {
                 return true;
             }
-            console.log('Success:', responseData);
+            this.logger.info('Success:', responseData);
         } catch (error) {
             if (error instanceof HTTPError) {
                 // Handle HTTP errors
-                console.error('HTTP Error:', error.response.status, error.response.statusText);
+                this.logger.error('HTTP Error:', error.response.status, error.response.statusText);
                 const errorBody = await error.response.text();
-                console.error('Error Body:', errorBody);
+                this.logger.error('Error Body:', errorBody);
             } else {
                 // Handle network or other errors
-                console.error('Unexpected Error:', error);
+                this.logger.error('Unexpected Error:', error);
             }
         }
         return false;
@@ -129,10 +133,10 @@ export class BatchUploader {
 
             // If you need to process the response later, you can add handling here
             const data = await response.json();
-            console.log('Request completed:', data);
+            this.logger.info('Request completed:', data);
 
         } catch (error) {
-            console.error('Request failed:', error);
+            this.logger.error('Request failed:', error);
         }
 
         return;

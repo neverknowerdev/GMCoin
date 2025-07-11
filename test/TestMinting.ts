@@ -1,16 +1,16 @@
-import {expect, use} from "chai";
-import {ethers, upgrades} from "hardhat";
-import {Contract, ContractFactory, Signer, Wallet, Provider, HDNodeWallet} from "ethers";
-import {time, loadFixture} from "@nomicfoundation/hardhat-network-helpers";
-import {GMCoin} from "../typechain-types/contracts/GMCoin";
-import {GMCoinExposed} from "../typechain-types/contracts/testing/GMCoinExposed";
+import { expect, use } from "chai";
+import { ethers, upgrades } from "hardhat";
+import { Contract, ContractFactory, Signer, Wallet, Provider, HDNodeWallet } from "ethers";
+import { time, loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { GMCoin } from "../typechain-types/contracts/GMCoin";
+import { GMCoinExposed } from "../typechain-types/contracts/testing/GMCoinExposed";
 import hre from "hardhat";
-import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
-import {createGMCoinFixture, deployGMCoinWithProxy} from "./tools/deployContract";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { createGMCoinFixture, deployGMCoinWithProxy } from "./tools/deployContract";
 
 describe("GM minting", function () {
     it('minting for twitter users: one day', async () => {
-        const {coinContract, owner, feeAddr, gelatoAddr} = await loadFixture(deployGMCoinWithProxy);
+        const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = coinContract.connect(gelatoAddr);
 
@@ -24,7 +24,7 @@ describe("GM minting", function () {
         const wallets = await generateWallets(ethers.provider, batchSize);
 
         for (let i = 0; i < batchSize; i++) {
-            await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address, false);
+            await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address);
         }
 
         const usernamesToProcess = await coinContract.connect(gelatoAddr).getTwitterUsers(0, batchSize);
@@ -37,7 +37,7 @@ describe("GM minting", function () {
         const startOfYesterday = startOfTheDayTimestamp - time.duration.days(1);
 
         const generatedData = generateUserData(100, (index: number): TweetData => {
-            return {userIndex: index, tweets: 135, hashtagTweets: 25, cashtagTweets: 10, simpleTweets: 100, likes: 500}
+            return { userIndex: index, tweets: 135, hashtagTweets: 25, cashtagTweets: 10, simpleTweets: 100, likes: 500 }
         });
 
         const nextCursor = generateRandomString(32);
@@ -107,7 +107,7 @@ describe("GM minting", function () {
 
 
     it('minting for twitter users: simple math', async () => {
-        const {coinContract, owner, feeAddr, gelatoAddr, treasuryAddr} = await loadFixture(deployGMCoinWithProxy);
+        const { coinContract, owner, feeAddr, gelatoAddr, treasuryAddr } = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = coinContract.connect(gelatoAddr);
         const perTweet = Number(await coinContract.POINTS_PER_TWEET());
@@ -125,7 +125,7 @@ describe("GM minting", function () {
         const wallets = await generateWallets(ethers.provider, batchSize);
 
         for (let i = 0; i < batchSize; i++) {
-            await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address, false);
+            await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address);
         }
 
         const usernamesToProcess = await coinContract.connect(gelatoAddr).getTwitterUsers(0, batchSize);
@@ -139,9 +139,9 @@ describe("GM minting", function () {
 
         const generatedData = generateUserData(batchSize, (index: number): TweetData => {
             if (index % 2 == 0) {
-                return {userIndex: index, tweets: 10, hashtagTweets: 3, cashtagTweets: 5, simpleTweets: 2, likes: 15};
+                return { userIndex: index, tweets: 10, hashtagTweets: 3, cashtagTweets: 5, simpleTweets: 2, likes: 15 };
             } else {
-                return {userIndex: index, tweets: 40, hashtagTweets: 0, cashtagTweets: 12, simpleTweets: 28, likes: 120}
+                return { userIndex: index, tweets: 40, hashtagTweets: 0, cashtagTweets: 12, simpleTweets: 28, likes: 120 }
             }
         });
 
@@ -193,7 +193,7 @@ describe("GM minting", function () {
     });
 
     it('minting for twitter users: continuation after error', async () => {
-        const {coinContract, owner, feeAddr, gelatoAddr} = await loadFixture(createGMCoinFixture(7));
+        const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(createGMCoinFixture(7));
 
         const gelatoContract: GMCoinExposed = coinContract.connect(gelatoAddr);
         const ts = await time.latest();
@@ -204,7 +204,7 @@ describe("GM minting", function () {
         const users = generateNewUsers(10);
 
         for (let i = 0; i < users.length; i++) {
-            await gelatoContract.verifyTwitter(users[i].username, users[i].wallet, false);
+            await gelatoContract.verifyTwitter(users[i].username, users[i].wallet);
         }
 
         const userData = generateRandomUserData(10);
@@ -256,7 +256,7 @@ describe("GM minting", function () {
     });
 
     it('minting for twitter users: epochs and complexity', async () => {
-        const {coinContract, owner, feeAddr, gelatoAddr} = await loadFixture(createGMCoinFixture(7));
+        const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(createGMCoinFixture(7));
 
         let users = generateNewUsers(30);
         let userData = generateRandomUserData(30);
@@ -526,7 +526,7 @@ async function simulateDayFull(dayTimestamp: number, users: User[], userData: Tw
     let alreadyExistingTwitterUsernames = await gelatoContract.getTwitterUsers(0, users.length);
     if (users.length > alreadyExistingTwitterUsernames.length) {
         for (let i = alreadyExistingTwitterUsernames.length; i < users.length; i++) {
-            await gelatoContract.verifyTwitter(users[i].username, users[i].wallet, false);
+            await gelatoContract.verifyTwitter(users[i].username, users[i].wallet);
         }
 
         alreadyExistingTwitterUsernames = await gelatoContract.getTwitterUsers(0, users.length);

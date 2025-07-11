@@ -4,21 +4,14 @@ import { ethers, upgrades } from "hardhat";
 import { run } from "hardhat";
 
 async function main(): Promise<void> {
-    // Get the ContractFactory for "TwitterCoin"
-    const newContract = await ethers.getContractFactory("GMCoinTestnet");
 
-    if (hre.network.name !== "baseSepolia") {
-        throw new Error(`This script must be run on the 'baseSepolia' network. Current network: ${hre.network.name}`);
-    }
+    const contractV3 = await ethers.getContractFactory("GMCoin");
 
-    console.log('getting signer..');
+    const contractAddress = hre.network.name == "base" ? "0x26f36F365E5EB6483DF4735e40f87E96e15e0007" : "0xc5Da77c0C7933Aef5878dF571a4DdC4F3e9090f7";
+
     const [owner] = await ethers.getSigners();
 
-    const feeData = await ethers.provider.getFeeData();
-    //
-    // Estimate gas for deployment
-    // const gasEstimate = await newContract.deploy();
-    // console.log("Estimated Gas:", gasEstimate.toString());
+    const newContract = await ethers.getContractFactory("GMCoin");
 
     console.log('deploying new implementation..');
     const deployedImplementation = await newContract.deploy();
@@ -33,19 +26,16 @@ async function main(): Promise<void> {
     })
     console.log('successfully verified');
 
-    const proxyContract = await ethers.getContractAt("GMCoinTestnet", "0xc5Da77c0C7933Aef5878dF571a4DdC4F3e9090f7");
+    const proxyContract = await ethers.getContractAt("GMCoin", contractAddress);
 
-
-    // console.log('forceTimelockUpdateTestnet..');
-    // const tx = await proxyContract.forceTimeLockUpdateTestnet(deployedContractAddress);
-    // await tx.wait()
-    console.log('upgradeToAndCall..');
     const tx2 = await proxyContract.upgradeToAndCall(deployedContractAddress, '0x');
     await tx2.wait();
+
+    console.log('all done')
 }
 
 // Execute the main function and handle potential errors
 main().catch((error: Error) => {
-    console.error("Error deploying GGCoin:", error);
+    console.error("Error deploying GMCoin:", error);
     process.exitCode = 1;
 });

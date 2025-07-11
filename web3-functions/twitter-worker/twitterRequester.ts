@@ -1,7 +1,8 @@
 import ky from "ky";
-import {Batch, Result, Tweet, TwitterApiResponse, TwitterResultCore, UserResult} from "./consts";
-import {setMaxIdleHTTPParsers} from "http";
-import {setDefaultAutoSelectFamily} from "net";
+import { Batch, Result, Tweet, TwitterApiResponse, TwitterResultCore, UserResult } from "./consts";
+import { setMaxIdleHTTPParsers } from "http";
+import { setDefaultAutoSelectFamily } from "net";
+import { use } from "chai";
 
 export interface TwitterSecrets {
     OfficialBearerToken: string;
@@ -69,6 +70,7 @@ export class TwitterRequester {
         for (const userID of userIDs) {
             const username = userIDtoUsername.get(userID);
             if (!username) {
+                results.push('');
                 continue;
             }
 
@@ -145,39 +147,40 @@ export class TwitterRequester {
 
         await Promise.all(
             batchesToProcess.map(async (cur, index) => {
-                    try {
-                        let {
-                            tweets,
-                            nextCursor
-                        } = await this.fetchTweetsBySearchQuery(queryList[index], cur.nextCursor);
+                try {
+                    let {
+                        tweets,
+                        nextCursor
+                    } = await this.fetchTweetsBySearchQuery(queryList[index], cur.nextCursor);
 
 
-                        for (let i = 0; i < tweets.length; i++) {
-                            const userIndex = userIndexByUsername.get(tweets[i].username);
-                            if (userIndex === undefined) {
-                                console.error("not found username!!", tweets[i].username);
-                                throw new Error(`not found username!! ${tweets[i].username}`)
-                            }
-                            tweets[i].userIndex = userIndex || 0;
+                    for (let i = 0; i < tweets.length; i++) {
+                        const userIndex = userIndexByUsername.get(tweets[i].username);
+                        // console.log('userIndex', userIndex, tweets[i].username);
+                        if (userIndex === undefined) {
+                            console.error("not found username!!", tweets[i].username);
+                            throw new Error(`not found username!! ${tweets[i].username}`)
                         }
-
-                        batchesToProcess[index].nextCursor = '';
-                        if (tweets.length > 0 && nextCursor != '') {
-                            batchesToProcess[index].nextCursor = nextCursor
-                        }
-
-                        batchesToProcess[index].errorCount = 0;
-                        finalSuccessBatches.push(batchesToProcess[index]);
-
-                        allTweets.push(...tweets);
-                    } catch (error) {
-                        cur.errorCount++;
-                        errorBatches.push(cur);
-
-                        console.error('error fetching and processing tweets: ', error);
-                        return null;
+                        tweets[i].userIndex = userIndex || 0;
                     }
+
+                    batchesToProcess[index].nextCursor = '';
+                    if (tweets.length > 0 && nextCursor != '') {
+                        batchesToProcess[index].nextCursor = nextCursor
+                    }
+
+                    batchesToProcess[index].errorCount = 0;
+                    finalSuccessBatches.push(batchesToProcess[index]);
+
+                    allTweets.push(...tweets);
+                } catch (error) {
+                    cur.errorCount++;
+                    errorBatches.push(cur);
+
+                    console.error('error fetching and processing tweets: ', error);
+                    return null;
                 }
+            }
             )
         );
 
@@ -275,7 +278,7 @@ export class TwitterRequester {
                 }
             }
 
-            return {tweets, nextCursor};
+            return { tweets, nextCursor };
         } catch (error) {
             console.error('Error fetching tweets:', error);
             throw error;

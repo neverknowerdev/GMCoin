@@ -3,13 +3,14 @@
   "scripts": {
     "format": "prettier --write */**/*.*{js,sol,json,md,ts}",
     "test": "hardhat test",
+    "test:ci": "hardhat test --reporter mocha-junit-reporter --reporter-options mochaFile=./test-results/results.xml",
     "test-twitter-worker": "hardhat test --grep 'twitter-worker success'",
     "test-twitter-worker-realworld": "hardhat test --grep 'twitter-worker real-world'",
     "test-filter": "hardhat test --grep 'filterUserTweets'",
     "coverage": "hardhat test"
   },
   "devDependencies": {
-    "@neverknowerdev/smock": "https://github.com/neverknowerdev/smock#dev",
+    "@neverknowerdev/smock": "https://github.com/neverknowerdev/smock.git#dev",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.8",
     "@nomicfoundation/hardhat-ethers": "^3.0.8",
     "@nomicfoundation/hardhat-ignition": "^0.15.5",
@@ -30,6 +31,7 @@
     "http-request-mock": "^2.0.2",
     "jest-junit": "^16.0.0",
     "lodash": "^4.17.21",
+    "mocha-junit-reporter": "^2.2.1",
     "solidity-coverage": "^0.8.13",
     "ts-node": "^10.9.2",
     "twitter-api-v2": "^1.19.0",
@@ -38,6 +40,7 @@
   },
   "dependencies": {
     "@3id/connect": "^0.4.1",
+    "@aws-sdk/client-cloudwatch-logs": "^3.840.0",
     "@ceramicnetwork/http-client": "^6.4.0",
     "@ceramicnetwork/stream-tile": "^6.4.0",
     "@gelatonetwork/automate-sdk": "^3.0.2",
@@ -56,8 +59,10 @@
     "crypto-browserify": "^3.12.1",
     "dotenv": "^16.4.7",
     "ethers": "6",
+    "hardhat-gas-reporter": "^2.3.0",
     "ky": "^0.33.3",
     "p-limit": "^3.1.0",
-    "siwe": "^2.3.2"
+    "siwe": "^2.3.2",
+    "thirdweb": "^5.99.2"
   }
 }

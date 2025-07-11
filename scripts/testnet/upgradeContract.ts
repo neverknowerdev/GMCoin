@@ -1,7 +1,7 @@
 const hre = require("hardhat");
 
-import {ethers, upgrades} from "hardhat";
-import {run} from "hardhat";
+import { ethers, upgrades } from "hardhat";
+import { run } from "hardhat";
 
 async function main(): Promise<void> {
 
@@ -11,7 +11,8 @@ async function main(): Promise<void> {
         throw new Error(`This script must be run on the 'baseSepolia' network. Current network: ${hre.network.name}`);
     }
 
-    const contractAddress = "0x19bD68AD19544FFA043B2c3A5064805682783E91";
+    console.log('upgrading contract...');
+    const contractAddress = "0xc5Da77c0C7933Aef5878dF571a4DdC4F3e9090f7";
 
     const [owner] = await ethers.getSigners();
 
