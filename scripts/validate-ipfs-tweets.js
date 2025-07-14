@@ -1,3 +1,21 @@
+/**
+ * 
+ * This script validates that minted GM tokens match the processed tweets stored in IPFS.
+ * It downloads IPFS files, calculates expected coins based on tweet data, scans blockchain
+ * for actual minting transactions, and compares the results.
+ * 
+ * Features:
+ * - Downloads and parses IPFS files with tweet data
+ * - Calculates expected coins based on tweet types and likes
+ * - Scans blockchain for minting transactions in last 24h
+ * - Aggregates minting by user wallets
+ * - Compares expected vs actual amounts
+ * - Supports mainnet/testnet switching
+ * - Handles rate limiting with retry mechanisms
+ * - GitHub Actions compatible for daily automation
+
+ */
+
 const { ethers } = require('ethers');
 const Interface = ethers.Interface;
 
@@ -27,7 +45,7 @@ async function withRetry(operation, maxRetries = 3, delayMs = 1000) {
 async function getBlockByTimestamp(provider, targetTimestamp, startBlock, endBlock) {
     const apiKey = process.env.BASESCAN_API_KEY;
     
-    if (!apiKey) {
+    if (!apiKey || apiKey === 'your_basescan_api_key_here') {
         // Fallback: estimate block number based on average block time
         const currentBlock = await provider.getBlockNumber();
         const currentBlockInfo = await provider.getBlock(currentBlock);
@@ -38,14 +56,34 @@ async function getBlockByTimestamp(provider, targetTimestamp, startBlock, endBlo
         return estimatedBlock;
     }
     
-    const url = `https://api.basescan.org/api?module=block&action=getblocknobytime&timestamp=${targetTimestamp}&closest=before&apikey=${apiKey}`;
+    try {
+        const url = `https://api.basescan.org/api?module=block&action=getblocknobytime&timestamp=${targetTimestamp}&closest=before&apikey=${apiKey}`;
 
-    const response = await fetch(url);
-    const data = await response.json();
-    if (data.status === "1") {
-        return parseInt(data.result, 10);
-    } else {
-        throw new Error("Failed to get block by timestamp from Basescan: " + (data.message || JSON.stringify(data)));
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.status === "1") {
+            return parseInt(data.result, 10);
+        } else {
+            console.log(`Basescan API error: ${data.message || JSON.stringify(data)}, falling back to estimation`);
+            // Fallback to estimation
+            const currentBlock = await provider.getBlockNumber();
+            const currentBlockInfo = await provider.getBlock(currentBlock);
+            const timeDiff = currentBlockInfo.timestamp - targetTimestamp;
+            const blocksToSubtract = Math.floor(timeDiff / 2);
+            const estimatedBlock = Math.max(0, currentBlock - blocksToSubtract);
+            console.log(`Using estimated block ${estimatedBlock} (Basescan fallback)`);
+            return estimatedBlock;
+        }
+    } catch (error) {
+        console.log(`Basescan API request failed: ${error.message}, falling back to estimation`);
+        // Fallback to estimation
+        const currentBlock = await provider.getBlockNumber();
+        const currentBlockInfo = await provider.getBlock(currentBlock);
+        const timeDiff = currentBlockInfo.timestamp - targetTimestamp;
+        const blocksToSubtract = Math.floor(timeDiff / 2);
+        const estimatedBlock = Math.max(0, currentBlock - blocksToSubtract);
+        console.log(`Using estimated block ${estimatedBlock} (Basescan fallback)`);
+        return estimatedBlock;
     }
 }
 
@@ -251,7 +289,47 @@ async function aggregateMintingByUser(provider, contractAddress, mintingTransfer
     return userMintingMap;
 }
 
-// Get latest IPFS CID from contract events
+// Get IPFS CID for a specific minting day from contract events
+async function getIPFSCIDForMintingDay(provider, contractAddress, mintingDayTimestamp) {
+    console.log(`Getting IPFS CID for minting day ${mintingDayTimestamp}...`);
+    
+    // Calculate search range around the minting day
+    const targetDate = new Date(mintingDayTimestamp * 1000);
+    const searchStart = new Date(targetDate.getTime() - 24 * 60 * 60 * 1000); // 1 day before
+    const searchEnd = new Date(targetDate.getTime() + 24 * 60 * 60 * 1000); // 1 day after
+    
+    const startTs = Math.floor(searchStart.getTime() / 1000);
+    const endTs = Math.floor(searchEnd.getTime() / 1000);
+    
+    const latestBlock = await withRetry(() => provider.getBlockNumber());
+    const startBlock = await getBlockByTimestamp(provider, startTs, 0, latestBlock);
+    const endBlock = await getBlockByTimestamp(provider, endTs, startBlock, latestBlock);
+    
+    // Get all events in the search range
+    const allEvents = await getAllDecodedLogs(provider, contractAddress, ABI, startBlock, endBlock);
+    
+    // Filter for MintingFinished_TweetsUploadedToIPFS events matching the specific day
+    const ipfsEvents = allEvents.filter(event => 
+        event.name === 'MintingFinished_TweetsUploadedToIPFS' &&
+        event.args.mintingDayTimestamp === BigInt(mintingDayTimestamp)
+    );
+    
+    if (ipfsEvents.length === 0) {
+        throw new Error(`No MintingFinished_TweetsUploadedToIPFS events found for minting day ${mintingDayTimestamp}`);
+    }
+    
+    // Get the event (should be only one per day)
+    const targetEvent = ipfsEvents[0];
+    
+    console.log(`Found IPFS event for minting day ${mintingDayTimestamp}, CID: ${targetEvent.args.cid}`);
+    return {
+        cid: targetEvent.args.cid,
+        mintingDayTimestamp: targetEvent.args.mintingDayTimestamp,
+        runningHash: targetEvent.args.runningHash
+    };
+}
+
+// Get latest IPFS CID from contract events (fallback function)
 async function getLatestIPFSCID(provider, contractAddress) {
     console.log('Getting latest IPFS CID from contract events...');
     
@@ -304,7 +382,7 @@ function compareResults(expectedMap, actualMap) {
     for (const [userIndex, expected] of expectedMap) {
         // For simplicity, we'll use userIndex as the key, but in practice we'd need to map userIndex to userId
         // This is a simplified version - in the actual implementation we'd need to get the actual userId mapping
-        const userId = userIndex.toString(); // Placeholder - would need actual mapping
+        const userId = userIndex?.toString() || 'unknown'; // Safe conversion
         
         if (actualMap.has(userId)) {
             const actual = actualMap.get(userId);
@@ -335,7 +413,14 @@ function compareResults(expectedMap, actualMap) {
     
     // Check for extra users (in actual but not expected)
     for (const [userId, actual] of actualMap) {
-        const userIndex = parseInt(userId); // Placeholder - would need actual mapping
+        // Try to parse userIndex, but handle safely
+        let userIndex;
+        try {
+            userIndex = parseInt(userId);
+        } catch (e) {
+            userIndex = userId; // Use as-is if not a number
+        }
+        
         if (!expectedMap.has(userIndex)) {
             results.extraUsers.push({
                 userId,
@@ -349,15 +434,31 @@ function compareResults(expectedMap, actualMap) {
 }
 
 // Main validation function
-async function validateIPFSTweets(contractAddress, treasuryAddress, provider) {
+async function validateIPFSTweets(contractAddress, treasuryAddress, provider, cid = null, mintingDayTimestamp = null, isMainnet = true) {
     console.log('Starting IPFS tweets validation...');
+    console.log(`Network: ${isMainnet ? 'Mainnet' : 'Testnet'}`);
     
     try {
-        // 1. Get latest IPFS CID
-        const { cid, mintingDayTimestamp, runningHash } = await getLatestIPFSCID(provider, contractAddress);
+        let ipfsInfo;
+        
+        // Use provided CID and mintingDay or get latest from contract
+        if (cid && mintingDayTimestamp) {
+            console.log(`Using provided CID: ${cid}, Minting Day: ${mintingDayTimestamp}`);
+            ipfsInfo = {
+                cid,
+                mintingDayTimestamp: BigInt(mintingDayTimestamp),
+                runningHash: 'provided' // We don't have this when manually specified
+            };
+        } else if (mintingDayTimestamp) {
+            // Get IPFS CID for specific minting day
+            ipfsInfo = await getIPFSCIDForMintingDay(provider, contractAddress, mintingDayTimestamp);
+        } else {
+            // Get latest IPFS CID
+            ipfsInfo = await getLatestIPFSCID(provider, contractAddress);
+        }
         
         // 2. Download and parse IPFS file
-        const ipfsData = await downloadIPFSFile(cid);
+        const ipfsData = await downloadIPFSFile(ipfsInfo.cid);
         
         // 3. Calculate expected coins from IPFS data
         const expectedMap = calculateExpectedCoins(ipfsData);
@@ -395,10 +496,11 @@ async function validateIPFSTweets(contractAddress, treasuryAddress, provider) {
         
         return {
             isValid,
-            cid,
-            mintingDayTimestamp,
-            runningHash,
-            comparison
+            cid: ipfsInfo.cid,
+            mintingDayTimestamp: ipfsInfo.mintingDayTimestamp,
+            runningHash: ipfsInfo.runningHash,
+            comparison,
+            network: isMainnet ? 'mainnet' : 'testnet'
         };
         
     } catch (error) {
@@ -415,6 +517,7 @@ module.exports = {
     getActualMintingTransactions,
     aggregateMintingByUser,
     getLatestIPFSCID,
+    getIPFSCIDForMintingDay,
     compareResults
 };
 
@@ -423,20 +526,44 @@ async function main() {
     try {
         const contractAddress = process.env.CONTRACT_ADDRESS;
         const treasuryAddress = process.env.TREASURY_ADDRESS;
+        const rpcUrl = process.env.RPC_URL;
+        const isMainnet = process.env.NETWORK !== 'testnet'; // Default to mainnet unless explicitly set to testnet
         
-        if (!contractAddress || !treasuryAddress) {
-            throw new Error('CONTRACT_ADDRESS and TREASURY_ADDRESS environment variables are required');
+        // Support for test parameters
+        const testCid = process.env.TEST_CID;
+        const testMintingDay = process.env.TEST_MINTING_DAY;
+        
+        if (!contractAddress || !treasuryAddress || !rpcUrl) {
+            throw new Error('CONTRACT_ADDRESS, TREASURY_ADDRESS, and RPC_URL environment variables are required');
         }
         
-        const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+        const provider = new ethers.JsonRpcProvider(rpcUrl);
         
-        const result = await validateIPFSTweets(contractAddress, treasuryAddress, provider);
+        // Parse test parameters if provided
+        const mintingDayTimestamp = testMintingDay ? parseInt(testMintingDay, 10) : null;
+        
+        const result = await validateIPFSTweets(
+            contractAddress, 
+            treasuryAddress, 
+            provider, 
+            testCid, 
+            mintingDayTimestamp, 
+            isMainnet
+        );
         
         console.log('\n=== IPFS Tweets Validation Completed ===');
+        console.log(`Network: ${result.network}`);
         console.log(`Result: ${result.isValid ? 'PASS ✅' : 'FAIL ❌'}`);
         console.log(`CID: ${result.cid}`);
-        console.log(`Minting Day: ${new Date(result.mintingDayTimestamp * 1000).toISOString()}`);
+        console.log(`Minting Day: ${new Date(Number(result.mintingDayTimestamp) * 1000).toISOString()}`);
         console.log(`Running Hash: ${result.runningHash}`);
+        
+        // Print summary for telegram notification
+        if (result.isValid) {
+            console.log('\n✅ Coins are calculated correctly based on processed tweets');
+        } else {
+            console.log('\n❌ Validation failed - coins calculation mismatch detected');
+        }
         
         if (!result.isValid) {
             console.error('Validation failed! Check the logs above for details.');

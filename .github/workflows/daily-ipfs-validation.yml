@@ -1,0 +1,59 @@
+name: Daily IPFS Tweets Validation
+
+on:
+  schedule:
+    # Run daily at 3:00 AM UTC (1 hour after minting at 2 AM)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    # Allow manual triggers with optional parameters
+    inputs:
+      cid:
+        description: 'IPFS CID to test (optional)'
+        required: false
+        type: string
+      mintingDay:
+        description: 'Minting day timestamp (optional)'
+        required: false
+        type: string
+      network:
+        description: 'Network to test'
+        required: false
+        default: 'mainnet'
+        type: choice
+        options:
+          - mainnet
+          - testnet
+
+jobs:
+  validate-ipfs-tweets:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install dependencies
+        run: |
+          npm install ethers
+          
+      - name: Run IPFS validation
+        run: node scripts/validate-ipfs-tweets.js
+        env:
+          CONTRACT_ADDRESS: ${{ secrets.CONTRACT_ADDRESS || '0x26f36F365E5EB6483DF4735e40f87E96e15e0007' }}
+          TREASURY_ADDRESS: ${{ secrets.TREASURY_ADDRESS }}
+          RPC_URL: ${{ secrets.RPC_URL || 'https://mainnet.base.org' }}
+          BASESCAN_API_KEY: ${{ secrets.BASESCAN_API_KEY }}
+          NETWORK: ${{ github.event.inputs.network || 'mainnet' }}
+          TEST_CID: ${{ github.event.inputs.cid }}
+          TEST_MINTING_DAY: ${{ github.event.inputs.mintingDay }}
+          
+      - name: Report results
+        if: always()
+        run: |
+          echo "IPFS tweets validation completed"
+          echo "Check the logs above for detailed results"
