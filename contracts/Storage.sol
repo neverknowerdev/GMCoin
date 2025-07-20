@@ -92,7 +92,8 @@ contract GMStorage {
     uint256 lastEpochPoints;
     uint256 currentEpochPoints;
     // deprecated vars
-    uint256 __deprecated_gelatoVar1;
+
+    mapping(address => uint256) mintedAmountByWallet;
     bytes32 __deprecated_gelatoVar2;
     bytes32 __deprecated_gelatoVar3;
     address __deprecated_gelatoVar4;

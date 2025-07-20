@@ -71,5 +71,6 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
     require(walletAddr != address(0), "walletAddr shouldn't be zero!");
 
     _mint(walletAddr, amount);
+    mintingData.mintedAmountByWallet[walletAddr] += amount;
   }
 }

@@ -19,4 +19,8 @@ contract GMCoinExposed is GMCoin {
   function mintForWallet(address wallet, uint value) public onlyOwner {
     _mint(wallet, value);
   }
+
+  function mintedAmountByCoin(address wallet) public view returns (uint256) {
+    return mintingData.mintedAmountByWallet[wallet];
+  }
 }

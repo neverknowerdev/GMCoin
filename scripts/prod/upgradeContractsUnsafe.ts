@@ -29,9 +29,9 @@ async function main(): Promise<void> {
     const proxyContract = await ethers.getContractAt("GMCoin", contractAddress);
 
     // Encode the clearThirdwebGelatoFunc() call
-    const clearFunctionData = proxyContract.interface.encodeFunctionData("clearThirdwebGelatoFunc");
-
-    const tx2 = await proxyContract.upgradeToAndCall(deployedContractAddress, clearFunctionData);
+    // const clearFunctionData = proxyContract.interface.encodeFunctionData("clearThirdwebGelatoFunc");
+    // const tx2 = await proxyContract.upgradeToAndCall(deployedContractAddress, clearFunctionData);
+    const tx2 = await proxyContract.upgradeToAndCall(deployedContractAddress, "0x");
     await tx2.wait();
 
     console.log('all done')
