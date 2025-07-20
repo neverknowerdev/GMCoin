@@ -21,6 +21,10 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
   event UpgradePlanned(uint256 plannedTime, address newImplementation);
   event UpgradeApplied(uint256 time, address newImplementation);
 
+  function clearThirdwebGelatoFunc() public reinitializer(4) onlyOwner {
+    deleteThirdwebGelatoFunc();
+  }
+
   // disabled Timelock for testing period on Mainnet, then would be turned on
   //    function scheduleUpgrade(address newImplementation) public onlyOwner {
   //        require(newImplementation != address(0), "wrong newImplementation address");
