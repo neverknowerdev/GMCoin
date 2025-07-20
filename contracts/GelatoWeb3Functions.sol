@@ -53,11 +53,6 @@ contract GMWeb3Functions is
     emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_twitterVerification);
   }
 
-  function deleteThirdwebGelatoFunc() public onlyOwner {
-    _cancelTask(gelatoConfig._not_used_gelatoTaskId_twitterVerificationThirdweb);
-    gelatoConfig._not_used_gelatoTaskId_twitterVerificationThirdweb = bytes32('');
-  }
-
   function createTwitterVerificationAuthcodeFunction(
     string calldata _w3fHash,
     bytes calldata argsHash,
