@@ -53,20 +53,6 @@ contract GMWeb3Functions is
     emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_twitterVerification);
   }
 
-  function createTwitterVerificationThirdwebFunction(
-    string calldata _w3fHash,
-    bytes calldata argsHash,
-    bytes32[][] calldata topics
-  ) public onlyOwner {
-    bytes32 oldGelatoId = gelatoConfig.gelatoTaskId_twitterVerificationThirdweb;
-    if (gelatoConfig.gelatoTaskId_twitterVerificationThirdweb != bytes32('')) {
-      _cancelTask(gelatoConfig.gelatoTaskId_twitterVerificationThirdweb);
-    }
-
-    gelatoConfig.gelatoTaskId_twitterVerificationThirdweb = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
-    emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_twitterVerificationThirdweb);
-  }
-
   function createTwitterVerificationAuthcodeFunction(
     string calldata _w3fHash,
     bytes calldata argsHash,

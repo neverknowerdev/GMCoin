@@ -61,7 +61,7 @@ contract GMStorage {
     bytes32 gelatoTaskId_twitterWorker;
     bytes32 gelatoTaskId_dailyTrigger;
     address trustedSigner;
-    bytes32 gelatoTaskId_twitterVerificationThirdweb;
+    bytes32 _not_used_gelatoTaskId_twitterVerificationThirdweb;
     bytes32 gelatoTaskId_twitterVerificationAuthcode;
     uint256[53] __gap;
   }
@@ -88,16 +88,17 @@ contract GMStorage {
     uint256 mintingDayPointsFromUsers;
     uint32 mintingInProgressForDay;
     uint32 lastMintedDay;
-    // public
     uint32 epochStartedAt;
     uint256 lastEpochPoints;
     uint256 currentEpochPoints;
-    bytes32 gelatoTaskId_twitterVerification;
-    bytes32 gelatoTaskId_twitterWorker;
-    bytes32 gelatoTaskId_dailyTrigger;
-    address trustedSigner;
-    bytes32 gelatoTaskId_twitterVerificationThirdweb;
-    bytes32 gelatoTaskId_twitterVerificationAuthcode;
+    // deprecated vars
+
+    mapping(address => uint256) mintedAmountByWallet;
+    bytes32 __deprecated_gelatoVar2;
+    bytes32 __deprecated_gelatoVar3;
+    address __deprecated_gelatoVar4;
+    bytes32 __deprecated_gelatoVar5;
+    bytes32 __deprecated_gelatoVar6;
     uint256[53] __gap;
   }
 

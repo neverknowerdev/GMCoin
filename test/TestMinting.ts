@@ -2,8 +2,8 @@ import { expect, use } from "chai";
 import { ethers, upgrades } from "hardhat";
 import { Contract, ContractFactory, Signer, Wallet, Provider, HDNodeWallet } from "ethers";
 import { time, loadFixture } from "@nomicfoundation/hardhat-network-helpers";
-import { GMCoin } from "../typechain-types/contracts/GMCoin";
-import { GMCoinExposed } from "../typechain-types/contracts/testing/GMCoinExposed";
+import { GMCoin } from "../typechain/contracts/GMCoin";
+import { GMCoinExposed } from "../typechain/contracts/testing/GMCoinExposed";
 import hre from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { createGMCoinFixture, deployGMCoinWithProxy } from "./tools/deployContract";
@@ -102,6 +102,7 @@ describe("GM minting", function () {
         for (let i = 0; i < expectedResults.length; i++) {
             let expectedCoins = BigInt(expectedResults[i].expectedCoins) * 10n ** 18n;
             expect(await coinContract.balanceOf(wallets[i]) / 10n ** 18n).to.be.equal(expectedCoins / 10n ** 18n);
+            expect(await coinContract.mintedAmountByCoin(wallets[i].address) / 10n ** 18n).to.be.equal(expectedCoins / 10n ** 18n);
         }
     })
 
