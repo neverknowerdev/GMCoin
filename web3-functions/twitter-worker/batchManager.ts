@@ -122,12 +122,12 @@ function createUserQueryString(usernames: string[], mintingDayTimestamp: number,
     const untilDayStr = formatDay(mintingDayTimestamp, 1);
     const sinceDayStr = formatDay(mintingDayTimestamp, 0);
     let queryString = `${queryPrefix} since:${sinceDayStr} until:${untilDayStr} AND (`;
-    let recordInsertedCount = 0;
+    let ri = 0; // record inserted count
 
-    for (let i = 0; i < usernames.length; i++) {
-        const username = usernames[i];
+    let usernameAdded = 0;
+    for (; ri < usernames.length; ri++) {
+        const username = usernames[ri];
         if (username == '') {
-            recordInsertedCount++;
             continue;
         }
 
@@ -137,19 +137,18 @@ function createUserQueryString(usernames: string[], mintingDayTimestamp: number,
             break;
         }
 
-        if (i > 0) {
+        if (usernameAdded > 0) {
             queryString += ` OR `;
         }
 
         queryString += nextPart;
-        recordInsertedCount++;
-
+        usernameAdded++;
     }
 
     queryString += ')';
 
     // Close the final query string with parentheses
-    return { queryString, recordInsertedCount };
+    return { queryString, recordInsertedCount: ri };
 }
 
 function createUserQueryStringStatic(usernames: string[], mintingDayTimestamp: number, queryPrefix: string): string {
@@ -186,11 +185,11 @@ function formatDay(timestamp: number, addDays: number): string {
 
 function fillUserIndexByUsernames(logger: Logger, userIndexByUsernames: Map<string, number>, batchUsernames: string[], startIndex: number) {
     for (let i = 0; i < batchUsernames.length; i++) {
-        logger.info(`fillUserIndexByUsernames`, batchUsernames[i], startIndex + i);
         if (batchUsernames[i] == '') {
             continue;
         }
 
+        logger.info(`fillUserIndexByUsernames`, batchUsernames[i], startIndex + i);
         userIndexByUsernames.set(batchUsernames[i], startIndex + i);
     }
 }
