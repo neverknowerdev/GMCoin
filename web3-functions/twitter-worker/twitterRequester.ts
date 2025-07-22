@@ -39,7 +39,6 @@ export class TwitterRequester {
 
         let userIDtoUsername: Map<string, string> = new Map();
         const requests = batches.map(async (batch) => {
-            // const url = `${this.urlList.optimizedServerURLPrefix}/UserResultsByRestIds?user_ids=${batch.join(',')}`;
             const url = `${this.urlList.convertToUsernamesURL}?user_ids=${batch.join(',')}`;
 
             const headerKey = this.secrets.AuthHeaderName;
@@ -67,12 +66,19 @@ export class TwitterRequester {
         await Promise.all(requests);
 
         let results: string[] = [];
+        let emptyConsecutiveCount = 0;
         for (const userID of userIDs) {
             const username = userIDtoUsername.get(userID);
             if (!username) {
                 results.push('');
+                emptyConsecutiveCount++;
+
+                if (emptyConsecutiveCount >= batchSize) {
+                    throw new Error('empty batch for convertToUsernames response, looks wrong');
+                }
                 continue;
             }
+            emptyConsecutiveCount = 0;
 
             results.push(username);
         }
