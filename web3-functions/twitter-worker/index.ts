@@ -134,7 +134,7 @@ async function executeTwitterWorker(logger: CloudwatchLogger, context: Web3Funct
             // optimizedServerURLPrefix: twitterOptimizedServerHost as string,
             convertToUsernamesURL: `${twitterOptimizedServerHost}/UserResultsByRestIds`,
             twitterSearchByQueryURL: `${twitterOptimizedServerHost}/Search`,
-        });
+        }, logger);
 
         let contractConnector = new SmartContractConnector(provider, smartContract, storage, logger);
 
@@ -190,7 +190,6 @@ async function executeTwitterWorker(logger: CloudwatchLogger, context: Web3Funct
                 if (foundKeyword == "") {
                     continue;
                 }
-                logger.info(`tweets[i] ${JSON.stringify(tweets[i])}`);
 
                 // add to verifyTweets only tweets with more that 100 likes and more that the last element(with least likes) in tweetsToVerify array
                 if (tweets[i].likesCount > 100 && tweets[i].likesCount > minLikesCount) {

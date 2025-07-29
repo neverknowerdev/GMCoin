@@ -3,6 +3,7 @@ import { Batch, Result, Tweet, TwitterApiResponse, TwitterResultCore, UserResult
 import { setMaxIdleHTTPParsers } from "http";
 import { setDefaultAutoSelectFamily } from "net";
 import { use } from "chai";
+import { CloudwatchLogger } from "./cloudwatch";
 
 export interface TwitterSecrets {
     OfficialBearerToken: string;
@@ -23,10 +24,12 @@ export interface TwitterURLList {
 export class TwitterRequester {
     private secrets: TwitterSecrets;
     private urlList: TwitterURLList;
+    private logger: CloudwatchLogger;
 
-    constructor(secrets: TwitterSecrets, URLs: TwitterURLList) {
+    constructor(secrets: TwitterSecrets, URLs: TwitterURLList, logger: CloudwatchLogger) {
         this.secrets = secrets;
         this.urlList = URLs;
+        this.logger = logger;
     }
 
     async convertToUsernames(userIDs: string[]): Promise<string[]> {
@@ -159,11 +162,14 @@ export class TwitterRequester {
                         nextCursor
                     } = await this.fetchTweetsBySearchQuery(queryList[index], cur.nextCursor);
 
+                    this.logger.info(`batch {${cur.startIndex}-${cur.endIndex},${cur.nextCursor}}, tweets ${JSON.stringify(tweets)}, nextCursor ${nextCursor}`);
 
                     for (let i = 0; i < tweets.length; i++) {
                         const userIndex = userIndexByUsername.get(tweets[i].username);
                         // console.log('userIndex', userIndex, tweets[i].username);
+                        this.logger.info(`${cur.startIndex}-${cur.endIndex}: tweets[i] ${JSON.stringify(tweets[i])}`);
                         if (userIndex === undefined) {
+                            this.logger.error(`${cur.startIndex}-${cur.endIndex}: not found username!! ${tweets[i].username}`);
                             console.error("not found username!!", tweets[i].username);
                             throw new Error(`not found username!! ${tweets[i].username}`)
                         }
@@ -183,6 +189,7 @@ export class TwitterRequester {
                     cur.errorCount++;
                     errorBatches.push(cur);
 
+                    this.logger.error(`error fetching and processing tweets: ${JSON.stringify(error)}`);
                     console.error('error fetching and processing tweets: ', error);
                     return null;
                 }
