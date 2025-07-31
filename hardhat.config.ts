@@ -18,7 +18,7 @@ const config = {
         settings: {
             optimizer: {
                 enabled: true,
-                runs: 200
+                runs: 50  // Lower runs to reduce contract size
             },
             outputSelection: {
                 "*": {

@@ -90,6 +90,16 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
 
   event verifyTwitterByAuthCodeRequested(address wallet, string authCode, string tweetID, string userID);
 
+  // Farcaster events
+  event VerifyFarcasterRequested(uint256 indexed farcasterFid, address indexed wallet);
+  event FarcasterVerificationResult(
+    uint256 indexed farcasterFid,
+    address indexed wallet,
+    bool isSuccess,
+    string errorMsg
+  );
+  event farcasterMintingProcessed(uint32 indexed mintingDayTimestamp, Batch[] batches);
+
   function requestTwitterVerificationByAuthCode(
     string calldata authCode,
     string calldata userID,
@@ -152,6 +162,77 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     }
   }
 
+  // Farcaster verification functions
+
+  function requestFarcasterVerification(uint256 farcasterFid) public {
+    require(mintingData.farcasterWalletsByFIDs[farcasterFid] == address(0), 'Farcaster account already linked');
+    require(mintingData.farcasterUsersByWallets[_msgSender()] == 0, 'wallet already linked to FID');
+
+    emit VerifyFarcasterRequested(farcasterFid, _msgSender());
+  }
+
+  function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
+    mintingData.farcasterUsersByWallets[wallet] = farcasterFid;
+    mintingData.registeredWallets[wallet] = true;
+
+    if (mintingData.farcasterWalletsByFIDs[farcasterFid] == address(0)) {
+      mintingData.farcasterWalletsByFIDs[farcasterFid] = wallet;
+      mintingData.allFarcasterUsers.push(farcasterFid);
+      mintingData.farcasterUserIndexByFID[farcasterFid] = mintingData.allFarcasterUsers.length - 1;
+
+      // Welcome tokens for Farcaster users
+      _mintForFarcasterUserByIndex(
+        mintingData.allFarcasterUsers.length - 1,
+        mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET
+      );
+
+      emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
+    }
+  }
+
+  function farcasterVerificationError(
+    address wallet,
+    uint256 farcasterFid,
+    string calldata errorMsg
+  ) public onlyGelato {
+    emit FarcasterVerificationResult(farcasterFid, wallet, false, errorMsg);
+  }
+
+  // Farcaster query functions
+
+  function isFarcasterUserRegistered(uint256 farcasterFid) public view returns (bool) {
+    return mintingData.registeredWallets[mintingData.farcasterWalletsByFIDs[farcasterFid]];
+  }
+
+  function getWalletByFID(uint256 farcasterFid) public view returns (address) {
+    return mintingData.farcasterWalletsByFIDs[farcasterFid];
+  }
+
+  function getFIDByWallet(address wallet) public view returns (uint256) {
+    return mintingData.farcasterUsersByWallets[wallet];
+  }
+
+  function getFarcasterUsers(uint64 start, uint16 count) public view returns (uint256[] memory) {
+    uint64 end = start + count;
+    if (end > mintingData.allFarcasterUsers.length) {
+      end = uint64(mintingData.allFarcasterUsers.length);
+    }
+
+    require(start <= end, 'wrong start index');
+
+    uint16 batchSize = uint16(end - start);
+    uint256[] memory batchArr = new uint256[](batchSize);
+    for (uint16 i = 0; i < batchSize; i++) {
+      batchArr[i] = mintingData.allFarcasterUsers[start + i];
+    }
+
+    return batchArr;
+  }
+
+  function walletByFarcasterUserIndex(uint256 userIndex) internal view returns (address) {
+    return mintingData.farcasterWalletsByFIDs[mintingData.allFarcasterUsers[userIndex]];
+  }
+
   event twitterMintingProcessed(uint32 indexed mintingDayTimestamp, Batch[] batches);
   event twitterMintingErrored(uint32 indexed mintingDayTimestamp, Batch[] errorBatches);
   event MintingStarted(uint32 indexed mintingDay);
@@ -167,6 +248,7 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     // if minting for previous day is not finished - continue it
     if (mintingData.mintingInProgressForDay > 0 && mintingData.mintingInProgressForDay < yesterday) {
       emit twitterMintingProcessed(mintingData.mintingInProgressForDay, emptyArray);
+      emit farcasterMintingProcessed(mintingData.mintingInProgressForDay, emptyArray); // Also continue Farcaster
       return;
     }
 
@@ -209,6 +291,7 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     emit MintingStarted(dayToMint);
 
     emit twitterMintingProcessed(dayToMint, emptyArray);
+    emit farcasterMintingProcessed(dayToMint, emptyArray); // Also trigger Farcaster processing
   }
 
   // manual calling continue minting for a day if there was any unexpected error
@@ -287,6 +370,47 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
 
     if (batches.length > 0) {
       emit twitterMintingProcessed(mintingDayTimestamp, batches);
+    }
+  }
+
+  // Farcaster minting functions
+
+  // to be defined in main contract (similar to _mintForUserByIndex)
+  function _mintForFarcasterUserByIndex(uint256 userIndex, uint256 amount) internal virtual {}
+
+  function mintCoinsForFarcasterUsers(
+    UserFarcasterData[] calldata userData,
+    uint32 mintingDayTimestamp,
+    Batch[] calldata batches
+  ) public onlyGelato {
+    require(mintingData.mintingInProgressForDay != 0, 'no ongoing minting process');
+    require(mintingDayTimestamp == mintingData.mintingInProgressForDay, 'wrong mintingDay');
+
+    for (uint256 i = 0; i < userData.length; i++) {
+      if (userData[i].userIndex > mintingData.allFarcasterUsers.length) {
+        revert('wrong userIndex');
+      }
+
+      uint256 points = userData[i].simpleCasts *
+        mintingConfig.POINTS_PER_TWEET +
+        userData[i].likes *
+        mintingConfig.POINTS_PER_LIKE +
+        userData[i].hashtagCasts *
+        mintingConfig.POINTS_PER_HASHTAG +
+        userData[i].cashtagCasts *
+        mintingConfig.POINTS_PER_CASHTAG;
+
+      if (points == 0) {
+        continue;
+      }
+
+      mintingData.mintingDayPointsFromUsers += points;
+      uint256 coins = points * mintingConfig.COINS_MULTIPLICATOR;
+      _mintForFarcasterUserByIndex(userData[i].userIndex, coins);
+    }
+
+    if (batches.length > 0) {
+      emit farcasterMintingProcessed(mintingDayTimestamp, batches);
     }
   }
 
@@ -384,5 +508,197 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     mintingData.allTwitterUsers.pop();
 
     mintingData.userIndexByUserID[lastIndexUserID] = userIndex;
+  }
+
+  // =============================================================================
+  // NEW: Unified User System Functions
+  // =============================================================================
+
+  event UnifiedUserCreated(uint256 indexed userId, address indexed primaryWallet, string twitterId, uint256 farcasterFid);
+  event UnifiedSocialAccountLinked(uint256 indexed userId, string platform, string platformId);
+  event UnifiedWalletLinked(uint256 indexed userId, address indexed wallet);
+  event UnifiedHumanVerificationUpdated(uint256 indexed userId, bool isVerified);
+
+  /**
+   * @dev Enable the unified user system (owner only)
+   */
+  function enableUnifiedUserSystem() public onlyOwner {
+    mintingData.unifiedUserSystemEnabled = true;
+  }
+
+  /**
+   * @dev Disable the unified user system (owner only)
+   */
+  function disableUnifiedUserSystem() public onlyOwner {
+    mintingData.unifiedUserSystemEnabled = false;
+  }
+
+  /**
+   * @dev Create a new unified user or link to existing user during verification
+   */
+  function _createOrLinkUnifiedUser(
+    address wallet,
+    string memory twitterId,
+    uint256 farcasterFid
+  ) internal returns (uint256) {
+    if (!mintingData.unifiedUserSystemEnabled) {
+      return 0; // Feature disabled, use legacy system
+    }
+
+    uint256 existingUserId = mintingData.walletToUnifiedUserId[wallet];
+    
+    if (existingUserId != 0) {
+      // User already exists - link social account
+      return _linkSocialAccountToUser(existingUserId, twitterId, farcasterFid);
+    } else {
+      // Create new user
+      return _createNewUnifiedUser(wallet, twitterId, farcasterFid);
+    }
+  }
+
+  /**
+   * @dev Create a new unified user
+   */
+  function _createNewUnifiedUser(
+    address primaryWallet,
+    string memory twitterId,
+    uint256 farcasterFid
+  ) internal returns (uint256) {
+    mintingData.nextUserId++;
+    uint256 userId = mintingData.nextUserId;
+
+    UnifiedUser storage user = mintingData.unifiedUsers[userId];
+    user.userId = userId;
+    user.primaryWallet = primaryWallet;
+    user.isHumanVerified = true; // New users are human verified
+    user.createdAt = uint32(block.timestamp);
+    user.twitterId = twitterId;
+    user.farcasterFid = farcasterFid;
+
+    // Set up mappings
+    mintingData.allUnifiedUsers.push(userId);
+    mintingData.walletToUnifiedUserId[primaryWallet] = userId;
+    mintingData.unifiedUserWallets[userId].push(primaryWallet);
+
+    // Set up social platform mappings
+    if (bytes(twitterId).length > 0) {
+      mintingData.twitterIdToUnifiedUserId[twitterId] = userId;
+    }
+    if (farcasterFid != 0) {
+      mintingData.farcasterFidToUnifiedUserId[farcasterFid] = userId;
+    }
+
+    emit UnifiedUserCreated(userId, primaryWallet, twitterId, farcasterFid);
+    return userId;
+  }
+
+  /**
+   * @dev Link social account to existing user
+   */
+  function _linkSocialAccountToUser(
+    uint256 userId,
+    string memory twitterId,
+    uint256 farcasterFid
+  ) internal returns (uint256) {
+    UnifiedUser storage user = mintingData.unifiedUsers[userId];
+    
+    // Link Twitter if provided and not already linked
+    if (bytes(twitterId).length > 0 && bytes(user.twitterId).length == 0) {
+      require(mintingData.twitterIdToUnifiedUserId[twitterId] == 0, "Twitter ID already linked to another user");
+      user.twitterId = twitterId;
+      mintingData.twitterIdToUnifiedUserId[twitterId] = userId;
+      emit UnifiedSocialAccountLinked(userId, "twitter", twitterId);
+    }
+    
+    // Link Farcaster if provided and not already linked
+    if (farcasterFid != 0 && user.farcasterFid == 0) {
+      require(mintingData.farcasterFidToUnifiedUserId[farcasterFid] == 0, "Farcaster FID already linked to another user");
+      user.farcasterFid = farcasterFid;
+      mintingData.farcasterFidToUnifiedUserId[farcasterFid] = userId;
+      emit UnifiedSocialAccountLinked(userId, "farcaster", "");
+    }
+
+    return userId;
+  }
+
+  /**
+   * @dev Enhanced verification that creates unified users
+   */
+  function verifyTwitterUnified(string calldata userID, address wallet) public virtual onlyGelato {
+    // Always run legacy verification first
+    verifyTwitter(userID, wallet);
+    
+    // Then create/link unified user if system is enabled
+    if (mintingData.unifiedUserSystemEnabled) {
+      _createOrLinkUnifiedUser(wallet, userID, 0);
+    }
+  }
+
+  /**
+   * @dev Enhanced Farcaster verification that creates unified users
+   */
+  function verifyFarcasterUnified(uint256 farcasterFid, address wallet) public virtual onlyGelato {
+    // Always run legacy verification first
+    verifyFarcaster(farcasterFid, wallet);
+    
+    // Then create/link unified user if system is enabled
+    if (mintingData.unifiedUserSystemEnabled) {
+      _createOrLinkUnifiedUser(wallet, "", farcasterFid);
+    }
+  }
+
+  /**
+   * @dev Link additional wallet to unified user
+   */
+  function linkAdditionalWallet(address newWallet, bytes calldata signature) public {
+    require(mintingData.unifiedUserSystemEnabled, "Unified user system not enabled");
+    
+    // Verify signature proves control of new wallet
+    address recoveredSigner = ECDSA.recover(
+      MessageHashUtils.toEthSignedMessageHash(bytes('I want to link this wallet to my GMCoin account')),
+      signature
+    );
+    require(recoveredSigner == newWallet, 'Invalid signature for new wallet');
+    require(!mintingData.registeredWallets[newWallet], 'Wallet already registered');
+    require(mintingData.walletToUnifiedUserId[newWallet] == 0, 'Wallet already linked to a user');
+
+    uint256 userId = mintingData.walletToUnifiedUserId[_msgSender()];
+    require(userId != 0, 'Caller wallet not registered to any user');
+
+    // Link new wallet to user
+    mintingData.walletToUnifiedUserId[newWallet] = userId;
+    mintingData.unifiedUserWallets[userId].push(newWallet);
+    mintingData.registeredWallets[newWallet] = true;
+
+    emit UnifiedWalletLinked(userId, newWallet);
+  }
+
+  /**
+   * @dev Set human verification status for unified user
+   */
+  function setUnifiedUserHumanVerification(uint256 userId, bool isVerified) public onlyOwner {
+    require(mintingData.unifiedUserSystemEnabled, "Unified user system not enabled");
+    require(mintingData.unifiedUsers[userId].userId != 0, 'User does not exist');
+    
+    mintingData.unifiedUsers[userId].isHumanVerified = isVerified;
+    
+    // Update registration status for all user wallets
+    address[] memory wallets = mintingData.unifiedUserWallets[userId];
+    for (uint256 i = 0; i < wallets.length; i++) {
+      mintingData.registeredWallets[wallets[i]] = isVerified;
+    }
+
+    emit UnifiedHumanVerificationUpdated(userId, isVerified);
+  }
+
+  /**
+   * @dev Get wallet address for unified user (for minting) - Essential function only
+   */
+  function walletByUnifiedUserIndex(uint256 userIndex) internal view returns (address) {
+    if (!mintingData.unifiedUserSystemEnabled || userIndex >= mintingData.allUnifiedUsers.length) {
+      return address(0);
+    }
+    uint256 userId = mintingData.allUnifiedUsers[userIndex];
+    return mintingData.unifiedUsers[userId].primaryWallet;
   }
 }

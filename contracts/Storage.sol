@@ -34,6 +34,27 @@ contract GMStorage {
     uint32 likes; // Number of likes for the tweet
   }
 
+  // Farcaster user data
+  struct UserFarcasterData {
+    uint64 userIndex;
+    uint16 casts;
+    uint16 hashtagCasts;
+    uint16 cashtagCasts;
+    uint16 simpleCasts;
+    uint32 likes;
+  }
+
+  // NEW: Unified User Structure
+  struct UnifiedUser {
+    uint256 userId;           // Unique user identifier
+    address primaryWallet;    // Primary wallet for minting
+    bool isHumanVerified;     // Human verification status
+    uint32 createdAt;         // Creation timestamp
+    string twitterId;         // Twitter ID (empty if not linked)
+    uint256 farcasterFid;     // Farcaster FID (0 if not linked)
+    // Future social platforms can be added here
+  }
+
   struct Batch {
     uint64 startIndex;
     uint64 endIndex;
@@ -63,7 +84,10 @@ contract GMStorage {
     address trustedSigner;
     bytes32 _not_used_gelatoTaskId_twitterVerificationThirdweb;
     bytes32 gelatoTaskId_twitterVerificationAuthcode;
-    uint256[53] __gap;
+    // Farcaster Gelato tasks
+    bytes32 gelatoTaskId_farcasterVerification;
+    bytes32 gelatoTaskId_farcasterWorker;
+    uint256[51] __gap;
   }
 
   struct MintingConfig {
@@ -99,7 +123,23 @@ contract GMStorage {
     address __deprecated_gelatoVar4;
     bytes32 __deprecated_gelatoVar5;
     bytes32 __deprecated_gelatoVar6;
-    uint256[53] __gap;
+    // Farcaster mappings
+    mapping(uint256 => address) farcasterWalletsByFIDs; // FID -> wallet
+    mapping(address => uint256) farcasterUsersByWallets; // wallet -> FID
+    uint256[] allFarcasterUsers; // All Farcaster FIDs
+    mapping(uint256 => uint) farcasterUserIndexByFID; // FID -> array index
+    
+    // NEW: Unified User Structure (using gap space)
+    uint256 nextUserId;                           // Auto-increment user ID counter
+    mapping(uint256 => UnifiedUser) unifiedUsers; // User ID -> User data
+    uint256[] allUnifiedUsers;                    // All user IDs for iteration
+    mapping(address => uint256) walletToUnifiedUserId; // Wallet -> User ID
+    mapping(uint256 => address[]) unifiedUserWallets;  // User ID -> all wallets
+    mapping(string => uint256) twitterIdToUnifiedUserId; // Twitter ID -> User ID
+    mapping(uint256 => uint256) farcasterFidToUnifiedUserId; // Farcaster FID -> User ID
+    bool unifiedUserSystemEnabled;               // Feature flag for unified system
+    
+    uint256[41] __gap; // Reduced gap (49 - 8 used = 41 remaining)
   }
 
   function COINS_MULTIPLICATOR() public view returns (uint256) {
@@ -152,5 +192,72 @@ contract GMStorage {
 
   function totalUsersCount() public view returns (uint256) {
     return mintingData.allTwitterUsers.length;
+  }
+
+  // Farcaster accessor functions
+  function gelatoTaskId_farcasterVerification() public view returns (bytes32) {
+    return gelatoConfig.gelatoTaskId_farcasterVerification;
+  }
+
+  function gelatoTaskId_farcasterWorker() public view returns (bytes32) {
+    return gelatoConfig.gelatoTaskId_farcasterWorker;
+  }
+
+  function totalFarcasterUsersCount() public view returns (uint256) {
+    return mintingData.allFarcasterUsers.length;
+  }
+
+  // =============================================================================
+  // NEW: Unified User System Functions
+  // =============================================================================
+
+  function isUnifiedUserSystemEnabled() public view returns (bool) {
+    return mintingData.unifiedUserSystemEnabled;
+  }
+
+  function totalUnifiedUsersCount() public view returns (uint256) {
+    return mintingData.allUnifiedUsers.length;
+  }
+
+  function getUnifiedUserById(uint256 userId) public view returns (UnifiedUser memory) {
+    require(mintingData.unifiedUserSystemEnabled, "Unified user system not enabled");
+    require(mintingData.unifiedUsers[userId].userId != 0, "User does not exist");
+    return mintingData.unifiedUsers[userId];
+  }
+
+  function getUnifiedUserByWallet(address wallet) public view returns (UnifiedUser memory) {
+    require(mintingData.unifiedUserSystemEnabled, "Unified user system not enabled");
+    uint256 userId = mintingData.walletToUnifiedUserId[wallet];
+    require(userId != 0, "Wallet not registered to any user");
+    return mintingData.unifiedUsers[userId];
+  }
+
+  function getUnifiedUserByTwitterId(string calldata twitterId) public view returns (UnifiedUser memory) {
+    require(mintingData.unifiedUserSystemEnabled, "Unified user system not enabled");
+    uint256 userId = mintingData.twitterIdToUnifiedUserId[twitterId];
+    require(userId != 0, "Twitter ID not registered");
+    return mintingData.unifiedUsers[userId];
+  }
+
+  function getUnifiedUserByFarcasterFid(uint256 farcasterFid) public view returns (UnifiedUser memory) {
+    require(mintingData.unifiedUserSystemEnabled, "Unified user system not enabled");
+    uint256 userId = mintingData.farcasterFidToUnifiedUserId[farcasterFid];
+    require(userId != 0, "Farcaster FID not registered");
+    return mintingData.unifiedUsers[userId];
+  }
+
+  function getUnifiedUserWallets(uint256 userId) public view returns (address[] memory) {
+    require(mintingData.unifiedUserSystemEnabled, "Unified user system not enabled");
+    return mintingData.unifiedUserWallets[userId];
+  }
+
+  function isUnifiedUserHumanVerified(uint256 userId) public view returns (bool) {
+    if (!mintingData.unifiedUserSystemEnabled) return false;
+    return mintingData.unifiedUsers[userId].isHumanVerified;
+  }
+
+  function isWalletLinkedToUnifiedUser(address wallet) public view returns (bool) {
+    if (!mintingData.unifiedUserSystemEnabled) return false;
+    return mintingData.walletToUnifiedUserId[wallet] != 0;
   }
 }
