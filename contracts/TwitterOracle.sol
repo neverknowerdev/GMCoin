@@ -2,16 +2,16 @@
 pragma solidity ^0.8.24;
 
 import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
-import '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
-import '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
-
-import 'hardhat/console.sol';
 import { GMStorage } from './Storage.sol';
 import { GMWeb3Functions } from './GelatoWeb3Functions.sol';
-import { GMFarcasterOracle } from './FarcasterOracle.sol';
-import { GMAccountOracle } from './AccountOracle.sol';
+import { FarcasterOracleLib } from './FarcasterOracle.sol';
+import { AccountOracleLib } from './AccountOracle.sol';
+import { MintingLib } from './MintingLib.sol';
 
-contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions, GMFarcasterOracle, GMAccountOracle {
+contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
+  using FarcasterOracleLib for GMStorage.MintingData;
+  using AccountOracleLib for GMStorage.MintingData;
+  using MintingLib for GMStorage.MintingData;
   modifier onlyGelato() {
     require(_msgSender() == gelatoConfig.gelatoAddress, 'only Gelato can call this function');
     _;
@@ -88,6 +88,22 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions, GMFarcast
   event TwitterVerificationResult(string userID, address indexed wallet, bool isSuccess, string errorMsg);
 
   event verifyTwitterByAuthCodeRequested(address wallet, string authCode, string tweetID, string userID);
+  
+  // Farcaster events
+  event VerifyFarcasterRequested(uint256 indexed farcasterFid, address indexed wallet);
+  event FarcasterVerificationResult(
+    uint256 indexed farcasterFid,
+    address indexed wallet,
+    bool isSuccess,
+    string errorMsg
+  );
+  event farcasterMintingProcessed(uint32 indexed mintingDayTimestamp, Batch[] batches);
+  
+  // Account events
+  event UnifiedUserCreated(uint256 indexed userId, address indexed primaryWallet, string twitterId, uint256 farcasterFid);
+  event UnifiedSocialAccountLinked(uint256 indexed userId, string platform, string platformId);
+  event UnifiedWalletLinked(uint256 indexed userId, address indexed wallet);
+  event UnifiedHumanVerificationUpdated(uint256 indexed userId, bool isVerified);
 
   function requestTwitterVerificationByAuthCode(
     string calldata authCode,
@@ -160,53 +176,21 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions, GMFarcast
   event changedComplexity(uint256 newMultiplicator, uint256 previousEpochPoints, uint256 currentEpochPoints);
 
   function startMinting() public onlyGelatoOrOwner {
-    uint32 yesterday = getStartOfYesterday();
-    uint32 dayToMint = mintingData.lastMintedDay + 1 days;
-
-    // if minting for previous day is not finished - continue it
-    if (mintingData.mintingInProgressForDay > 0 && mintingData.mintingInProgressForDay < yesterday) {
-      emit twitterMintingProcessed(mintingData.mintingInProgressForDay, emptyArray);
+    (uint32 dayToMint, bool shouldContinue) = mintingData.startMintingProcess(mintingConfig);
+    
+    if (shouldContinue) {
+      emit twitterMintingProcessed(dayToMint, emptyArray);
       return;
     }
 
-    require(dayToMint <= yesterday, 'dayToMint should be not further than yesterday');
-    require(mintingData.mintingInProgressForDay == 0, 'minting process already started');
+    emit changedComplexity(
+      mintingConfig.COINS_MULTIPLICATOR,
+      mintingData.lastEpochPoints,
+      mintingData.currentEpochPoints
+    );
 
-    mintingData.mintingInProgressForDay = dayToMint;
-
-    // complexity calculation
-    // start new epoch
-    if (
-      dayToMint > mintingData.epochStartedAt &&
-      dayToMint - mintingData.epochStartedAt >= mintingConfig.EPOCH_DAYS * 1 days
-    ) {
-      pointsDeltaStreak = adjustPointsStreak(
-        mintingData.lastEpochPoints,
-        mintingData.currentEpochPoints,
-        pointsDeltaStreak
-      );
-      mintingConfig.COINS_MULTIPLICATOR = changeComplexity(
-        mintingConfig.COINS_MULTIPLICATOR,
-        mintingData.lastEpochPoints,
-        mintingData.currentEpochPoints,
-        pointsDeltaStreak
-      );
-
-      emit changedComplexity(
-        mintingConfig.COINS_MULTIPLICATOR,
-        mintingData.lastEpochPoints,
-        mintingData.currentEpochPoints
-      );
-
-      mintingData.epochStartedAt = dayToMint;
-      totalPoints += mintingData.currentEpochPoints;
-      mintingConfig.epochNumber++;
-      mintingData.lastEpochPoints = mintingData.currentEpochPoints;
-      mintingData.currentEpochPoints = 0;
-    }
-
+    totalPoints += mintingData.currentEpochPoints;
     emit MintingStarted(dayToMint);
-
     emit twitterMintingProcessed(dayToMint, emptyArray);
   }
 
@@ -218,19 +202,11 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions, GMFarcast
   }
 
   function finishMinting(uint32 mintingDayTimestamp, string calldata runningHash) public onlyGelato {
-    require(mintingDayTimestamp == mintingData.mintingInProgressForDay, 'wrong mintingDay');
-    require(mintingData.lastMintedDay < mintingDayTimestamp, 'wrong mintingDayTimestamp');
-
-    mintingData.currentEpochPoints += mintingData.mintingDayPointsFromUsers;
-    mintingData.lastMintedDay = mintingDayTimestamp;
-
-    mintingData.mintingDayPointsFromUsers = 0;
-    mintingData.mintingInProgressForDay = 0;
-
+    bool shouldStartNext = mintingData.finishMintingProcess(mintingDayTimestamp);
+    
     emit MintingFinished(mintingDayTimestamp, runningHash);
 
-    uint32 yesterday = getStartOfYesterday();
-    if (mintingData.lastMintedDay < yesterday) {
+    if (shouldStartNext) {
       startMinting();
     }
   }
@@ -247,7 +223,7 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions, GMFarcast
   function _mintForUserByIndex(uint256 userIndex, uint256 amount) internal virtual {}
 
   // to be defined in main contract (similar to _mintForUserByIndex)
-  function _mintForFarcasterUserByIndex(uint256 userIndex, uint256 amount) internal virtual override {}
+  function _mintForFarcasterUserByIndex(uint256 userIndex, uint256 amount) internal virtual {}
 
   function logErrorBatches(uint32 mintingDayTimestamp, Batch[] calldata batches) public onlyGelato {
     emit twitterMintingErrored(mintingDayTimestamp, batches);
@@ -258,33 +234,14 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions, GMFarcast
     uint32 mintingDayTimestamp,
     Batch[] calldata batches
   ) public onlyGelato {
-    require(mintingData.mintingInProgressForDay != 0, 'no ongoing minting process');
-    require(mintingDayTimestamp == mintingData.mintingInProgressForDay, 'wrong mintingDay');
-
-    for (uint256 i = 0; i < userData.length; i++) {
-      if (userData[i].userIndex > mintingData.allTwitterUsers.length) {
-        revert('wrong userIndex');
+    UserMintingResult[] memory results = mintingData.processTwitterMinting(
+      mintingConfig, userData, mintingDayTimestamp
+    );
+    
+    for (uint256 i = 0; i < results.length; i++) {
+      if (results[i].shouldMint) {
+        _mintForUserByIndex(results[i].userIndex, results[i].mintAmount);
       }
-
-      uint256 points = userData[i].simpleTweets *
-        mintingConfig.POINTS_PER_TWEET +
-        userData[i].likes *
-        mintingConfig.POINTS_PER_LIKE +
-        userData[i].hashtagTweets *
-        mintingConfig.POINTS_PER_HASHTAG +
-        userData[i].cashtagTweets *
-        mintingConfig.POINTS_PER_CASHTAG;
-
-      if (points == 0) {
-        continue;
-      }
-
-      //            console.log('userIndex', userData[i].userIndex, points);
-      mintingData.mintingDayPointsFromUsers += points;
-
-      uint256 coins = points * mintingConfig.COINS_MULTIPLICATOR;
-
-      _mintForUserByIndex(userData[i].userIndex, coins);
     }
 
     if (batches.length > 0) {
@@ -294,84 +251,126 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions, GMFarcast
 
 
   function getStartOfYesterday() public view returns (uint32) {
-    // Calculate the start of today (midnight) by rounding down block.timestamp to the nearest day.
-    uint32 startOfToday = uint32((block.timestamp / 1 days) * 1 days);
-    // Subtract one day to get the start of yesterday.
-    return startOfToday - 1 days;
+    return MintingLib.getStartOfYesterday();
   }
 
-  function changeComplexity(
-    uint256 currentComplexity,
-    uint256 lastEpochPoints,
-    uint256 currentEpochPoints,
-    int32 epochPointsDeltaStreak
-  ) internal pure returns (uint256) {
-    if (lastEpochPoints == 0) {
-      return currentComplexity;
-    }
+  // Farcaster functions using library
+  function requestFarcasterVerification(uint256 farcasterFid) public {
+    mintingData.requestFarcasterVerification(farcasterFid, _msgSender());
+    emit VerifyFarcasterRequested(farcasterFid, _msgSender());
+  }
 
-    if (currentEpochPoints > lastEpochPoints) {
-      // minus 30%
-      return (currentComplexity * 70) / 100;
+  function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
+    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = mintingData.verifyFarcaster(
+      mintingConfig, farcasterFid, wallet
+    );
+    
+    if (shouldMint) {
+      _mintForFarcasterUserByIndex(userIndex, mintAmount);
     }
+    
+    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
+  }
 
-    if (currentEpochPoints <= lastEpochPoints) {
-      if (epochPointsDeltaStreak <= -3) {
-        // plus 30%
-        return (currentComplexity * 130) / 100;
-      } else if (epochPointsDeltaStreak == -2) {
-        // plus 20%
-        return (currentComplexity * 120) / 100;
-      } else {
-        return currentComplexity;
+  function farcasterVerificationError(
+    address wallet,
+    uint256 farcasterFid,
+    string calldata errorMsg
+  ) public onlyGelato {
+    emit FarcasterVerificationResult(farcasterFid, wallet, false, errorMsg);
+  }
+
+  function isFarcasterUserRegistered(uint256 farcasterFid) public view returns (bool) {
+    return mintingData.isFarcasterUserRegistered(farcasterFid);
+  }
+
+  function getWalletByFID(uint256 farcasterFid) public view returns (address) {
+    return mintingData.getWalletByFID(farcasterFid);
+  }
+
+  function getFIDByWallet(address wallet) public view returns (uint256) {
+    return mintingData.getFIDByWallet(wallet);
+  }
+
+  function getFarcasterUsers(uint64 start, uint16 count) public view returns (uint256[] memory) {
+    return mintingData.getFarcasterUsers(start, count);
+  }
+
+  function walletByFarcasterUserIndex(uint256 userIndex) internal view returns (address) {
+    return mintingData.walletByFarcasterUserIndex(userIndex);
+  }
+
+  function mintCoinsForFarcasterUsers(
+    UserFarcasterData[] calldata userData,
+    uint32 mintingDayTimestamp,
+    Batch[] calldata batches
+  ) public onlyGelato {
+    UserMintingResult[] memory results = mintingData.processFarcasterMinting(
+      mintingConfig, userData, mintingDayTimestamp
+    );
+    
+    for (uint256 i = 0; i < results.length; i++) {
+      if (results[i].shouldMint) {
+        _mintForFarcasterUserByIndex(results[i].userIndex, results[i].mintAmount);
       }
     }
 
-    return currentComplexity;
+    if (batches.length > 0) {
+      emit farcasterMintingProcessed(mintingDayTimestamp, batches);
+    }
   }
 
-  function adjustPointsStreak(
-    uint256 lastEpochPoints,
-    uint256 currentEpochPoints,
-    int32 currentPointsDeltaStreak
-  ) internal pure returns (int32) {
-    if (currentEpochPoints > lastEpochPoints && currentPointsDeltaStreak <= 0) {
-      return 1;
-    }
-    if (currentEpochPoints < lastEpochPoints && currentPointsDeltaStreak >= 0) {
-      return -1;
-    }
-
-    if (currentEpochPoints > lastEpochPoints) {
-      return currentPointsDeltaStreak + 1;
-    } else if (currentEpochPoints < lastEpochPoints) {
-      return currentPointsDeltaStreak - 1;
-    }
-
-    return currentPointsDeltaStreak;
+  // Account management functions using library
+  function enableUnifiedUserSystem() public onlyOwner {
+    mintingData.enableUnifiedUserSystem();
   }
 
-  /**
-   * @dev Enhanced verification that creates unified users
-   */
+  function disableUnifiedUserSystem() public onlyOwner {
+    mintingData.disableUnifiedUserSystem();
+  }
+
+  function linkAdditionalWallet(address newWallet, bytes calldata signature) public {
+    mintingData.linkAdditionalWallet(_msgSender(), newWallet, signature);
+    uint256 userId = mintingData.walletToUnifiedUserId[_msgSender()];
+    emit UnifiedWalletLinked(userId, newWallet);
+  }
+
+  function setUnifiedUserHumanVerification(uint256 userId, bool isVerified) public onlyOwner {
+    mintingData.setUnifiedUserHumanVerification(userId, isVerified);
+    emit UnifiedHumanVerificationUpdated(userId, isVerified);
+  }
+
+  function isWalletRegistered(address wallet) public view returns (bool) {
+    return mintingData.isWalletRegistered(wallet);
+  }
+
+  function removeMe() public {
+    mintingData.removeUser(_msgSender());
+  }
+
+  function walletByUnifiedUserIndex(uint256 userIndex) internal view returns (address) {
+    return mintingData.walletByUnifiedUserIndex(userIndex);
+  }
+
   function verifyTwitterUnified(string calldata userID, address wallet) public virtual onlyGelato {
-    // Always run legacy verification first
     verifyTwitter(userID, wallet);
     
-    // Then create/link unified user if system is enabled
     if (mintingData.unifiedUserSystemEnabled) {
-      _createOrLinkUnifiedUser(wallet, userID, 0);
+      uint256 userId = mintingData.createOrLinkUnifiedUser(wallet, userID, 0);
+      if (userId > 0) {
+        emit UnifiedUserCreated(userId, wallet, userID, 0);
+      }
     }
   }
 
-  /**
-   * @dev Override to resolve diamond inheritance
-   */
-  function _createOrLinkUnifiedUser(
-    address wallet,
-    string memory twitterId,
-    uint256 farcasterFid
-  ) internal virtual override(GMFarcasterOracle, GMAccountOracle) returns (uint256) {
-    return GMAccountOracle._createOrLinkUnifiedUser(wallet, twitterId, farcasterFid);
+  function verifyFarcasterUnified(uint256 farcasterFid, address wallet) public virtual onlyGelato {
+    verifyFarcaster(farcasterFid, wallet);
+    
+    if (mintingData.unifiedUserSystemEnabled) {
+      uint256 userId = mintingData.createOrLinkUnifiedUser(wallet, "", farcasterFid);
+      if (userId > 0) {
+        emit UnifiedUserCreated(userId, wallet, "", farcasterFid);
+      }
+    }
   }
 }

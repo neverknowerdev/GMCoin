@@ -55,7 +55,29 @@ describe("GM", function () {
         // would be GMCoinV2 soon
         const TwitterCoinV2Factory: ContractFactory = await ethers.getContractFactory("GMCoinV2");
 
-        const GMCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin");
+        // Deploy libraries and get factories with proper linking
+        const FarcasterOracleLib = await ethers.getContractFactory("FarcasterOracleLib");
+        const farcasterLib = await FarcasterOracleLib.deploy();
+        await farcasterLib.waitForDeployment();
+        const farcasterLibAddress = await farcasterLib.getAddress();
+
+        const AccountOracleLib = await ethers.getContractFactory("AccountOracleLib");
+        const accountLib = await AccountOracleLib.deploy();
+        await accountLib.waitForDeployment();
+        const accountLibAddress = await accountLib.getAddress();
+
+        const MintingLib = await ethers.getContractFactory("MintingLib");
+        const mintingLib = await MintingLib.deploy();
+        await mintingLib.waitForDeployment();
+        const mintingLibAddress = await mintingLib.getAddress();
+
+        const GMCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin", {
+            libraries: {
+                "contracts/FarcasterOracle.sol:FarcasterOracleLib": farcasterLibAddress,
+                "contracts/AccountOracle.sol:AccountOracleLib": accountLibAddress,
+                "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+            },
+        });
 
         console.log('verifying upgrade compability..');
         await upgrades.validateUpgrade(TwitterCoinFactory, TwitterCoinV2Factory);

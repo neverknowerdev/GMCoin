@@ -44,6 +44,13 @@ contract GMStorage {
     uint32 likes;
   }
 
+  // Minting result data
+  struct UserMintingResult {
+    uint64 userIndex;
+    uint256 mintAmount;
+    bool shouldMint;
+  }
+
   // NEW: Unified User Structure
   struct UnifiedUser {
     uint256 userId;           // Unique user identifier
