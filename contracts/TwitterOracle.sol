@@ -189,11 +189,11 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
       mintingData.allTwitterUsers.push(twitterUserID);
       mintingData.userIndexByUserID[twitterUserID] = mintingData.allTwitterUsers.length - 1;
 
-      // Mint bonus coins for having both verifications
+      // Standard welcome coins for verification
       _mintForUserByIndex(
         mintingData.allTwitterUsers.length - 1,
-        mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET * 2
-      ); // double welcome coins for dual verification
+        mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET
+      ); // standard welcome coins
 
       emit TwitterVerificationResult(twitterUserID, wallet, true, 'Combined with Farcaster verification');
       emit FarcasterVerificationResult(farcasterFid, wallet, true, 'Combined with Twitter verification');

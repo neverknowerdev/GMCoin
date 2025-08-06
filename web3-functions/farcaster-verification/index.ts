@@ -185,7 +185,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
         const twitterCheck = await checkForTwitterVerification(farcasterFid.toString(), farcasterPrimaryAddress, verifierContract);
         
         if (twitterCheck.hasTwitter && twitterCheck.twitterUserId) {
-            console.log(`🎉 Enhanced verification: FID ${farcasterFid} also has Twitter account ${twitterCheck.twitterUserId}`);
+            console.log(`🎉 Combined verification: FID ${farcasterFid} also has Twitter account ${twitterCheck.twitterUserId}`);
             
             // Use combined verification function
             return {
