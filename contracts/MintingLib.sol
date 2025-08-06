@@ -33,14 +33,14 @@ library MintingLib {
         mintingData.currentEpochPoints,
         0 // will be passed from main contract
       );
-      
+
       uint256 newMultiplicator = changeComplexity(
         mintingConfig.COINS_MULTIPLICATOR,
         mintingData.lastEpochPoints,
         mintingData.currentEpochPoints,
         newPointsDeltaStreak
       );
-      
+
       mintingConfig.COINS_MULTIPLICATOR = newMultiplicator;
       mintingData.epochStartedAt = dayToMint;
       mintingConfig.epochNumber++;
@@ -67,48 +67,7 @@ library MintingLib {
     return (mintingData.lastMintedDay < yesterday);
   }
 
-  function processTwitterMinting(
-    GMStorage.MintingData storage mintingData,
-    GMStorage.MintingConfig storage mintingConfig,
-    GMStorage.UserTwitterData[] calldata userData,
-    uint32 mintingDayTimestamp
-  ) external returns (GMStorage.UserMintingResult[] memory results) {
-    require(mintingData.mintingInProgressForDay != 0, 'no ongoing minting process');
-    require(mintingDayTimestamp == mintingData.mintingInProgressForDay, 'wrong mintingDay');
-
-    results = new GMStorage.UserMintingResult[](userData.length);
-
-    for (uint256 i = 0; i < userData.length; i++) {
-      if (userData[i].userIndex > mintingData.allTwitterUsers.length) {
-        revert('wrong userIndex');
-      }
-
-      uint256 points = userData[i].simpleTweets *
-        mintingConfig.POINTS_PER_TWEET +
-        userData[i].likes *
-        mintingConfig.POINTS_PER_LIKE +
-        userData[i].hashtagTweets *
-        mintingConfig.POINTS_PER_HASHTAG +
-        userData[i].cashtagTweets *
-        mintingConfig.POINTS_PER_CASHTAG;
-
-      if (points > 0) {
-        mintingData.mintingDayPointsFromUsers += points;
-        uint256 coins = points * mintingConfig.COINS_MULTIPLICATOR;
-        results[i] = GMStorage.UserMintingResult({
-          userIndex: userData[i].userIndex,
-          mintAmount: coins,
-          shouldMint: true
-        });
-      } else {
-        results[i] = GMStorage.UserMintingResult({
-          userIndex: userData[i].userIndex,
-          mintAmount: 0,
-          shouldMint: false
-        });
-      }
-    }
-  }
+  // processTwitterMinting moved to TwitterOracleLib for proper separation of concerns
 
   function getStartOfYesterday() public view returns (uint32) {
     uint32 startOfToday = uint32((block.timestamp / 1 days) * 1 days);

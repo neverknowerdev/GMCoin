@@ -5,12 +5,20 @@ import '@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
 import '@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol';
+import '@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol';
 import './TwitterOracle.sol';
+import './FarcasterOracle.sol';
+import './AccountManager.sol';
 
-import { GMWeb3Functions } from './GelatoWeb3Functions.sol';
-import { GMStorage } from './Storage.sol';
-
-contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracle {
+contract GMCoin is
+  Initializable,
+  OwnableUpgradeable,
+  ERC20Upgradeable,
+  UUPSUpgradeable,
+  TwitterOracle,
+  FarcasterOracle,
+  AccountManager
+{
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
     _disableInitializers();
@@ -54,33 +62,34 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
   event UpgradePlanned(uint256 plannedTime, address newImplementation);
   event UpgradeApplied(uint256 time, address newImplementation);
 
-  // function clearThirdwebGelatoFunc() public reinitializer(4) onlyOwner {
-  //   deleteThirdwebGelatoFunc();
-  // }
+  // Override modifiers from parent contracts
+  modifier onlyGelato() override(TwitterOracle, FarcasterOracle) {
+    require(_msgSender() == gelatoConfig.gelatoAddress, 'only Gelato can call this function');
+    _;
+  }
 
-  // disabled Timelock for testing period on Mainnet, then would be turned on
-  //    function scheduleUpgrade(address newImplementation) public onlyOwner {
-  //        require(newImplementation != address(0), "wrong newImplementation address");
-  //        require(timeLockConfig.plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
-  //
-  //        timeLockConfig.plannedNewImplementation = newImplementation;
-  //        timeLockConfig.plannedNewImplementationTime = block.timestamp + 3 days;
-  //
-  //        emit UpgradePlanned(timeLockConfig.plannedNewImplementationTime, newImplementation);
-  //    }
-  //
-  //    function upgradeToAndCall(address newImplementation, bytes memory data) public override payable onlyOwner {
-  //        require(newImplementation != address(0), "wrong newImplementation address");
-  //        require(newImplementation == timeLockConfig.plannedNewImplementation, "you should schedule upgrade first");
-  //        require(block.timestamp > timeLockConfig.plannedNewImplementationTime, "timeDelay is not passed to make an upgrade");
-  //
-  //        timeLockConfig.plannedNewImplementationTime = 0;
-  //        timeLockConfig.plannedNewImplementation = address(0);
-  //
-  //        super.upgradeToAndCall(newImplementation, data);
-  //
-  //        emit UpgradeApplied(block.timestamp, newImplementation);
-  //    }
+  modifier onlyOwner() override(OwnableUpgradeable, AccountManager) {
+    _checkOwner();
+    _;
+  }
+
+  // Provide storage access to parent contracts
+  function _getMintingData()
+    internal
+    view
+    override(FarcasterOracle, AccountManager)
+    returns (GMStorage.MintingData storage)
+  {
+    return mintingData;
+  }
+
+  function _getMintingConfig() internal view override returns (GMStorage.MintingConfig storage) {
+    return mintingConfig;
+  }
+
+  function _msgSender() internal view override(ContextUpgradeable, FarcasterOracle, AccountManager) returns (address) {
+    return super._msgSender();
+  }
 
   function _update(address from, address to, uint256 value) internal override {
     // minting
@@ -107,7 +116,6 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
     mintingData.mintedAmountByWallet[walletAddr] += amount;
   }
 
-  // Implement Farcaster minting function
   function _mintForFarcasterUserByIndex(uint256 userIndex, uint256 amount) internal override {
     address walletAddr = walletByFarcasterUserIndex(userIndex);
     require(walletAddr != address(0), "walletAddr shouldn't be zero!");
@@ -117,18 +125,35 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
   }
 
   // =============================================================================
-  // NEW: Unified User System Functions
+  // Unified User System Implementation
   // =============================================================================
+
+  function _createOrLinkUnifiedUser(
+    address wallet,
+    string memory twitterId,
+    uint256 farcasterFid
+  ) internal override(TwitterOracle, FarcasterOracle) returns (uint256) {
+    return createOrLinkUnifiedUser(wallet, twitterId, farcasterFid);
+  }
+
+  function _emitUnifiedUserCreated(
+    uint256 userId,
+    address wallet,
+    string memory twitterId,
+    uint256 farcasterFid
+  ) internal override(TwitterOracle, FarcasterOracle) {
+    emit UnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
+  }
 
   /**
    * @dev Mint tokens directly to a unified user by user ID
    */
   function mintForUnifiedUser(uint256 userId, uint256 amount) public onlyGelato {
-    require(mintingData.unifiedUserSystemEnabled, "Unified user system not enabled");
-    require(mintingData.unifiedUsers[userId].userId != 0, "User does not exist");
-    
+    require(mintingData.unifiedUserSystemEnabled, 'Unified user system not enabled');
+    require(mintingData.unifiedUsers[userId].userId != 0, 'User does not exist');
+
     address walletAddr = mintingData.unifiedUsers[userId].primaryWallet;
-    require(walletAddr != address(0), "Primary wallet not set");
+    require(walletAddr != address(0), 'Primary wallet not set');
 
     _mint(walletAddr, amount);
     mintingData.mintedAmountByWallet[walletAddr] += amount;
@@ -140,7 +165,7 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
   function _mintForUnifiedUserByIndex(uint256 userIndex, uint256 amount) internal {
     address walletAddr = walletByUnifiedUserIndex(userIndex);
     if (walletAddr == address(0)) return; // Skip if no unified user found
-    
+
     _mint(walletAddr, amount);
     mintingData.mintedAmountByWallet[walletAddr] += amount;
   }
@@ -151,7 +176,7 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
   function verifyTwitterUnified(string calldata userID, address wallet) public override onlyGelato {
     // Call the enhanced verification from TwitterOracle
     super.verifyTwitterUnified(userID, wallet);
-    
+
     // Give welcome bonus if unified user was created
     if (mintingData.unifiedUserSystemEnabled) {
       uint256 userId = mintingData.walletToUnifiedUserId[wallet];
@@ -165,9 +190,9 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
    * @dev Enhanced Farcaster verification that also creates unified user
    */
   function verifyFarcasterUnified(uint256 farcasterFid, address wallet) public override onlyGelato {
-    // Call the enhanced verification from TwitterOracle
+    // Call the enhanced verification from FarcasterOracle
     super.verifyFarcasterUnified(farcasterFid, wallet);
-    
+
     // Give welcome bonus if unified user was created
     if (mintingData.unifiedUserSystemEnabled) {
       uint256 userId = mintingData.walletToUnifiedUserId[wallet];
@@ -181,11 +206,11 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
    * @dev Mint welcome bonus for unified user
    */
   function _mintWelcomeBonusForUnifiedUser(uint256 userId) internal {
-    require(mintingData.unifiedUsers[userId].userId != 0, "User does not exist");
-    
+    require(mintingData.unifiedUsers[userId].userId != 0, 'User does not exist');
+
     uint256 welcomeAmount = mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET;
     address walletAddr = mintingData.unifiedUsers[userId].primaryWallet;
-    
+
     _mint(walletAddr, welcomeAmount);
     mintingData.mintedAmountByWallet[walletAddr] += welcomeAmount;
   }
@@ -197,15 +222,12 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
   /**
    * @dev Get basic unified user information
    */
-  function getUnifiedUserInfo(uint256 userId) external view returns (
-    address primaryWallet,
-    string memory twitterId,
-    uint256 farcasterFid,
-    bool isHumanVerified
-  ) {
-    require(mintingData.unifiedUserSystemEnabled, "Unified user system not enabled");
-    require(mintingData.unifiedUsers[userId].userId != 0, "User does not exist");
-    
+  function getUnifiedUserInfo(
+    uint256 userId
+  ) external view returns (address primaryWallet, string memory twitterId, uint256 farcasterFid, bool isHumanVerified) {
+    require(mintingData.unifiedUserSystemEnabled, 'Unified user system not enabled');
+    require(mintingData.unifiedUsers[userId].userId != 0, 'User does not exist');
+
     UnifiedUser memory user = mintingData.unifiedUsers[userId];
     return (user.primaryWallet, user.twitterId, user.farcasterFid, user.isHumanVerified);
   }

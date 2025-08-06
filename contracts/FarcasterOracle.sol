@@ -3,75 +3,94 @@ pragma solidity ^0.8.24;
 
 import { GMStorage } from './Storage.sol';
 
-library FarcasterOracleLib {
-  using FarcasterOracleLib for GMStorage.MintingData;
+abstract contract FarcasterOracle {
+  // Farcaster events
+  event VerifyFarcasterRequested(uint256 indexed farcasterFid, address indexed wallet);
+  event FarcasterVerificationResult(
+    uint256 indexed farcasterFid,
+    address indexed wallet,
+    bool isSuccess,
+    string errorMsg
+  );
+  event farcasterMintingProcessed(uint32 indexed mintingDayTimestamp, GMStorage.Batch[] batches);
 
-  // Events need to be defined in the contract that uses this library
+  // Access control - to be inherited from main contract
+  modifier onlyGelato() virtual {
+    _;
+  }
+
+  // Internal storage access - to be provided by main contract
+  function _getMintingData() internal view virtual returns (GMStorage.MintingData storage);
+
+  function _getMintingConfig() internal view virtual returns (GMStorage.MintingConfig storage);
+
+  function _msgSender() internal view virtual returns (address);
 
   // Farcaster verification functions
 
-  function requestFarcasterVerification(
-    GMStorage.MintingData storage mintingData,
-    uint256 farcasterFid,
-    address sender
-  ) external {
+  function requestFarcasterVerification(uint256 farcasterFid) public {
+    GMStorage.MintingData storage mintingData = _getMintingData();
     require(mintingData.farcasterWalletsByFIDs[farcasterFid] == address(0), 'Farcaster account already linked');
-    require(mintingData.farcasterUsersByWallets[sender] == 0, 'wallet already linked to FID');
+    require(mintingData.farcasterUsersByWallets[_msgSender()] == 0, 'wallet already linked to FID');
+
+    emit VerifyFarcasterRequested(farcasterFid, _msgSender());
   }
 
-  function verifyFarcaster(
-    GMStorage.MintingData storage mintingData,
-    GMStorage.MintingConfig storage mintingConfig,
-    uint256 farcasterFid,
-    address wallet
-  ) external returns (bool shouldMint, uint256 userIndex, uint256 mintAmount) {
+  function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
+
     mintingData.farcasterUsersByWallets[wallet] = farcasterFid;
     mintingData.registeredWallets[wallet] = true;
+
+    bool shouldMint = false;
+    uint256 userIndex = 0;
+    uint256 mintAmount = 0;
 
     if (mintingData.farcasterWalletsByFIDs[farcasterFid] == address(0)) {
       mintingData.farcasterWalletsByFIDs[farcasterFid] = wallet;
       mintingData.allFarcasterUsers.push(farcasterFid);
       mintingData.farcasterUserIndexByFID[farcasterFid] = mintingData.allFarcasterUsers.length - 1;
 
-      return (
-        true,
-        mintingData.allFarcasterUsers.length - 1,
-        mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET
-      );
+      shouldMint = true;
+      userIndex = mintingData.allFarcasterUsers.length - 1;
+      mintAmount = mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET;
     }
-    return (false, 0, 0);
+
+    if (shouldMint) {
+      _mintForFarcasterUserByIndex(userIndex, mintAmount);
+    }
+
+    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
 
-  // Error handling moved to main contract
+  function farcasterVerificationError(
+    address wallet,
+    uint256 farcasterFid,
+    string calldata errorMsg
+  ) public onlyGelato {
+    emit FarcasterVerificationResult(farcasterFid, wallet, false, errorMsg);
+  }
 
   // Farcaster query functions
 
-  function isFarcasterUserRegistered(
-    GMStorage.MintingData storage mintingData,
-    uint256 farcasterFid
-  ) external view returns (bool) {
+  function isFarcasterUserRegistered(uint256 farcasterFid) public view returns (bool) {
+    GMStorage.MintingData storage mintingData = _getMintingData();
     return mintingData.registeredWallets[mintingData.farcasterWalletsByFIDs[farcasterFid]];
   }
 
-  function getWalletByFID(
-    GMStorage.MintingData storage mintingData,
-    uint256 farcasterFid
-  ) external view returns (address) {
+  function getWalletByFID(uint256 farcasterFid) public view returns (address) {
+    GMStorage.MintingData storage mintingData = _getMintingData();
     return mintingData.farcasterWalletsByFIDs[farcasterFid];
   }
 
-  function getFIDByWallet(
-    GMStorage.MintingData storage mintingData,
-    address wallet
-  ) external view returns (uint256) {
+  function getFIDByWallet(address wallet) public view returns (uint256) {
+    GMStorage.MintingData storage mintingData = _getMintingData();
     return mintingData.farcasterUsersByWallets[wallet];
   }
 
-  function getFarcasterUsers(
-    GMStorage.MintingData storage mintingData,
-    uint64 start,
-    uint16 count
-  ) external view returns (uint256[] memory) {
+  function getFarcasterUsers(uint64 start, uint16 count) public view returns (uint256[] memory) {
+    GMStorage.MintingData storage mintingData = _getMintingData();
     uint64 end = start + count;
     if (end > mintingData.allFarcasterUsers.length) {
       end = uint64(mintingData.allFarcasterUsers.length);
@@ -88,23 +107,25 @@ library FarcasterOracleLib {
     return batchArr;
   }
 
-  function walletByFarcasterUserIndex(
-    GMStorage.MintingData storage mintingData,
-    uint256 userIndex
-  ) external view returns (address) {
+  function walletByFarcasterUserIndex(uint256 userIndex) internal view returns (address) {
+    GMStorage.MintingData storage mintingData = _getMintingData();
     return mintingData.farcasterWalletsByFIDs[mintingData.allFarcasterUsers[userIndex]];
+  }
+
+  function totalFarcasterUsersCount() public view returns (uint256) {
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    return mintingData.allFarcasterUsers.length;
   }
 
   // Farcaster minting functions
 
-  // Minting functions moved to main contract
-
   function processFarcasterMinting(
-    GMStorage.MintingData storage mintingData,
-    GMStorage.MintingConfig storage mintingConfig,
     GMStorage.UserFarcasterData[] calldata userData,
     uint32 mintingDayTimestamp
-  ) external returns (GMStorage.UserMintingResult[] memory results) {
+  ) internal returns (GMStorage.UserMintingResult[] memory results) {
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
+
     require(mintingData.mintingInProgressForDay != 0, 'no ongoing minting process');
     require(mintingDayTimestamp == mintingData.mintingInProgressForDay, 'wrong mintingDay');
 
@@ -142,8 +163,50 @@ library FarcasterOracleLib {
     }
   }
 
-  /**
-   * @dev Enhanced Farcaster verification that creates unified users
-   */
-  // Unified verification moved to main contract
+  function mintCoinsForFarcasterUsers(
+    GMStorage.UserFarcasterData[] calldata userData,
+    uint32 mintingDayTimestamp,
+    GMStorage.Batch[] calldata batches
+  ) public onlyGelato {
+    GMStorage.UserMintingResult[] memory results = processFarcasterMinting(userData, mintingDayTimestamp);
+
+    for (uint256 i = 0; i < results.length; i++) {
+      if (results[i].shouldMint) {
+        _mintForFarcasterUserByIndex(results[i].userIndex, results[i].mintAmount);
+      }
+    }
+
+    if (batches.length > 0) {
+      emit farcasterMintingProcessed(mintingDayTimestamp, batches);
+    }
+  }
+
+  // Enhanced Farcaster verification that creates unified users
+  function verifyFarcasterUnified(uint256 farcasterFid, address wallet) public virtual onlyGelato {
+    verifyFarcaster(farcasterFid, wallet);
+
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    if (mintingData.unifiedUserSystemEnabled) {
+      uint256 userId = _createOrLinkUnifiedUser(wallet, '', farcasterFid);
+      if (userId > 0) {
+        _emitUnifiedUserCreated(userId, wallet, '', farcasterFid);
+      }
+    }
+  }
+
+  // Abstract functions to be implemented by main contract
+  function _mintForFarcasterUserByIndex(uint256 userIndex, uint256 amount) internal virtual {}
+
+  function _createOrLinkUnifiedUser(
+    address wallet,
+    string memory twitterId,
+    uint256 farcasterFid
+  ) internal virtual returns (uint256) {}
+
+  function _emitUnifiedUserCreated(
+    uint256 userId,
+    address wallet,
+    string memory twitterId,
+    uint256 farcasterFid
+  ) internal virtual {}
 }
