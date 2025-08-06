@@ -7,14 +7,80 @@ import {
 import { Contract } from "ethers";
 import ky, { HTTPError } from "ky";
 
-// Define Farcaster API endpoint
+// Define Farcaster API endpoints
 const FARCASTER_PRIMARY_ADDRESS_URL = 'https://api.farcaster.xyz/fc/primary-address';
+const FARCASTER_CONNECTED_ADDRESSES_URL = 'https://api.farcaster.xyz/fc/connected-addresses';
+
+// Interface for connected addresses response
+interface ConnectedAddress {
+    address: string;
+    protocol: string;
+    verification?: {
+        platform: string;
+        username?: string;
+        userId?: string;
+    };
+}
+
+interface ConnectedAddressesResponse {
+    result: {
+        connectedAddresses: ConnectedAddress[];
+    };
+}
 
 const VerifierContractABI = [
     "function verifyFarcaster(uint256 farcasterFid, address wallet) public",
+    "function verifyBothFarcasterAndTwitter(uint256 farcasterFid, string calldata twitterUserID, address wallet) public",
     "function farcasterVerificationError(address wallet, uint256 farcasterFid, string calldata errorMsg) public",
+    "function isWalletRegistered(address wallet) public view returns (bool)",
+    "function userByWallet(address wallet) public view returns (string memory)",
     "event VerifyFarcasterRequested(uint256 indexed farcasterFid, address indexed wallet)",
 ];
+
+/**
+ * Check if a Farcaster FID has a connected Twitter account by checking the primary address
+ * against existing Twitter verifications in the smart contract
+ */
+async function checkForTwitterVerification(
+    farcasterFid: string, 
+    primaryAddress: string,
+    contract: Contract
+): Promise<{
+    hasTwitter: boolean;
+    twitterUserId?: string;
+}> {
+    try {
+        console.log(`Checking for Twitter verification for FID ${farcasterFid} with address ${primaryAddress}`);
+        
+        // Check if this address is already registered in the Twitter verification system
+        const isRegistered = await contract.isWalletRegistered(primaryAddress);
+        
+        if (isRegistered) {
+            // Get the Twitter user ID for this wallet
+            const twitterUserId = await contract.userByWallet(primaryAddress);
+            
+            if (twitterUserId && twitterUserId !== '') {
+                console.log(`✓ Found existing Twitter verification: ${twitterUserId} for address ${primaryAddress}`);
+                return {
+                    hasTwitter: true,
+                    twitterUserId: twitterUserId
+                };
+            }
+        }
+        
+        console.log(`No existing Twitter verification found for address ${primaryAddress}`);
+        return {
+            hasTwitter: false,
+            twitterUserId: undefined
+        };
+    } catch (error) {
+        console.error('Error checking for Twitter verification:', error);
+        return {
+            hasTwitter: false,
+            twitterUserId: undefined
+        };
+    }
+}
 
 Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3FunctionResult> => {
     // Get event log from Web3FunctionEventContext
@@ -46,7 +112,7 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
                 fid: farcasterFid.toString(),
                 protocol: 'ethereum'
             },
-            timeout: 10000
+            timeout: 3000
         });
 
         const farcasterData = await response.json() as any;
@@ -115,19 +181,43 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
 
         console.log(`✅ Verification successful: FID ${farcasterFid} primary address matches wallet ${wallet}`);
 
-        // SUCCESS: Primary address matches wallet
-        return {
-            canExec: true,
-            callData: [
-                {
-                    to: userArgs.verifierContractAddress as string,
-                    data: verifierContract.interface.encodeFunctionData("verifyFarcaster", [
-                        farcasterFid,
-                        wallet
-                    ]),
-                },
-            ],
-        };
+        // Check for Twitter verification as an enhancement
+        const twitterCheck = await checkForTwitterVerification(farcasterFid.toString(), farcasterPrimaryAddress, verifierContract);
+        
+        if (twitterCheck.hasTwitter && twitterCheck.twitterUserId) {
+            console.log(`🎉 Enhanced verification: FID ${farcasterFid} also has Twitter account ${twitterCheck.twitterUserId}`);
+            
+            // Use combined verification function
+            return {
+                canExec: true,
+                callData: [
+                    {
+                        to: userArgs.verifierContractAddress as string,
+                        data: verifierContract.interface.encodeFunctionData("verifyBothFarcasterAndTwitter", [
+                            farcasterFid,
+                            twitterCheck.twitterUserId,
+                            wallet
+                        ]),
+                    },
+                ],
+            };
+        } else {
+            console.log(`📝 Standard verification: FID ${farcasterFid} Farcaster-only verification`);
+            
+            // SUCCESS: Primary address matches wallet - Farcaster only
+            return {
+                canExec: true,
+                callData: [
+                    {
+                        to: userArgs.verifierContractAddress as string,
+                        data: verifierContract.interface.encodeFunctionData("verifyFarcaster", [
+                            farcasterFid,
+                            wallet
+                        ]),
+                    },
+                ],
+            };
+        }
 
     } catch (error: any) {
         console.error('Error during Farcaster verification:', error);

@@ -87,8 +87,15 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
 
   event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet);
   event TwitterVerificationResult(string userID, address indexed wallet, bool isSuccess, string errorMsg);
+  event FarcasterVerificationResult(
+    uint256 indexed farcasterFid,
+    address indexed wallet,
+    bool isSuccess,
+    string errorMsg
+  );
 
   event verifyTwitterByAuthCodeRequested(address wallet, string authCode, string tweetID, string userID);
+  event VerifyFarcasterRequested(uint256 indexed farcasterFid, address indexed wallet);
 
   function requestTwitterVerificationByAuthCode(
     string calldata authCode,
@@ -149,6 +156,47 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
       ); // mint welcome coins
 
       emit TwitterVerificationResult(userID, wallet, true, '');
+    }
+  }
+
+  function farcasterVerificationError(
+    address wallet,
+    uint256 farcasterFid,
+    string calldata errorMsg
+  ) public onlyGelato {
+    emit FarcasterVerificationResult(farcasterFid, wallet, false, errorMsg);
+  }
+
+  function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
+    // For Farcaster-only verification, we don't add to Twitter users list
+    // This is a separate verification that could be used for different purposes
+    // such as verifying ownership of a Farcaster account
+
+    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
+  }
+
+  function verifyBothFarcasterAndTwitter(
+    uint256 farcasterFid,
+    string calldata twitterUserID,
+    address wallet
+  ) public onlyGelato {
+    // This combines both verifications - the user has both Farcaster and Twitter
+    mintingData.usersByWallets[wallet] = twitterUserID;
+    mintingData.registeredWallets[wallet] = true;
+
+    if (mintingData.walletsByUserIDs[twitterUserID] == address(0)) {
+      mintingData.walletsByUserIDs[twitterUserID] = wallet;
+      mintingData.allTwitterUsers.push(twitterUserID);
+      mintingData.userIndexByUserID[twitterUserID] = mintingData.allTwitterUsers.length - 1;
+
+      // Mint bonus coins for having both verifications
+      _mintForUserByIndex(
+        mintingData.allTwitterUsers.length - 1,
+        mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET * 2
+      ); // double welcome coins for dual verification
+
+      emit TwitterVerificationResult(twitterUserID, wallet, true, 'Combined with Farcaster verification');
+      emit FarcasterVerificationResult(farcasterFid, wallet, true, 'Combined with Twitter verification');
     }
   }
 
