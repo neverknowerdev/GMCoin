@@ -56,15 +56,10 @@ describe("GM", function () {
         const TwitterCoinV2Factory: ContractFactory = await ethers.getContractFactory("GMCoinV2");
 
         // Deploy libraries and get factories with proper linking
-        const FarcasterOracleLib = await ethers.getContractFactory("FarcasterOracleLib");
-        const farcasterLib = await FarcasterOracleLib.deploy();
-        await farcasterLib.waitForDeployment();
-        const farcasterLibAddress = await farcasterLib.getAddress();
-
-        const AccountOracleLib = await ethers.getContractFactory("AccountOracleLib");
-        const accountLib = await AccountOracleLib.deploy();
-        await accountLib.waitForDeployment();
-        const accountLibAddress = await accountLib.getAddress();
+        const TwitterOracleLib = await ethers.getContractFactory("TwitterOracleLib");
+        const twitterLib = await TwitterOracleLib.deploy();
+        await twitterLib.waitForDeployment();
+        const twitterLibAddress = await twitterLib.getAddress();
 
         const MintingLib = await ethers.getContractFactory("MintingLib");
         const mintingLib = await MintingLib.deploy();
@@ -73,8 +68,7 @@ describe("GM", function () {
 
         const GMCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin", {
             libraries: {
-                "contracts/FarcasterOracle.sol:FarcasterOracleLib": farcasterLibAddress,
-                "contracts/AccountOracle.sol:AccountOracleLib": accountLibAddress,
+                "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
                 "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
             },
         });

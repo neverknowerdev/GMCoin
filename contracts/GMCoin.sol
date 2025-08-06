@@ -55,6 +55,9 @@ contract GMCoin is
     mintingConfig.epochNumber = 1;
 
     mintingData.epochStartedAt = uint32(block.timestamp);
+
+    // Enable unified user system by default
+    mintingData.unifiedUserSystemEnabled = true;
   }
 
   function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
@@ -68,9 +71,12 @@ contract GMCoin is
     _;
   }
 
-  modifier onlyOwner() override(OwnableUpgradeable, AccountManager) {
+  function _checkOwner() internal view override(OwnableUpgradeable) {
+    super._checkOwner();
+  }
+
+  function _requireOwner() internal view override {
     _checkOwner();
-    _;
   }
 
   // Provide storage access to parent contracts
@@ -145,19 +151,7 @@ contract GMCoin is
     emit UnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
   }
 
-  /**
-   * @dev Mint tokens directly to a unified user by user ID
-   */
-  function mintForUnifiedUser(uint256 userId, uint256 amount) public onlyGelato {
-    require(mintingData.unifiedUserSystemEnabled, 'Unified user system not enabled');
-    require(mintingData.unifiedUsers[userId].userId != 0, 'User does not exist');
-
-    address walletAddr = mintingData.unifiedUsers[userId].primaryWallet;
-    require(walletAddr != address(0), 'Primary wallet not set');
-
-    _mint(walletAddr, amount);
-    mintingData.mintedAmountByWallet[walletAddr] += amount;
-  }
+  // mintForUnifiedUser function removed as it's not used anywhere
 
   /**
    * @dev Mint for unified user by index (for compatibility with existing minting process)
@@ -170,49 +164,15 @@ contract GMCoin is
     mintingData.mintedAmountByWallet[walletAddr] += amount;
   }
 
-  /**
-   * @dev Enhanced Twitter verification that also creates unified user
-   */
-  function verifyTwitterUnified(string calldata userID, address wallet) public override onlyGelato {
-    // Call the enhanced verification from TwitterOracle
-    super.verifyTwitterUnified(userID, wallet);
-
-    // Give welcome bonus if unified user was created
-    if (mintingData.unifiedUserSystemEnabled) {
-      uint256 userId = mintingData.walletToUnifiedUserId[wallet];
-      if (userId != 0) {
-        _mintWelcomeBonusForUnifiedUser(userId);
-      }
-    }
-  }
+  // verifyTwitterUnified and verifyFarcasterUnified are handled in TwitterOracle and FarcasterOracle
+  // We can have a separate function like "mintWelcomeBonus" that can be called from other contracts
 
   /**
-   * @dev Enhanced Farcaster verification that also creates unified user
+   * @dev Mint welcome bonus - can be called by other contracts
    */
-  function verifyFarcasterUnified(uint256 farcasterFid, address wallet) public override onlyGelato {
-    // Call the enhanced verification from FarcasterOracle
-    super.verifyFarcasterUnified(farcasterFid, wallet);
-
-    // Give welcome bonus if unified user was created
-    if (mintingData.unifiedUserSystemEnabled) {
-      uint256 userId = mintingData.walletToUnifiedUserId[wallet];
-      if (userId != 0) {
-        _mintWelcomeBonusForUnifiedUser(userId);
-      }
-    }
-  }
-
-  /**
-   * @dev Mint welcome bonus for unified user
-   */
-  function _mintWelcomeBonusForUnifiedUser(uint256 userId) internal {
-    require(mintingData.unifiedUsers[userId].userId != 0, 'User does not exist');
-
-    uint256 welcomeAmount = mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET;
-    address walletAddr = mintingData.unifiedUsers[userId].primaryWallet;
-
-    _mint(walletAddr, welcomeAmount);
-    mintingData.mintedAmountByWallet[walletAddr] += welcomeAmount;
+  function mintWelcomeBonus(address wallet, uint256 amount) public onlyGelato {
+    _mint(wallet, amount);
+    mintingData.mintedAmountByWallet[wallet] += amount;
   }
 
   // =============================================================================

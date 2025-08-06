@@ -11,7 +11,7 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
   using TwitterOracleLib for GMStorage.MintingData;
   using MintingLib for GMStorage.MintingData;
 
-  modifier onlyGelato() {
+  modifier onlyGelato() virtual {
     require(_msgSender() == gelatoConfig.gelatoAddress, 'only Gelato can call this function');
     _;
   }

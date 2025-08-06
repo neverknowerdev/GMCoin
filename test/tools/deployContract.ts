@@ -5,39 +5,32 @@ import {ContractFactory} from "ethers";
 
 async function deployLibrariesAndGetFactories() {
     // Deploy libraries first
-    const FarcasterOracleLib = await ethers.getContractFactory("FarcasterOracleLib");
-    const farcasterLib = await FarcasterOracleLib.deploy();
-    await farcasterLib.waitForDeployment();
-    const farcasterLibAddress = await farcasterLib.getAddress();
-
-    const AccountOracleLib = await ethers.getContractFactory("AccountOracleLib");
-    const accountLib = await AccountOracleLib.deploy();
-    await accountLib.waitForDeployment();
-    const accountLibAddress = await accountLib.getAddress();
+    const TwitterOracleLib = await ethers.getContractFactory("TwitterOracleLib");
+    const twitterLib = await TwitterOracleLib.deploy();
+    await twitterLib.waitForDeployment();
+    const twitterLibAddress = await twitterLib.getAddress();
 
     const MintingLib = await ethers.getContractFactory("MintingLib");
     const mintingLib = await MintingLib.deploy();
     await mintingLib.waitForDeployment();
     const mintingLibAddress = await mintingLib.getAddress();
 
-    // Get contract factories with library linking
+    // Get contract factories with library linking (AccountManager is no longer a library)
     const GMCoinExposedFactory = await ethers.getContractFactory("GMCoinExposed", {
         libraries: {
-            "contracts/FarcasterOracle.sol:FarcasterOracleLib": farcasterLibAddress,
-            "contracts/AccountOracle.sol:AccountOracleLib": accountLibAddress,
+            "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
             "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
         },
     });
 
     const GMCoinFactory = await ethers.getContractFactory("GMCoin", {
         libraries: {
-            "contracts/FarcasterOracle.sol:FarcasterOracleLib": farcasterLibAddress,
-            "contracts/AccountOracle.sol:AccountOracleLib": accountLibAddress,
+            "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
             "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
         },
     });
 
-    return { GMCoinExposedFactory, GMCoinFactory, farcasterLibAddress, accountLibAddress, mintingLibAddress };
+    return { GMCoinExposedFactory, GMCoinFactory, twitterLibAddress, mintingLibAddress };
 }
 
 export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number = 0) {

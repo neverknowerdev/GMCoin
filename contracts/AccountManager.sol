@@ -18,9 +18,7 @@ abstract contract AccountManager {
   event UnifiedHumanVerificationUpdated(uint256 indexed userId, bool isVerified);
 
   // Access control - to be inherited from main contract
-  modifier onlyOwner() virtual {
-    _;
-  }
+  function _requireOwner() internal view virtual;
 
   // Internal storage access - to be provided by main contract
   function _getMintingData() internal view virtual returns (GMStorage.MintingData storage);
@@ -29,12 +27,14 @@ abstract contract AccountManager {
 
   // Unified User System Functions
 
-  function enableUnifiedUserSystem() public onlyOwner {
+  function enableUnifiedUserSystem() public {
+    _requireOwner();
     GMStorage.MintingData storage mintingData = _getMintingData();
     mintingData.unifiedUserSystemEnabled = true;
   }
 
-  function disableUnifiedUserSystem() public onlyOwner {
+  function disableUnifiedUserSystem() public {
+    _requireOwner();
     GMStorage.MintingData storage mintingData = _getMintingData();
     mintingData.unifiedUserSystemEnabled = false;
   }
@@ -70,7 +70,7 @@ abstract contract AccountManager {
     GMStorage.UnifiedUser storage user = mintingData.unifiedUsers[userId];
     user.userId = userId;
     user.primaryWallet = primaryWallet;
-    user.isHumanVerified = true;
+    user.isHumanVerified = false;
     user.createdAt = uint32(block.timestamp);
     user.twitterId = twitterId;
     user.farcasterFid = farcasterFid;
@@ -134,17 +134,16 @@ abstract contract AccountManager {
     emit UnifiedWalletLinked(userId, newWallet);
   }
 
-  function setUnifiedUserHumanVerification(uint256 userId, bool isVerified) public onlyOwner {
+  function setUnifiedUserHumanVerification(uint256 userId, bool isVerified) public {
+    _requireOwner();
     GMStorage.MintingData storage mintingData = _getMintingData();
     require(mintingData.unifiedUserSystemEnabled, 'System not enabled');
     require(mintingData.unifiedUsers[userId].userId != 0, 'User does not exist');
 
     mintingData.unifiedUsers[userId].isHumanVerified = isVerified;
 
-    address[] memory wallets = mintingData.unifiedUserWallets[userId];
-    for (uint256 i = 0; i < wallets.length; i++) {
-      mintingData.registeredWallets[wallets[i]] = isVerified;
-    }
+    // registeredWallets is only to track if wallet is registered, not related to human verification
+    // Human verification status is tracked separately in the unified user system
 
     emit UnifiedHumanVerificationUpdated(userId, isVerified);
   }
@@ -161,6 +160,59 @@ abstract contract AccountManager {
   function isWalletRegistered(address wallet) public view returns (bool) {
     GMStorage.MintingData storage mintingData = _getMintingData();
     return mintingData.registeredWallets[wallet];
+  }
+
+  function setPrimaryWallet(uint256 userId, address newPrimaryWallet) public {
+    _requireOwner();
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    require(mintingData.unifiedUserSystemEnabled, 'System not enabled');
+    require(mintingData.unifiedUsers[userId].userId != 0, 'User does not exist');
+    require(mintingData.walletToUnifiedUserId[newPrimaryWallet] == userId, 'Wallet not linked to this user');
+
+    mintingData.unifiedUsers[userId].primaryWallet = newPrimaryWallet;
+  }
+
+  function mergeUsers(uint256 fromUserId, uint256 toUserId) public {
+    _requireOwner();
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    require(mintingData.unifiedUserSystemEnabled, 'System not enabled');
+    require(mintingData.unifiedUsers[fromUserId].userId != 0, 'From user does not exist');
+    require(mintingData.unifiedUsers[toUserId].userId != 0, 'To user does not exist');
+    require(fromUserId != toUserId, 'Cannot merge user with itself');
+
+    GMStorage.UnifiedUser storage fromUser = mintingData.unifiedUsers[fromUserId];
+    GMStorage.UnifiedUser storage toUser = mintingData.unifiedUsers[toUserId];
+
+    // Move social accounts if not already present
+    if (bytes(fromUser.twitterId).length > 0 && bytes(toUser.twitterId).length == 0) {
+      toUser.twitterId = fromUser.twitterId;
+      mintingData.twitterIdToUnifiedUserId[fromUser.twitterId] = toUserId;
+    }
+
+    if (fromUser.farcasterFid != 0 && toUser.farcasterFid == 0) {
+      toUser.farcasterFid = fromUser.farcasterFid;
+      mintingData.farcasterFidToUnifiedUserId[fromUser.farcasterFid] = toUserId;
+    }
+
+    // Move all wallets from fromUser to toUser
+    address[] memory walletsToMove = mintingData.unifiedUserWallets[fromUserId];
+    for (uint256 i = 0; i < walletsToMove.length; i++) {
+      mintingData.walletToUnifiedUserId[walletsToMove[i]] = toUserId;
+      mintingData.unifiedUserWallets[toUserId].push(walletsToMove[i]);
+    }
+
+    // Clean up fromUser data
+    delete mintingData.unifiedUsers[fromUserId];
+    delete mintingData.unifiedUserWallets[fromUserId];
+
+    // Remove from allUnifiedUsers array
+    for (uint256 i = 0; i < mintingData.allUnifiedUsers.length; i++) {
+      if (mintingData.allUnifiedUsers[i] == fromUserId) {
+        mintingData.allUnifiedUsers[i] = mintingData.allUnifiedUsers[mintingData.allUnifiedUsers.length - 1];
+        mintingData.allUnifiedUsers.pop();
+        break;
+      }
+    }
   }
 
   function removeUser(address wallet) internal {
