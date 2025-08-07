@@ -31,6 +31,10 @@ async function main(): Promise<void> {
     const twitterWorkerCID = await twitterWorkerFunc.deploy();
     console.log('twitterWorkerCID CID', twitterWorkerCID);
 
+    const farcasterVerificationFunc = w3f.get('farcaster-verification');
+    const farcasterVerificationCID = await farcasterVerificationFunc.deploy();
+    console.log('farcasterVerification CID', farcasterVerificationCID);
+
     const [owner, feeAddress] = await ethers.getSigners();
 
     const treasuryContractFactory = await ethers.getContractFactory("GMTreasury");
@@ -87,6 +91,11 @@ async function main(): Promise<void> {
         "twitterOptimizedServerHost": ""
     });
 
+    console.log('encoding farcaster-verification args..');
+    const farcasterVerificationArgsHex = await am.encodeWeb3FunctionArgs(farcasterVerificationCID, {
+        verifierContractAddress: address.toString(),
+    });
+
     console.log('encoding twitter-verify event topics..');
     const twitterVerifyRequestedEvent = GMCoin.interface.getEvent('VerifyTwitterRequested');
     // const twitterVerifyTopics: string[][] = [[ethers.id(twitterVerifyRequestedEvent?.format("sighash") as string)]];
@@ -100,6 +109,10 @@ async function main(): Promise<void> {
     const twitterMintingProcessedEvent = GMCoin.interface.getEvent('twitterMintingProcessed');
     const twitterWorkerTopics: string[][] = [[ethers.id(twitterMintingProcessedEvent?.format("sighash") as string)]];
 
+    console.log('encoding farcaster-verify event topics..');
+    const farcasterVerifyRequestedEvent = GMCoin.interface.getEvent('VerifyFarcasterRequested');
+    const farcasterVerifyTopics: string[][] = [[ethers.id(farcasterVerifyRequestedEvent?.format("sighash") as string)]];
+
     console.log('calling GMCoin.createTwitterVerificationFunction..');
     // function createTwitterVerificationFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner onlyDedicatedMsgSender {
     tx = await GMCoin.createTwitterVerificationFunction(twitterVerificationCID, twitterVerificationArgsHex, twitterVerifyTopics);
@@ -108,7 +121,11 @@ async function main(): Promise<void> {
     console.log('calling GMCoin.createTwitterWorkerFunction..');
     //  function createTwitterWorkerFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner {
     tx = await GMCoin.createTwitterWorkerFunction(twitterWorkerCID, twitterWorkerArgsHex, twitterWorkerTopics);
-    await tx.wait()
+    await tx.wait();
+
+    console.log('calling GMCoin.createFarcasterVerificationFunction..');
+    tx = await GMCoin.createFarcasterVerificationFunction(farcasterVerificationCID, farcasterVerificationArgsHex, farcasterVerifyTopics);
+    await tx.wait();
 
     console.log('calling GMCoin.createDailyFunction..');
     const secondsUntil2AM = secondsUntilNext2AM();
@@ -117,21 +134,26 @@ async function main(): Promise<void> {
     tx = await GMCoin.createDailyFunction(secondsUntil2AM, interval, execData);
     await tx.wait();
 
-    const twitterVerificationTaskId = await GMCoin.twitterVerificationTaskId();
-    const twitterWorkerTaskId = await GMCoin.twitterWorkerTaskId();
-    const dailyTriggerTaskId = await GMCoin.dailyTriggerTaskId();
+    const twitterVerificationTaskId = await GMCoin.gelatoTaskId_twitterVerification();
+    const twitterWorkerTaskId = await GMCoin.gelatoTaskId_twitterWorker();
+    const farcasterVerificationTaskId = await GMCoin.gelatoTaskId_farcasterVerification();
+    const dailyTriggerTaskId = await GMCoin.gelatoTaskId_dailyTrigger();
 
     console.log('twitter-verification task id: ', twitterVerificationTaskId);
     console.log('twitter-worker task id: ', twitterWorkerTaskId);
+    console.log('farcaster-verification task id: ', farcasterVerificationTaskId);
     console.log('dailyTrigger task id: ', dailyTriggerTaskId);
 
     const twitterVerificationSecrets = loadEnvVariables('twitter-verification');
     const twitterWorkerSecrets = loadEnvVariables('twitter-worker');
+    const farcasterVerificationSecrets = loadEnvVariables('farcaster-verification');
 
     console.log('setting secrets for twitter-verification..');
     await setSecretsForW3f(address, owner, twitterVerificationTaskId, hre.network.config.chainId as number, twitterVerificationSecrets);
     console.log('setting secrets for twitter-worker..');
     await setSecretsForW3f(address, owner, twitterWorkerTaskId, hre.network.config.chainId as number, twitterWorkerSecrets);
+    console.log('setting secrets for farcaster-verification..');
+    await setSecretsForW3f(address, owner, farcasterVerificationTaskId, hre.network.config.chainId as number, farcasterVerificationSecrets);
 
     console.log('all done!!');
 }

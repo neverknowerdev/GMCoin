@@ -36,6 +36,11 @@ abstract contract FarcasterOracle {
     emit VerifyFarcasterRequested(farcasterFid, _msgSender());
   }
 
+  // Alias for better UX - same as requestFarcasterVerification
+  function verifyFarcaster(uint256 farcasterFid) public {
+    requestFarcasterVerification(farcasterFid);
+  }
+
   function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
