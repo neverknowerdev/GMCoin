@@ -41,7 +41,67 @@ abstract contract FarcasterOracle {
     requestFarcasterVerification(farcasterFid);
   }
 
-  function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
+  // Complex verification function that handles both Twitter and Farcaster
+  function verifyBothFarcasterAndTwitter(
+    uint256 farcasterFid,
+    address wallet,
+    string calldata twitterId
+  ) public onlyGelato {
+    GMStorage.MintingData storage mintingData = _getMintingData();
+
+    // First verify Farcaster internally
+    _verifyFarcasterInternal(farcasterFid, wallet);
+
+    // Then verify Twitter for the same wallet (simulating Twitter verification)
+    // This assumes the Twitter verification has already been validated by the Web3 Function
+
+    // Register Twitter user if not already exists
+    if (mintingData.walletsByUserIDs[twitterId] == address(0)) {
+      mintingData.allTwitterUsers.push(twitterId);
+      mintingData.userIndexByUserID[twitterId] = mintingData.allTwitterUsers.length - 1;
+    }
+
+    mintingData.usersByWallets[wallet] = twitterId;
+    mintingData.walletsByUserIDs[twitterId] = wallet;
+
+    // Create unified user linking both accounts
+    if (mintingData.unifiedUserSystemEnabled) {
+      uint256 userId = _createOrLinkUnifiedUser(wallet, twitterId, farcasterFid);
+      if (userId > 0) {
+        _emitUnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
+      }
+    }
+
+    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
+    _emitTwitterVerificationResult(twitterId, wallet, true, '');
+  }
+
+  // Function to merge two existing unified accounts
+  function mergeUnifiedAccounts(uint256 farcasterFid, string calldata twitterId, address wallet) public onlyGelato {
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    require(mintingData.unifiedUserSystemEnabled, 'Unified user system not enabled');
+
+    // Get existing user IDs
+    uint256 twitterUserId = mintingData.twitterIdToUnifiedUserId[twitterId];
+    uint256 walletUserId = mintingData.walletToUnifiedUserId[wallet];
+
+    require(twitterUserId != 0, 'Twitter user not found in unified system');
+    require(walletUserId == 0, 'Wallet already has unified user');
+
+    // Verify Farcaster first internally
+    _verifyFarcasterInternal(farcasterFid, wallet);
+
+    // Link the wallet and Farcaster to existing Twitter unified account
+    mintingData.walletToUnifiedUserId[wallet] = twitterUserId;
+    mintingData.unifiedUserWallets[twitterUserId].push(wallet);
+    mintingData.unifiedUsers[twitterUserId].farcasterFid = farcasterFid;
+    mintingData.farcasterFidToUnifiedUserId[farcasterFid] = twitterUserId;
+
+    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
+  }
+
+  // Internal function to handle Farcaster verification logic
+  function _verifyFarcasterInternal(uint256 farcasterFid, address wallet) internal {
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
 
@@ -65,7 +125,10 @@ abstract contract FarcasterOracle {
     if (shouldMint) {
       _mintForFarcasterUserByIndex(userIndex, mintAmount);
     }
+  }
 
+  function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
+    _verifyFarcasterInternal(farcasterFid, wallet);
     emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
 
@@ -213,5 +276,13 @@ abstract contract FarcasterOracle {
     address wallet,
     string memory twitterId,
     uint256 farcasterFid
+  ) internal virtual {}
+
+  // Abstract function to emit Twitter verification result (defined in TwitterOracle)
+  function _emitTwitterVerificationResult(
+    string memory twitterId,
+    address wallet,
+    bool isSuccess,
+    string memory errorMsg
   ) internal virtual {}
 }
