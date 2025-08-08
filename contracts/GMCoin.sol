@@ -152,9 +152,6 @@ contract GMCoin is
     emit UnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
   }
 
-<<<<<<< Updated upstream
-  // mintForUnifiedUser function removed as it's not used anywhere
-=======
   function _emitTwitterVerificationResult(
     string memory twitterId,
     address wallet,
@@ -163,7 +160,5 @@ contract GMCoin is
   ) internal override {
     emit TwitterVerificationResult(twitterId, wallet, isSuccess, errorMsg);
   }
-
->>>>>>> Stashed changes
 
 }

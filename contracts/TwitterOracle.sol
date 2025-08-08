@@ -114,6 +114,10 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     return TwitterOracleLib.getUserByWallet(mintingData, wallet);
   }
 
+  function totalTwitterUsersCount() public view returns (uint256) {
+    return mintingData.allTwitterUsers.length;
+  }
+
   function walletByTwitterUserIndex(uint256 userIndex) internal view returns (address) {
     return TwitterOracleLib.walletByTwitterUserIndex(mintingData, userIndex);
   }

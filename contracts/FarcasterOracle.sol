@@ -38,9 +38,6 @@ abstract contract FarcasterOracle {
     emit VerifyFarcasterRequested(farcasterFid, _msgSender());
   }
 
-<<<<<<< Updated upstream
-  function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
-=======
   // Alias for better UX - same as requestFarcasterVerification
   function verifyFarcaster(uint256 farcasterFid) public {
     requestFarcasterVerification(farcasterFid);
@@ -81,7 +78,6 @@ abstract contract FarcasterOracle {
 
   // Function to merge two existing unified accounts
   function mergeUnifiedAccounts(uint256 farcasterFid, string calldata twitterId, address wallet) public onlyGelato {
->>>>>>> Stashed changes
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
 
@@ -96,9 +92,6 @@ abstract contract FarcasterOracle {
     if (shouldMint) {
       _mintForFarcasterUserByIndex(userIndex, mintAmount);
     }
-<<<<<<< Updated upstream
-
-=======
 
     emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
@@ -117,8 +110,6 @@ abstract contract FarcasterOracle {
     if (shouldMint) {
       _mintForFarcasterUserByIndex(userIndex, mintAmount);
     }
-
->>>>>>> Stashed changes
     emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
 
@@ -208,5 +199,13 @@ abstract contract FarcasterOracle {
     address wallet,
     string memory twitterId,
     uint256 farcasterFid
+  ) internal virtual {}
+
+  // Abstract function to emit Twitter verification result (defined in TwitterOracle)
+  function _emitTwitterVerificationResult(
+    string memory twitterId,
+    address wallet,
+    bool isSuccess,
+    string memory errorMsg
   ) internal virtual {}
 }
