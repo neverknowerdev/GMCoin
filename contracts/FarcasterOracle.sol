@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { GMStorage } from './Storage.sol';
+import { FarcasterOracleLib } from './FarcasterOracleLib.sol';
+import './Errors.sol';
 
 abstract contract FarcasterOracle {
   // Farcaster events
@@ -30,37 +32,93 @@ abstract contract FarcasterOracle {
 
   function requestFarcasterVerification(uint256 farcasterFid) public {
     GMStorage.MintingData storage mintingData = _getMintingData();
-    require(mintingData.farcasterWalletsByFIDs[farcasterFid] == address(0), 'Farcaster account already linked');
-    require(mintingData.farcasterUsersByWallets[_msgSender()] == 0, 'wallet already linked to FID');
+    if (mintingData.farcasterWalletsByFIDs[farcasterFid] != address(0)) revert FarcasterAccountAlreadyLinked();
+    if (mintingData.farcasterUsersByWallets[_msgSender()] != 0) revert WalletAlreadyLinkedToFid();
 
     emit VerifyFarcasterRequested(farcasterFid, _msgSender());
+  }
+
+<<<<<<< Updated upstream
+  function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
+=======
+  // Alias for better UX - same as requestFarcasterVerification
+  function verifyFarcaster(uint256 farcasterFid) public {
+    requestFarcasterVerification(farcasterFid);
+  }
+
+  // Complex verification function that handles both Twitter and Farcaster
+  function verifyBothFarcasterAndTwitter(
+    uint256 farcasterFid,
+    address wallet,
+    string calldata twitterId
+  ) public onlyGelato {
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
+
+    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = FarcasterOracleLib.verifyBothFarcasterAndTwitter(
+      mintingData,
+      mintingConfig,
+      farcasterFid,
+      wallet,
+      twitterId
+    );
+
+    if (shouldMint) {
+      _mintForFarcasterUserByIndex(userIndex, mintAmount);
+    }
+
+    // Create unified user linking both accounts
+    if (mintingData.unifiedUserSystemEnabled) {
+      uint256 userId = _createOrLinkUnifiedUser(wallet, twitterId, farcasterFid);
+      if (userId > 0) {
+        _emitUnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
+      }
+    }
+
+    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
+    _emitTwitterVerificationResult(twitterId, wallet, true, '');
+  }
+
+  // Function to merge two existing unified accounts
+  function mergeUnifiedAccounts(uint256 farcasterFid, string calldata twitterId, address wallet) public onlyGelato {
+>>>>>>> Stashed changes
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
+
+    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = FarcasterOracleLib.mergeUnifiedAccounts(
+      mintingData,
+      mintingConfig,
+      farcasterFid,
+      twitterId,
+      wallet
+    );
+
+    if (shouldMint) {
+      _mintForFarcasterUserByIndex(userIndex, mintAmount);
+    }
+<<<<<<< Updated upstream
+
+=======
+
+    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
 
   function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
 
-    mintingData.farcasterUsersByWallets[wallet] = farcasterFid;
-    mintingData.registeredWallets[wallet] = true;
-
-    bool shouldMint = false;
-    uint256 userIndex = 0;
-    uint256 mintAmount = 0;
-
-    if (mintingData.farcasterWalletsByFIDs[farcasterFid] == address(0)) {
-      mintingData.farcasterWalletsByFIDs[farcasterFid] = wallet;
-      mintingData.allFarcasterUsers.push(farcasterFid);
-      mintingData.farcasterUserIndexByFID[farcasterFid] = mintingData.allFarcasterUsers.length - 1;
-
-      shouldMint = true;
-      userIndex = mintingData.allFarcasterUsers.length - 1;
-      mintAmount = mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET;
-    }
+    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = FarcasterOracleLib.verifyFarcaster(
+      mintingData,
+      mintingConfig,
+      farcasterFid,
+      wallet
+    );
 
     if (shouldMint) {
       _mintForFarcasterUserByIndex(userIndex, mintAmount);
     }
 
+>>>>>>> Stashed changes
     emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
 
@@ -75,100 +133,42 @@ abstract contract FarcasterOracle {
   // Farcaster query functions
 
   function isFarcasterUserRegistered(uint256 farcasterFid) public view returns (bool) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    return mintingData.registeredWallets[mintingData.farcasterWalletsByFIDs[farcasterFid]];
+    return FarcasterOracleLib.isFarcasterUserRegistered(_getMintingData(), farcasterFid);
   }
 
   function getWalletByFID(uint256 farcasterFid) public view returns (address) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    return mintingData.farcasterWalletsByFIDs[farcasterFid];
+    return FarcasterOracleLib.getWalletByFID(_getMintingData(), farcasterFid);
   }
 
   function getFIDByWallet(address wallet) public view returns (uint256) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    return mintingData.farcasterUsersByWallets[wallet];
+    return FarcasterOracleLib.getFIDByWallet(_getMintingData(), wallet);
   }
 
   function getFarcasterUsers(uint64 start, uint16 count) public view returns (uint256[] memory) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    uint64 end = start + count;
-    if (end > mintingData.allFarcasterUsers.length) {
-      end = uint64(mintingData.allFarcasterUsers.length);
-    }
-
-    require(start <= end, 'wrong start index');
-
-    uint16 batchSize = uint16(end - start);
-    uint256[] memory batchArr = new uint256[](batchSize);
-    for (uint16 i = 0; i < batchSize; i++) {
-      batchArr[i] = mintingData.allFarcasterUsers[start + i];
-    }
-
-    return batchArr;
+    return FarcasterOracleLib.getFarcasterUsers(_getMintingData(), start, count);
   }
 
   function walletByFarcasterUserIndex(uint256 userIndex) internal view returns (address) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    return mintingData.farcasterWalletsByFIDs[mintingData.allFarcasterUsers[userIndex]];
+    return FarcasterOracleLib.walletByFarcasterUserIndex(_getMintingData(), userIndex);
   }
 
   function totalFarcasterUsersCount() public view returns (uint256) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    return mintingData.allFarcasterUsers.length;
+    return FarcasterOracleLib.totalFarcasterUsersCount(_getMintingData());
   }
 
   // Farcaster minting functions
-
-  function processFarcasterMinting(
-    GMStorage.UserFarcasterData[] calldata userData,
-    uint32 mintingDayTimestamp
-  ) internal returns (GMStorage.UserMintingResult[] memory results) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
-
-    require(mintingData.mintingInProgressForDay != 0, 'no ongoing minting process');
-    require(mintingDayTimestamp == mintingData.mintingInProgressForDay, 'wrong mintingDay');
-
-    results = new GMStorage.UserMintingResult[](userData.length);
-
-    for (uint256 i = 0; i < userData.length; i++) {
-      if (userData[i].userIndex > mintingData.allFarcasterUsers.length) {
-        revert('wrong userIndex');
-      }
-
-      uint256 points = userData[i].simpleCasts *
-        mintingConfig.POINTS_PER_TWEET +
-        userData[i].likes *
-        mintingConfig.POINTS_PER_LIKE +
-        userData[i].hashtagCasts *
-        mintingConfig.POINTS_PER_HASHTAG +
-        userData[i].cashtagCasts *
-        mintingConfig.POINTS_PER_CASHTAG;
-
-      if (points > 0) {
-        mintingData.mintingDayPointsFromUsers += points;
-        uint256 coins = points * mintingConfig.COINS_MULTIPLICATOR;
-        results[i] = GMStorage.UserMintingResult({
-          userIndex: userData[i].userIndex,
-          mintAmount: coins,
-          shouldMint: true
-        });
-      } else {
-        results[i] = GMStorage.UserMintingResult({
-          userIndex: userData[i].userIndex,
-          mintAmount: 0,
-          shouldMint: false
-        });
-      }
-    }
-  }
 
   function mintCoinsForFarcasterUsers(
     GMStorage.UserFarcasterData[] calldata userData,
     uint32 mintingDayTimestamp,
     GMStorage.Batch[] calldata batches
   ) public onlyGelato {
-    GMStorage.UserMintingResult[] memory results = processFarcasterMinting(userData, mintingDayTimestamp);
+    GMStorage.UserMintingResult[] memory results = FarcasterOracleLib.processFarcasterMinting(
+      _getMintingData(),
+      _getMintingConfig(),
+      userData,
+      mintingDayTimestamp
+    );
 
     for (uint256 i = 0; i < results.length; i++) {
       if (results[i].shouldMint) {

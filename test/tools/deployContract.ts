@@ -15,11 +15,23 @@ async function deployLibrariesAndGetFactories() {
     await mintingLib.waitForDeployment();
     const mintingLibAddress = await mintingLib.getAddress();
 
-    // Get contract factories with library linking (AccountManager is no longer a library)
+    const FarcasterOracleLib = await ethers.getContractFactory("FarcasterOracleLib");
+    const farcasterLib = await FarcasterOracleLib.deploy();
+    await farcasterLib.waitForDeployment();
+    const farcasterLibAddress = await farcasterLib.getAddress();
+
+    const AccountManagerLib = await ethers.getContractFactory("AccountManagerLib");
+    const accountLib = await AccountManagerLib.deploy();
+    await accountLib.waitForDeployment();
+    const accountLibAddress = await accountLib.getAddress();
+
+    // Get contract factories with library linking
     const GMCoinExposedFactory = await ethers.getContractFactory("GMCoinExposed", {
         libraries: {
             "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
             "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+            "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
+            "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
         },
     });
 
@@ -27,10 +39,12 @@ async function deployLibrariesAndGetFactories() {
         libraries: {
             "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
             "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+            "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
+            "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
         },
     });
 
-    return { GMCoinExposedFactory, GMCoinFactory, twitterLibAddress, mintingLibAddress };
+    return { GMCoinExposedFactory, GMCoinFactory, twitterLibAddress, mintingLibAddress, farcasterLibAddress, accountLibAddress };
 }
 
 export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number = 0) {

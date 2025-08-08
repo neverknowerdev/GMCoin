@@ -9,6 +9,7 @@ import '@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol';
 import './TwitterOracle.sol';
 import './FarcasterOracle.sol';
 import './AccountManager.sol';
+import './Errors.sol';
 
 contract GMCoin is
   Initializable,
@@ -67,7 +68,7 @@ contract GMCoin is
 
   // Override modifiers from parent contracts
   modifier onlyGelato() override(TwitterOracle, FarcasterOracle) {
-    require(_msgSender() == gelatoConfig.gelatoAddress, 'only Gelato can call this function');
+    if (_msgSender() != gelatoConfig.gelatoAddress) revert OnlyGelato();
     _;
   }
 
@@ -151,44 +152,18 @@ contract GMCoin is
     emit UnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
   }
 
+<<<<<<< Updated upstream
   // mintForUnifiedUser function removed as it's not used anywhere
-
-  /**
-   * @dev Mint for unified user by index (for compatibility with existing minting process)
-   */
-  function _mintForUnifiedUserByIndex(uint256 userIndex, uint256 amount) internal {
-    address walletAddr = walletByUnifiedUserIndex(userIndex);
-    if (walletAddr == address(0)) return; // Skip if no unified user found
-
-    _mint(walletAddr, amount);
-    mintingData.mintedAmountByWallet[walletAddr] += amount;
+=======
+  function _emitTwitterVerificationResult(
+    string memory twitterId,
+    address wallet,
+    bool isSuccess,
+    string memory errorMsg
+  ) internal override {
+    emit TwitterVerificationResult(twitterId, wallet, isSuccess, errorMsg);
   }
 
-  // verifyTwitterUnified and verifyFarcasterUnified are handled in TwitterOracle and FarcasterOracle
-  // We can have a separate function like "mintWelcomeBonus" that can be called from other contracts
+>>>>>>> Stashed changes
 
-  /**
-   * @dev Mint welcome bonus - can be called by other contracts
-   */
-  function mintWelcomeBonus(address wallet, uint256 amount) public onlyGelato {
-    _mint(wallet, amount);
-    mintingData.mintedAmountByWallet[wallet] += amount;
-  }
-
-  // =============================================================================
-  // Essential Query Functions Only (Size Optimized)
-  // =============================================================================
-
-  /**
-   * @dev Get basic unified user information
-   */
-  function getUnifiedUserInfo(
-    uint256 userId
-  ) external view returns (address primaryWallet, string memory twitterId, uint256 farcasterFid, bool isHumanVerified) {
-    require(mintingData.unifiedUserSystemEnabled, 'Unified user system not enabled');
-    require(mintingData.unifiedUsers[userId].userId != 0, 'User does not exist');
-
-    UnifiedUser memory user = mintingData.unifiedUsers[userId];
-    return (user.primaryWallet, user.twitterId, user.farcasterFid, user.isHumanVerified);
-  }
 }

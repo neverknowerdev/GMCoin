@@ -6,13 +6,14 @@ import { GMStorage } from './Storage.sol';
 import { GMWeb3Functions } from './GelatoWeb3Functions.sol';
 import { TwitterOracleLib } from './TwitterOracleLib.sol';
 import { MintingLib } from './MintingLib.sol';
+import './Errors.sol';
 
 abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
   using TwitterOracleLib for GMStorage.MintingData;
   using MintingLib for GMStorage.MintingData;
 
   modifier onlyGelato() virtual {
-    require(_msgSender() == gelatoConfig.gelatoAddress, 'only Gelato can call this function');
+    if (_msgSender() != gelatoConfig.gelatoAddress) revert OnlyGelato();
     _;
   }
 
@@ -25,7 +26,7 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
   }
 
   modifier onlyServerRelayer() {
-    require(_msgSender() == serverRelayerAddress, 'only relay server can call this function');
+    if (_msgSender() != serverRelayerAddress) revert OnlyServerRelayer();
     _;
   }
 
@@ -52,14 +53,14 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     string calldata userID,
     string calldata tweetID
   ) public {
-    require(mintingData.walletsByUserIDs[userID] == address(0), 'user has different wallet linked');
-    require(mintingData.registeredWallets[_msgSender()] == false, 'wallet already linked for that user');
+    if (mintingData.walletsByUserIDs[userID] != address(0)) revert UserAlreadyLinked();
+    if (mintingData.registeredWallets[_msgSender()]) revert WalletAlreadyLinked();
 
     emit verifyTwitterByAuthCodeRequested(_msgSender(), authCode, tweetID, userID);
   }
 
   function requestTwitterVerification(string calldata accessCodeEncrypted, string calldata userID) public {
-    require(mintingData.walletsByUserIDs[userID] == address(0), 'wallet already linked for that user');
+    if (mintingData.walletsByUserIDs[userID] != address(0)) revert WalletAlreadyLinked();
 
     emit VerifyTwitterRequested(accessCodeEncrypted, userID, _msgSender());
   }
@@ -152,7 +153,7 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
   }
 
   function continueMintingForADay() public onlyOwner {
-    require(mintingData.mintingInProgressForDay != 0, 'not found any in progress minting days');
+    if (mintingData.mintingInProgressForDay == 0) revert NoOngoingMinting();
 
     emit twitterMintingProcessed(mintingData.mintingInProgressForDay, emptyArray);
   }

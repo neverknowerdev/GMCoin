@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { GMStorage } from './Storage.sol';
+import './Errors.sol';
 
 library TwitterOracleLib {
   using TwitterOracleLib for GMStorage.MintingData;
@@ -15,8 +16,8 @@ library TwitterOracleLib {
     string calldata userID,
     address wallet
   ) external view {
-    require(mintingData.walletsByUserIDs[userID] == address(0), 'wallet already linked for that user');
-    require(mintingData.registeredWallets[wallet] == false, 'wallet already linked for that user');
+    if (mintingData.walletsByUserIDs[userID] != address(0)) revert WalletAlreadyLinked();
+    if (mintingData.registeredWallets[wallet]) revert UserAlreadyLinked();
   }
 
   function verifyTwitter(
@@ -75,7 +76,7 @@ library TwitterOracleLib {
       end = uint64(mintingData.allTwitterUsers.length);
     }
 
-    require(start <= end, 'wrong start index');
+    if (start > end) revert WrongStartIndex();
 
     uint16 batchSize = uint16(end - start);
     string[] memory batchArr = new string[](batchSize);
@@ -101,14 +102,14 @@ library TwitterOracleLib {
     GMStorage.UserTwitterData[] calldata userData,
     uint32 mintingDayTimestamp
   ) external returns (GMStorage.UserMintingResult[] memory results) {
-    require(mintingData.mintingInProgressForDay != 0, 'no ongoing minting process');
-    require(mintingDayTimestamp == mintingData.mintingInProgressForDay, 'wrong mintingDay');
+    if (mintingData.mintingInProgressForDay == 0) revert NoOngoingMinting();
+    if (mintingDayTimestamp != mintingData.mintingInProgressForDay) revert WrongMintingDay();
 
     results = new GMStorage.UserMintingResult[](userData.length);
 
     for (uint256 i = 0; i < userData.length; i++) {
       if (userData[i].userIndex > mintingData.allTwitterUsers.length) {
-        revert('wrong userIndex');
+        revert WrongUserIndex();
       }
 
       uint256 points = userData[i].simpleTweets *

@@ -66,10 +66,22 @@ describe("GM", function () {
         await mintingLib.waitForDeployment();
         const mintingLibAddress = await mintingLib.getAddress();
 
+        const FarcasterOracleLib = await ethers.getContractFactory("FarcasterOracleLib");
+        const farcasterLib = await FarcasterOracleLib.deploy();
+        await farcasterLib.waitForDeployment();
+        const farcasterLibAddress = await farcasterLib.getAddress();
+
+        const AccountManagerLib = await ethers.getContractFactory("AccountManagerLib");
+        const accountLib = await AccountManagerLib.deploy();
+        await accountLib.waitForDeployment();
+        const accountLibAddress = await accountLib.getAddress();
+
         const GMCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin", {
             libraries: {
                 "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
                 "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+                "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
+                "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
             },
         });
 
