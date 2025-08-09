@@ -138,7 +138,11 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
   // Twitter minting functions
 
   function startMinting() public onlyGelatoOrOwner {
-    (uint32 dayToMint, bool shouldContinue) = mintingData.startMintingProcess(mintingConfig);
+    (uint32 dayToMint, bool shouldContinue, int32 newPointsDeltaStreak) = mintingData.startMintingProcess(
+      mintingConfig,
+      pointsDeltaStreak
+    );
+    pointsDeltaStreak = newPointsDeltaStreak;
 
     if (shouldContinue) {
       emit twitterMintingProcessed(dayToMint, emptyArray);

@@ -8,14 +8,15 @@ library MintingLib {
 
   function startMintingProcess(
     GMStorage.MintingData storage mintingData,
-    GMStorage.MintingConfig storage mintingConfig
-  ) external returns (uint32 dayToMint, bool shouldContinue) {
+    GMStorage.MintingConfig storage mintingConfig,
+    int32 currentPointsDeltaStreak
+  ) external returns (uint32 dayToMint, bool shouldContinue, int32 newPointsDeltaStreak) {
     uint32 yesterday = getStartOfYesterday();
     dayToMint = mintingData.lastMintedDay + 1 days;
 
     // if minting for previous day is not finished - continue it
     if (mintingData.mintingInProgressForDay > 0 && mintingData.mintingInProgressForDay < yesterday) {
-      return (mintingData.mintingInProgressForDay, true);
+      return (mintingData.mintingInProgressForDay, true, currentPointsDeltaStreak);
     }
 
     require(dayToMint <= yesterday, 'dayToMint should be not further than yesterday');
@@ -28,10 +29,10 @@ library MintingLib {
       dayToMint > mintingData.epochStartedAt &&
       dayToMint - mintingData.epochStartedAt >= mintingConfig.EPOCH_DAYS * 1 days
     ) {
-      int32 newPointsDeltaStreak = adjustPointsStreak(
+      newPointsDeltaStreak = adjustPointsStreak(
         mintingData.lastEpochPoints,
         mintingData.currentEpochPoints,
-        0 // will be passed from main contract
+        currentPointsDeltaStreak
       );
 
       uint256 newMultiplicator = changeComplexity(
@@ -46,9 +47,11 @@ library MintingLib {
       mintingConfig.epochNumber++;
       mintingData.lastEpochPoints = mintingData.currentEpochPoints;
       mintingData.currentEpochPoints = 0;
+    } else {
+      newPointsDeltaStreak = currentPointsDeltaStreak;
     }
 
-    return (dayToMint, false);
+    return (dayToMint, false, newPointsDeltaStreak);
   }
 
   function finishMintingProcess(
