@@ -44,6 +44,7 @@ library AccountManagerLib {
     user.farcasterFid = farcasterFid;
 
     mintingData.allUnifiedUsers.push(userId);
+    mintingData.unifiedUserIndexById[userId] = mintingData.allUnifiedUsers.length - 1;
     mintingData.walletToUnifiedUserId[primaryWallet] = userId;
     mintingData.unifiedUserWallets[userId].push(primaryWallet);
 
@@ -127,11 +128,7 @@ library AccountManagerLib {
     mintingData.unifiedUsers[userId].primaryWallet = newPrimaryWallet;
   }
 
-  function mergeUsers(
-    GMStorage.MintingData storage mintingData,
-    uint256 fromUserId,
-    uint256 toUserId
-  ) external {
+  function mergeUsers(GMStorage.MintingData storage mintingData, uint256 fromUserId, uint256 toUserId) external {
     if (!mintingData.unifiedUserSystemEnabled) revert SystemNotEnabled();
     if (mintingData.unifiedUsers[fromUserId].userId == 0) revert FromUserNotExist();
     if (mintingData.unifiedUsers[toUserId].userId == 0) revert ToUserNotExist();
@@ -162,20 +159,19 @@ library AccountManagerLib {
     delete mintingData.unifiedUsers[fromUserId];
     delete mintingData.unifiedUserWallets[fromUserId];
 
-    // Remove from allUnifiedUsers array
-    for (uint256 i = 0; i < mintingData.allUnifiedUsers.length; i++) {
-      if (mintingData.allUnifiedUsers[i] == fromUserId) {
-        mintingData.allUnifiedUsers[i] = mintingData.allUnifiedUsers[mintingData.allUnifiedUsers.length - 1];
-        mintingData.allUnifiedUsers.pop();
-        break;
-      }
+    // O(1) remove from allUnifiedUsers via swap-with-last
+    uint256 idx = mintingData.unifiedUserIndexById[fromUserId];
+    uint256 lastIdx = mintingData.allUnifiedUsers.length - 1;
+    if (idx <= lastIdx) {
+      uint256 lastId = mintingData.allUnifiedUsers[lastIdx];
+      mintingData.allUnifiedUsers[idx] = lastId;
+      mintingData.unifiedUserIndexById[lastId] = idx;
+      mintingData.allUnifiedUsers.pop();
+      delete mintingData.unifiedUserIndexById[fromUserId];
     }
   }
 
-  function removeUser(
-    GMStorage.MintingData storage mintingData,
-    address wallet
-  ) external {
+  function removeUser(GMStorage.MintingData storage mintingData, address wallet) external {
     if (mintingData.mintingInProgressForDay != 0) revert CannotRemoveUserActiveWorkers();
     if (!mintingData.registeredWallets[wallet]) revert WalletNotRegistered();
 

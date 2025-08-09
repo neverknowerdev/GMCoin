@@ -139,12 +139,13 @@ contract GMStorage {
     uint256 nextUserId; // Auto-increment user ID counter
     mapping(uint256 => UnifiedUser) unifiedUsers; // User ID -> User data
     uint256[] allUnifiedUsers; // All user IDs for iteration
+    mapping(uint256 => uint256) unifiedUserIndexById; // User ID -> index in allUnifiedUsers
     mapping(address => uint256) walletToUnifiedUserId; // Wallet -> User ID
     mapping(uint256 => address[]) unifiedUserWallets; // User ID -> all wallets
     mapping(string => uint256) twitterIdToUnifiedUserId; // Twitter ID -> User ID
     mapping(uint256 => uint256) farcasterFidToUnifiedUserId; // Farcaster FID -> User ID
     bool unifiedUserSystemEnabled; // Feature flag for unified system
-    uint256[41] __gap; // Reduced gap (49 - 8 used = 41 remaining)
+    uint256[40] __gap; // Reduced gap (49 - 9 used = 40 remaining)
   }
 
   function COINS_MULTIPLICATOR() public view returns (uint256) {
