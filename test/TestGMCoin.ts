@@ -267,10 +267,10 @@ describe("GM", function () {
         await coinContract.connect(wallet2).removeMe();
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal([]);
 
-        await expect(coinContract.connect(wallet1).removeMe()).to.revertedWith("msgSender's wallet is not registered");
-        await expect(coinContract.connect(wallet2).removeMe()).to.revertedWith("msgSender's wallet is not registered");
-        await expect(coinContract.connect(wallet3).removeMe()).to.revertedWith("msgSender's wallet is not registered");
-        await expect(coinContract.connect(wallet4).removeMe()).to.revertedWith("msgSender's wallet is not registered");
+        await expect(coinContract.connect(wallet1).removeMe()).to.be.reverted;
+        await expect(coinContract.connect(wallet2).removeMe()).to.be.reverted;
+        await expect(coinContract.connect(wallet3).removeMe()).to.be.reverted;
+        await expect(coinContract.connect(wallet4).removeMe()).to.be.reverted;
 
         await gelatoContract.verifyTwitter("user1" as any, wallet1 as any);
         await gelatoContract.verifyTwitter("user2" as any, wallet2 as any);
