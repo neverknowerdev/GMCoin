@@ -3,6 +3,50 @@ import {smock} from "@neverknowerdev/smock";
 import {GMCoinExposed} from "../../typechain";
 import {ContractFactory} from "ethers";
 
+async function deployLibrariesAndGetFactories() {
+    // Deploy libraries first
+    const TwitterOracleLib = await ethers.getContractFactory("TwitterOracleLib");
+    const twitterLib = await TwitterOracleLib.deploy();
+    await twitterLib.waitForDeployment();
+    const twitterLibAddress = await twitterLib.getAddress();
+
+    const MintingLib = await ethers.getContractFactory("MintingLib");
+    const mintingLib = await MintingLib.deploy();
+    await mintingLib.waitForDeployment();
+    const mintingLibAddress = await mintingLib.getAddress();
+
+    const FarcasterOracleLib = await ethers.getContractFactory("FarcasterOracleLib");
+    const farcasterLib = await FarcasterOracleLib.deploy();
+    await farcasterLib.waitForDeployment();
+    const farcasterLibAddress = await farcasterLib.getAddress();
+
+    const AccountManagerLib = await ethers.getContractFactory("AccountManagerLib");
+    const accountLib = await AccountManagerLib.deploy();
+    await accountLib.waitForDeployment();
+    const accountLibAddress = await accountLib.getAddress();
+
+    // Get contract factories with library linking
+    const GMCoinExposedFactory = await ethers.getContractFactory("GMCoinExposed", {
+        libraries: {
+            "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
+            "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+            "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
+            "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
+        },
+    });
+
+    const GMCoinFactory = await ethers.getContractFactory("GMCoin", {
+        libraries: {
+            "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
+            "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+            "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
+            "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
+        },
+    });
+
+    return { GMCoinExposedFactory, GMCoinFactory, twitterLibAddress, mintingLibAddress, farcasterLibAddress, accountLibAddress };
+}
+
 export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number = 0) {
     return async function deployGMToken() {
         // Contracts are deployed using the first signer/account by default
@@ -43,8 +87,10 @@ export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number =
 
         const contractAddress = await coinContractV1.getAddress();
 
-        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const coinContract: GMCoinExposed = await upgrades.upgradeProxy(contractAddress, TwitterCoin) as GMCoinExposed;
+        const { GMCoinExposedFactory } = await deployLibrariesAndGetFactories();
+        const coinContract: GMCoinExposed = await upgrades.upgradeProxy(contractAddress, GMCoinExposedFactory, {
+            unsafeAllowLinkedLibraries: true,
+        }) as GMCoinExposed;
         await coinContract.waitForDeployment();
 
 

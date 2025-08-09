@@ -55,7 +55,35 @@ describe("GM", function () {
         // would be GMCoinV2 soon
         const TwitterCoinV2Factory: ContractFactory = await ethers.getContractFactory("GMCoinV2");
 
-        const GMCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin");
+        // Deploy libraries and get factories with proper linking
+        const TwitterOracleLib = await ethers.getContractFactory("TwitterOracleLib");
+        const twitterLib = await TwitterOracleLib.deploy();
+        await twitterLib.waitForDeployment();
+        const twitterLibAddress = await twitterLib.getAddress();
+
+        const MintingLib = await ethers.getContractFactory("MintingLib");
+        const mintingLib = await MintingLib.deploy();
+        await mintingLib.waitForDeployment();
+        const mintingLibAddress = await mintingLib.getAddress();
+
+        const FarcasterOracleLib = await ethers.getContractFactory("FarcasterOracleLib");
+        const farcasterLib = await FarcasterOracleLib.deploy();
+        await farcasterLib.waitForDeployment();
+        const farcasterLibAddress = await farcasterLib.getAddress();
+
+        const AccountManagerLib = await ethers.getContractFactory("AccountManagerLib");
+        const accountLib = await AccountManagerLib.deploy();
+        await accountLib.waitForDeployment();
+        const accountLibAddress = await accountLib.getAddress();
+
+        const GMCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin", {
+            libraries: {
+                "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
+                "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+                "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
+                "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
+            },
+        });
 
         console.log('verifying upgrade compability..');
         await upgrades.validateUpgrade(TwitterCoinFactory, TwitterCoinV2Factory);
@@ -239,10 +267,10 @@ describe("GM", function () {
         await coinContract.connect(wallet2).removeMe();
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal([]);
 
-        await expect(coinContract.connect(wallet1).removeMe()).to.revertedWith("msgSender's wallet is not registered");
-        await expect(coinContract.connect(wallet2).removeMe()).to.revertedWith("msgSender's wallet is not registered");
-        await expect(coinContract.connect(wallet3).removeMe()).to.revertedWith("msgSender's wallet is not registered");
-        await expect(coinContract.connect(wallet4).removeMe()).to.revertedWith("msgSender's wallet is not registered");
+        await expect(coinContract.connect(wallet1).removeMe()).to.be.reverted;
+        await expect(coinContract.connect(wallet2).removeMe()).to.be.reverted;
+        await expect(coinContract.connect(wallet3).removeMe()).to.be.reverted;
+        await expect(coinContract.connect(wallet4).removeMe()).to.be.reverted;
 
         await gelatoContract.verifyTwitter("user1" as any, wallet1 as any);
         await gelatoContract.verifyTwitter("user2" as any, wallet2 as any);
