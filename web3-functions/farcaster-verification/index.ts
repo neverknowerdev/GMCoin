@@ -1,130 +1,174 @@
 import {
   Web3Function,
-  Web3FunctionContext,
+  Web3FunctionEventContext,
 } from "@gelatonetwork/web3-functions-sdk";
-import { Contract } from "ethers";
+import { Contract, Interface } from "ethers";
 import ky from "ky";
 
-Web3Function.onRun(async (context: Web3FunctionContext) => {
-  const { userArgs, multiChainProvider } = context;
+const VerifierContractABI = [
+  "function completeFarcasterVerification(uint256 farcasterFid, address wallet) external",
+  "function verifyBothFarcasterAndTwitter(uint256 farcasterFid, address wallet, string calldata twitterId) external",
+  "function farcasterVerificationError(uint256 farcasterFid, address wallet, string calldata errorMsg) external",
+  "function isTwitterUserRegistered(string calldata userID) external view returns (bool)",
+  "function verifyFarcasterAndMergeWithTwitter(uint256 farcasterFid, address wallet, string calldata twitterId) external",
+  "event VerifyFarcasterRequested(uint256 indexed farcasterFid, address indexed wallet)",
+];
+
+Web3Function.onRun(async (context: Web3FunctionEventContext) => {
+  const { log, userArgs, multiChainProvider } = context;
 
   const provider = multiChainProvider.default();
   const verifierContract = new Contract(
     userArgs.verifierContractAddress as string,
-    [
-      "function completeFarcasterVerification(uint256 farcasterFid, address wallet) external",
-      "function verifyBothFarcasterAndTwitter(uint256 farcasterFid, address wallet, string calldata twitterId) external",
-      "function farcasterVerificationError(uint256 farcasterFid, address wallet, string calldata errorMsg) external",
-    ],
+    VerifierContractABI,
     provider
   );
 
   console.log("🔄 Starting Farcaster verification...");
 
+  // Parse the event that triggered this Web3 Function (reuse this interface)
+  const contract = new Interface(VerifierContractABI);
+
   try {
-    // Get pending verification requests from storage
-    const storage = context.storage;
-    const pendingVerifications = await storage.get("pendingVerifications") || [];
-
-    if (pendingVerifications.length === 0) {
-      console.log("✅ No pending Farcaster verifications");
-      return { canExec: false, message: "No pending verifications" };
+    const event = contract.parseLog(log);
+    
+    // Extract event data
+    const { farcasterFid, wallet } = event.args;
+    
+    // Validate event data
+    if (!farcasterFid || !wallet) {
+      return {
+        canExec: false,
+        message: `Invalid event data: farcasterFid=${farcasterFid}, wallet=${wallet}`
+      };
     }
+    
+    console.log(`📧 Event received: VerifyFarcasterRequested for FID ${farcasterFid} and wallet ${wallet}`);
+    
+    console.log(`🔍 Verifying FID ${farcasterFid} for wallet ${wallet}`);
 
-    const results = [];
-
-    // Process requests simultaneously as suggested in PR feedback
-    const verificationPromises = pendingVerifications.map(async (verification) => {
-      const { farcasterFid, wallet, timestamp } = verification;
-      
-      try {
-        console.log(`🔍 Verifying FID ${farcasterFid} for wallet ${wallet}`);
-
-        // Step 1: Fetch primary wallet for this FID
-        const primaryWallet = await fetchPrimaryWalletForFid(farcasterFid);
-        
-        if (!primaryWallet) {
-          console.log(`❌ No primary wallet found for FID ${farcasterFid}`);
-          return {
-            to: userArgs.verifierContractAddress as string,
-            data: verifierContract.interface.encodeFunctionData("farcasterVerificationError", [
-              farcasterFid,
-              wallet,
-              "No primary wallet found for this FID"
-            ])
-          };
-        }
-
-        // Step 2: Check if the primary wallet matches the requesting wallet
-        if (primaryWallet.toLowerCase() !== wallet.toLowerCase()) {
-          console.log(`❌ Wallet mismatch for FID ${farcasterFid}. Expected: ${primaryWallet}, Got: ${wallet}`);
-          return {
-            to: userArgs.verifierContractAddress as string,
-            data: verifierContract.interface.encodeFunctionData("farcasterVerificationError", [
-              farcasterFid,
-              wallet,
-              "Wallet does not match primary wallet for this FID"
-            ])
-          };
-        }
-
-        // Step 3: Check if Farcaster user has Twitter username linked
-        const twitterUsername = await fetchTwitterUsernameFromFarcaster(farcasterFid);
-        
-        if (twitterUsername) {
-          console.log(`✅ Found Twitter username: ${twitterUsername} for FID ${farcasterFid}`);
-          return {
-            to: userArgs.verifierContractAddress as string,
-            data: verifierContract.interface.encodeFunctionData("verifyBothFarcasterAndTwitter", [
-              farcasterFid,
-              wallet,
-              twitterUsername
-            ])
-          };
-        } else {
-          // No Twitter username is fine - just verify Farcaster
-          console.log(`✅ No Twitter username found for FID ${farcasterFid}, verifying Farcaster only`);
-          return {
-            to: userArgs.verifierContractAddress as string,
-            data: verifierContract.interface.encodeFunctionData("completeFarcasterVerification", [
-              farcasterFid,
-              wallet
-            ])
-          };
-        }
-
-      } catch (error) {
-        console.error(`❌ Error verifying FID ${farcasterFid}:`, error);
-        return {
+    // Step 1: Fetch primary wallet for this FID (convert uint256 to string for API)
+    const primaryWallet = await fetchPrimaryWalletForFid(farcasterFid.toString());
+    
+    if (!primaryWallet) {
+      console.log(`❌ No primary wallet found for FID ${farcasterFid}`);
+      return {
+        canExec: true,
+        callData: [{
           to: userArgs.verifierContractAddress as string,
           data: verifierContract.interface.encodeFunctionData("farcasterVerificationError", [
             farcasterFid,
             wallet,
-            `Verification error: ${error.message}`
+            "No primary wallet found for this FID"
+          ])
+        }]
+      };
+    }
+
+    // Step 2: Check if the primary wallet matches the requesting wallet
+    if (primaryWallet.toLowerCase() !== wallet.toLowerCase()) {
+      console.log(`❌ Wallet mismatch for FID ${farcasterFid}. Expected: ${primaryWallet}, Got: ${wallet}`);
+      return {
+        canExec: true,
+        callData: [{
+          to: userArgs.verifierContractAddress as string,
+          data: verifierContract.interface.encodeFunctionData("farcasterVerificationError", [
+            farcasterFid,
+            wallet,
+            "Wallet does not match primary wallet for this FID"
+          ])
+        }]
+      };
+    }
+
+    // Step 3: Check if Farcaster user has Twitter username linked
+    const twitterUsername = await fetchTwitterUsernameFromFarcaster(farcasterFid.toString());
+    
+    let callData;
+    
+    if (twitterUsername) {
+      console.log(`✅ Found Twitter username: ${twitterUsername} for FID ${farcasterFid}`);
+      
+      // Step 4: Check if this Twitter user is already registered in GM
+      let isTwitterUserAlreadyRegistered = false;
+      try {
+        isTwitterUserAlreadyRegistered = await verifierContract.isTwitterUserRegistered(twitterUsername);
+      } catch (contractError) {
+        console.error(`❌ Error checking Twitter user registration:`, contractError);
+        return {
+          canExec: true,
+          callData: [{
+            to: userArgs.verifierContractAddress as string,
+            data: verifierContract.interface.encodeFunctionData("farcasterVerificationError", [
+              farcasterFid,
+              wallet,
+              `Error checking Twitter registration: ${contractError.message}`
+            ])
+          }]
+        };
+      }
+      
+      if (isTwitterUserAlreadyRegistered) {
+        console.log(`🔗 Twitter user ${twitterUsername} is already registered - merging accounts`);
+        callData = {
+          to: userArgs.verifierContractAddress as string,
+          data: verifierContract.interface.encodeFunctionData("verifyFarcasterAndMergeWithTwitter", [
+            farcasterFid,
+            wallet,
+            twitterUsername
+          ])
+        };
+      } else {
+        console.log(`➕ Twitter user ${twitterUsername} not registered yet - creating new unified account`);
+        callData = {
+          to: userArgs.verifierContractAddress as string,
+          data: verifierContract.interface.encodeFunctionData("verifyBothFarcasterAndTwitter", [
+            farcasterFid,
+            wallet,
+            twitterUsername
           ])
         };
       }
-    });
-
-    // Wait for all verifications to complete
-    const verificationResults = await Promise.all(verificationPromises);
-    results.push(...verificationResults);
-
-    // Clear processed verifications
-    await storage.set("pendingVerifications", []);
-
-    if (results.length === 0) {
-      return { canExec: false, message: "No verifications to process" };
+    } else {
+      // No Twitter username is fine - just verify Farcaster
+      console.log(`✅ No Twitter username found for FID ${farcasterFid}, verifying Farcaster only`);
+      callData = {
+        to: userArgs.verifierContractAddress as string,
+        data: verifierContract.interface.encodeFunctionData("completeFarcasterVerification", [
+          farcasterFid,
+          wallet
+        ])
+      };
     }
 
     return {
       canExec: true,
-      callData: results
+      callData: [callData]
     };
 
   } catch (error) {
     console.error("❌ Fatal error in Farcaster verification:", error);
-    return { canExec: false, message: `Error: ${error.message}` };
+    
+    // Try to get the event data for error reporting (reuse existing interface)
+    try {
+      const event = contract.parseLog(log);
+      const { farcasterFid, wallet } = event.args;
+      
+      return {
+        canExec: true,
+        callData: [{
+          to: userArgs.verifierContractAddress as string,
+          data: verifierContract.interface.encodeFunctionData("farcasterVerificationError", [
+            farcasterFid,
+            wallet,
+            `Fatal error: ${error.message}`
+          ])
+        }]
+      };
+    } catch (parseError) {
+      console.error("❌ Could not parse event for error reporting:", parseError);
+      return { canExec: false, message: `Fatal error: ${error.message}` };
+    }
   }
 });
 
@@ -161,6 +205,7 @@ async function fetchPrimaryWalletForFid(fid: string): Promise<string | null> {
       const data = await response.json() as any;
       
       if (data?.users?.[0]?.verifications?.length > 0) {
+        // Neynar API returns verification addresses as strings in an array
         const primaryWallet = data.users[0].verifications[0];
         console.log(`✅ Found primary wallet via Neynar: ${primaryWallet}`);
         return primaryWallet;
@@ -185,12 +230,15 @@ async function fetchTwitterUsernameFromFarcaster(fid: string): Promise<string | 
 
     const data = await response.json() as any;
     
-    if (data?.verifications) {
+    if (data?.verifications && Array.isArray(data.verifications)) {
       // Look for Twitter verification in the verifications array
       for (const verification of data.verifications) {
-        if (verification.platform === 'twitter' || verification.type === 'twitter') {
-          console.log(`✅ Found Twitter username: ${verification.username}`);
-          return verification.username;
+        if (verification && (verification.platform === 'twitter' || verification.type === 'twitter')) {
+          const username = verification.username || verification.handle || verification.value;
+          if (username) {
+            console.log(`✅ Found Twitter username: ${username}`);
+            return username;
+          }
         }
       }
     }
