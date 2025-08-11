@@ -37,7 +37,6 @@ abstract contract FarcasterOracle {
     emit VerifyFarcasterRequested(farcasterFid, _msgSender());
   }
 
-
   // Process Farcaster verification error (called by Gelato)
   function farcasterVerificationError(
     uint256 farcasterFid,
@@ -129,54 +128,55 @@ abstract contract FarcasterOracle {
   ) internal virtual {}
 
   // Process combined Farcaster + Twitter verification (called by Gelato when Twitter is linked)
-  function verifyBothFarcasterAndTwitter(uint256 farcasterFid, address wallet, string calldata twitterId) public onlyGelato {
+  function verifyBothFarcasterAndTwitter(
+    uint256 farcasterFid,
+    address wallet,
+    string calldata twitterId
+  ) public onlyGelato {
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
 
-    (bool shouldMintFarcaster, uint256 farcasterUserIndex, uint256 farcasterMintAmount) = FarcasterOracleLib.verifyBothFarcasterAndTwitter(
-      mintingData,
-      mintingConfig,
-      farcasterFid,
-      wallet,
-      twitterId
-    );
+    (bool shouldMintFarcaster, uint256 farcasterUserIndex, uint256 farcasterMintAmount) = FarcasterOracleLib
+      .verifyBothFarcasterAndTwitter(mintingData, mintingConfig, farcasterFid, wallet, twitterId);
 
     if (shouldMintFarcaster) {
       _mintForFarcasterUserByIndex(farcasterUserIndex, farcasterMintAmount);
+    }
+
+    // Also ensure unified user is created/linked when the feature is enabled
+    if (mintingData.unifiedUserSystemEnabled) {
+      uint256 userId = _createOrLinkUnifiedUser(wallet, twitterId, farcasterFid);
+      if (userId > 0) {
+        _emitUnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
+      }
     }
 
     emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
 
   // Process Farcaster verification and merge with existing Twitter account (called by Gelato)
-  function verifyFarcasterAndMergeWithTwitter(uint256 farcasterFid, address wallet, string calldata twitterId) public onlyGelato {
+  function verifyFarcasterAndMergeWithTwitter(
+    uint256 farcasterFid,
+    address wallet,
+    string calldata twitterId
+  ) public onlyGelato {
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
 
-    // Get the existing Twitter user's unified user ID
-    uint256 existingTwitterUserId = mintingData.twitterIdToUnifiedUserId[twitterId];
-    require(existingTwitterUserId > 0, "Twitter user not found in unified system");
-
-    // Verify and register Farcaster account (without creating new unified user)
-    (bool shouldMintFarcaster, uint256 farcasterUserIndex, uint256 farcasterMintAmount) = FarcasterOracleLib.verifyFarcaster(
-      mintingData,
-      mintingConfig,
-      farcasterFid,
-      wallet
-    );
+    // Verify and register Farcaster account (library maintains Farcaster mappings and optional mint)
+    (bool shouldMintFarcaster, uint256 farcasterUserIndex, uint256 farcasterMintAmount) = FarcasterOracleLib
+      .verifyFarcaster(mintingData, mintingConfig, farcasterFid, wallet);
 
     if (shouldMintFarcaster) {
       _mintForFarcasterUserByIndex(farcasterUserIndex, farcasterMintAmount);
     }
 
-    // Link the Farcaster FID to the existing Twitter unified user
-    mintingData.unifiedUsers[existingTwitterUserId].farcasterFid = farcasterFid;
-    mintingData.farcasterFidToUnifiedUserId[farcasterFid] = existingTwitterUserId;
-
-    // If the wallet isn't already linked to the unified user, add it
-    if (mintingData.walletToUnifiedUserId[wallet] != existingTwitterUserId) {
-      mintingData.walletToUnifiedUserId[wallet] = existingTwitterUserId;
-      mintingData.unifiedUserWallets[existingTwitterUserId].push(wallet);
+    // Leverage unified user helper to create/link under a single user id
+    if (mintingData.unifiedUserSystemEnabled) {
+      uint256 userId = _createOrLinkUnifiedUser(wallet, twitterId, farcasterFid);
+      if (userId > 0) {
+        _emitUnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
+      }
     }
 
     emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
