@@ -21,9 +21,28 @@ library AccountManagerLib {
 
     if (existingUserId != 0) {
       return linkSocialAccountToUser(mintingData, existingUserId, twitterId, farcasterFid);
-    } else {
-      return createNewUnifiedUser(mintingData, wallet, twitterId, farcasterFid);
     }
+
+    // If wallet has no unified user yet, try to attach to an existing user by social IDs
+    uint256 userIdByTwitter = bytes(twitterId).length > 0 ? mintingData.twitterIdToUnifiedUserId[twitterId] : 0;
+    uint256 userIdByFarcaster = farcasterFid != 0 ? mintingData.farcasterFidToUnifiedUserId[farcasterFid] : 0;
+
+    uint256 targetUserId = userIdByTwitter != 0 ? userIdByTwitter : userIdByFarcaster;
+    if (targetUserId != 0) {
+      // Link socials to the target user if missing
+      linkSocialAccountToUser(mintingData, targetUserId, twitterId, farcasterFid);
+
+      // Link the wallet to that unified user if not linked yet
+      if (mintingData.walletToUnifiedUserId[wallet] == 0) {
+        mintingData.walletToUnifiedUserId[wallet] = targetUserId;
+        mintingData.unifiedUserWallets[targetUserId].push(wallet);
+      }
+
+      return targetUserId;
+    }
+
+    // Otherwise, create a new unified user
+    return createNewUnifiedUser(mintingData, wallet, twitterId, farcasterFid);
   }
 
   function createNewUnifiedUser(
