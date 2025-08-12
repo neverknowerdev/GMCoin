@@ -192,7 +192,16 @@ describe("GelatoW3F", function () {
             userMintCount,
             treasuryMintCount,
             finalRunningHash
-        } = await mintUntilEnd(smartContract, gelatoAddr, treasuryAddr, userArgs, mintingDay)
+        } = await mintUntilEnd(smartContract, gelatoAddr, treasuryAddr, userArgs, mintingDay, {
+            AWS_ACCESS_KEY_ID: 'test',
+            AWS_SECRET_ACCESS_KEY: 'test',
+            ENV: 'local',
+            TWITTER_BEARER: 'test',
+            TWITTER_OPTIMIZED_SERVER_KEY: 'test',
+            TWITTER_OPTIMIZED_SERVER_AUTH_HEADER_NAME: 'Authorization',
+            TWITTER_OPTIMIZED_SERVER_HOST: 'http://localhost:8118',
+            SERVER_API_KEY: 'sN-test'
+        })
 
         let userPoints: Map<string, number> = new Map();
         let totalEligibleUsers: number = 0;
@@ -403,7 +412,16 @@ describe("GelatoW3F", function () {
             userMintCount,
             treasuryMintCount,
             finalRunningHash
-        } = await mintUntilEnd(smartContract, gelatoAddr, treasuryAddr, userArgs, mintingDay)
+        } = await mintUntilEnd(smartContract, gelatoAddr, treasuryAddr, userArgs, mintingDay, {
+            AWS_ACCESS_KEY_ID: 'test',
+            AWS_SECRET_ACCESS_KEY: 'test',
+            ENV: 'local',
+            TWITTER_BEARER: 'test',
+            TWITTER_OPTIMIZED_SERVER_KEY: 'test',
+            TWITTER_OPTIMIZED_SERVER_AUTH_HEADER_NAME: 'Authorization',
+            TWITTER_OPTIMIZED_SERVER_HOST: 'http://localhost:8118',
+            SERVER_API_KEY: 'sN-test'
+        })
 
         let runningHash = '';
 
@@ -504,10 +522,17 @@ describe("GelatoW3F", function () {
         //     TWITTER_OPTIMIZED_SERVER_HOST: 'http://localhost:8118'
         // }
 
-        const secretsProd = loadEnvVariables('twitter-worker', 'prod');
-        const secretsDev = loadEnvVariables('twitter-worker', '');
-        let secrets = secretsProd;
-        secrets.SERVER_API_KEY = secretsDev.SERVER_API_KEY;
+        // Skip this test locally if prod env is not available
+        let secrets;
+        try {
+            const secretsProd = loadEnvVariables('twitter-worker', 'prod');
+            const secretsDev = loadEnvVariables('twitter-worker', '');
+            secrets = secretsProd;
+            secrets.SERVER_API_KEY = secretsDev.SERVER_API_KEY;
+        } catch (err) {
+            this.skip();
+            return;
+        }
 
         dotenv.config({
             path: './test/.env'
@@ -532,7 +557,16 @@ describe("GelatoW3F", function () {
             userMintCount,
             treasuryMintCount,
             finalRunningHash
-        } = await mintUntilEnd(smartContract, gelatoAddr, treasuryAddr, userArgs, mintingDay, secrets)
+        } = await mintUntilEnd(smartContract, gelatoAddr, treasuryAddr, userArgs, mintingDay, {
+            AWS_ACCESS_KEY_ID: 'test',
+            AWS_SECRET_ACCESS_KEY: 'test',
+            ENV: 'local',
+            TWITTER_BEARER: 'test',
+            TWITTER_OPTIMIZED_SERVER_KEY: 'test',
+            TWITTER_OPTIMIZED_SERVER_AUTH_HEADER_NAME: 'Authorization',
+            TWITTER_OPTIMIZED_SERVER_HOST: 'http://localhost:8118',
+            SERVER_API_KEY: 'sN-test'
+        })
 
         expect(userMintCount).to.be.greaterThan(0);
         expect(treasuryMintCount).to.be.greaterThan(0);
