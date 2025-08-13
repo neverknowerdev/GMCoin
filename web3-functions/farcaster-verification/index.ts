@@ -202,22 +202,6 @@ async function fetchPrimaryWalletForFid(fid: string): Promise<string | null> {
     console.error(`❌ Error fetching primary wallet for FID ${fid}:`, error);
   }
 
-  // Fallbacks when Warpcast primary-address did not return
-  try {
-    console.log(`🔄 Trying Farcaster account-verifications fallback for FID ${fid}`);
-    const resp2 = await ky.get(`https://api.farcaster.xyz/fc/account-verifications?fid=${fid}`, {
-      timeout: 2500
-    });
-    const data2 = await resp2.json() as any;
-    const fallback = data2?.result?.verifications?.[0]?.address || data2?.verifications?.[0]?.address;
-    if (fallback) {
-      const addr2 = String(fallback).toLowerCase();
-      console.log(`✅ Found primary-like wallet via fallback: ${addr2}`);
-      return addr2;
-    }
-  } catch (fvErr) {
-    console.error(`❌ Fallback (account-verifications) failed:`, fvErr);
-  }
 
   try {
     console.log(`🔄 Trying Neynar fallback for FID ${fid}`);
@@ -252,7 +236,7 @@ async function fetchTwitterUsernameFromFarcaster(fid: string): Promise<string | 
       // Look for Twitter verification in the verifications array
     for (const verification of verifications) {
       if (verification && (verification.platform === 'x' || verification.platform === 'twitter' || verification.type === 'twitter')) {
-        const username = verification.platformUsername || verification.username || verification.handle || verification.value;
+        const username = verification.platformUsername;
           if (username) {
             console.log(`✅ Found Twitter username: ${username}`);
             return username;
