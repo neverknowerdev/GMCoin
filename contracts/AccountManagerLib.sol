@@ -100,24 +100,8 @@ library AccountManagerLib {
     return userId;
   }
 
-  function linkAdditionalWallet(
-    GMStorage.MintingData storage mintingData,
-    address caller,
-    address newWallet,
-    bytes calldata signature
-  ) external {
-    if (!mintingData.unifiedUserSystemEnabled) revert SystemNotEnabled();
-
-    address recoveredSigner = ECDSA.recover(
-      MessageHashUtils.toEthSignedMessageHash(bytes('I want to link this wallet to my GMCoin account')),
-      signature
-    );
-    if (recoveredSigner != newWallet) revert InvalidSignature();
-    if (mintingData.registeredWallets[newWallet]) revert WalletAlreadyRegistered();
-    if (mintingData.walletToUnifiedUserId[newWallet] != 0) revert WalletAlreadyLinked();
-
-    uint256 userId = mintingData.walletToUnifiedUserId[caller];
-    if (userId == 0) revert CallerNotRegistered();
+  function linkAdditionalWallet(GMStorage.MintingData storage mintingData, uint256 userId, address newWallet) external {
+    if (mintingData.unifiedUsers[userId].userId == 0) revert UserNotExist();
 
     mintingData.walletToUnifiedUserId[newWallet] = userId;
     mintingData.unifiedUserWallets[userId].push(newWallet);

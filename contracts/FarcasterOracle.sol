@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import { GMStorage } from './Storage.sol';
 import { FarcasterOracleLib } from './FarcasterOracleLib.sol';
+import { AccountManagerLib } from './AccountManagerLib.sol';
 import './Errors.sol';
 
 abstract contract FarcasterOracle {
@@ -47,7 +48,7 @@ abstract contract FarcasterOracle {
   }
 
   // Process successful Farcaster verification (called by Gelato after API verification)
-  function completeFarcasterVerification(uint256 farcasterFid, address wallet) public onlyGelato {
+  function verifyFarcaster(uint256 farcasterFid, address wallet) public onlyGelato {
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
 
@@ -62,20 +63,14 @@ abstract contract FarcasterOracle {
       _mintForFarcasterUserByIndex(userIndex, mintAmount);
     }
 
-    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
-  }
-
-  // Enhanced Farcaster verification that creates unified users
-  function verifyFarcasterUnified(uint256 farcasterFid, address wallet) public virtual onlyGelato {
-    completeFarcasterVerification(farcasterFid, wallet);
-
-    GMStorage.MintingData storage mintingData = _getMintingData();
     if (mintingData.unifiedUserSystemEnabled) {
       uint256 userId = _createOrLinkUnifiedUser(wallet, '', farcasterFid);
       if (userId > 0) {
         _emitUnifiedUserCreated(userId, wallet, '', farcasterFid);
       }
     }
+
+    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
 
   // Farcaster query functions
@@ -126,59 +121,4 @@ abstract contract FarcasterOracle {
     string memory twitterId,
     uint256 farcasterFid
   ) internal virtual {}
-
-  // Process combined Farcaster + Twitter verification (called by Gelato when Twitter is linked)
-  function verifyBothFarcasterAndTwitter(
-    uint256 farcasterFid,
-    address wallet,
-    string calldata twitterId
-  ) public onlyGelato {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
-
-    (bool shouldMintFarcaster, uint256 farcasterUserIndex, uint256 farcasterMintAmount) = FarcasterOracleLib
-      .verifyBothFarcasterAndTwitter(mintingData, mintingConfig, farcasterFid, wallet, twitterId);
-
-    if (shouldMintFarcaster) {
-      _mintForFarcasterUserByIndex(farcasterUserIndex, farcasterMintAmount);
-    }
-
-    // Also ensure unified user is created/linked when the feature is enabled
-    if (mintingData.unifiedUserSystemEnabled) {
-      uint256 userId = _createOrLinkUnifiedUser(wallet, twitterId, farcasterFid);
-      if (userId > 0) {
-        _emitUnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
-      }
-    }
-
-    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
-  }
-
-  // Process Farcaster verification and merge with existing Twitter account (called by Gelato)
-  function verifyFarcasterAndMergeWithTwitter(
-    uint256 farcasterFid,
-    address wallet,
-    string calldata twitterId
-  ) public onlyGelato {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
-
-    // Verify and register Farcaster account (library maintains Farcaster mappings and optional mint)
-    (bool shouldMintFarcaster, uint256 farcasterUserIndex, uint256 farcasterMintAmount) = FarcasterOracleLib
-      .verifyFarcaster(mintingData, mintingConfig, farcasterFid, wallet);
-
-    if (shouldMintFarcaster) {
-      _mintForFarcasterUserByIndex(farcasterUserIndex, farcasterMintAmount);
-    }
-
-    // Leverage unified user helper to create/link under a single user id
-    if (mintingData.unifiedUserSystemEnabled) {
-      uint256 userId = _createOrLinkUnifiedUser(wallet, twitterId, farcasterFid);
-      if (userId > 0) {
-        _emitUnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
-      }
-    }
-
-    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
-  }
 }
