@@ -21,9 +21,28 @@ library AccountManagerLib {
 
     if (existingUserId != 0) {
       return linkSocialAccountToUser(mintingData, existingUserId, twitterId, farcasterFid);
-    } else {
-      return createNewUnifiedUser(mintingData, wallet, twitterId, farcasterFid);
     }
+
+    // If wallet has no unified user yet, try to attach to an existing user by social IDs
+    uint256 userIdByTwitter = bytes(twitterId).length > 0 ? mintingData.twitterIdToUnifiedUserId[twitterId] : 0;
+    uint256 userIdByFarcaster = farcasterFid != 0 ? mintingData.farcasterFidToUnifiedUserId[farcasterFid] : 0;
+
+    uint256 targetUserId = userIdByTwitter != 0 ? userIdByTwitter : userIdByFarcaster;
+    if (targetUserId != 0) {
+      // Link socials to the target user if missing
+      linkSocialAccountToUser(mintingData, targetUserId, twitterId, farcasterFid);
+
+      // Link the wallet to that unified user if not linked yet
+      if (mintingData.walletToUnifiedUserId[wallet] == 0) {
+        mintingData.walletToUnifiedUserId[wallet] = targetUserId;
+        mintingData.unifiedUserWallets[targetUserId].push(wallet);
+      }
+
+      return targetUserId;
+    }
+
+    // Otherwise, create a new unified user
+    return createNewUnifiedUser(mintingData, wallet, twitterId, farcasterFid);
   }
 
   function createNewUnifiedUser(
@@ -81,24 +100,8 @@ library AccountManagerLib {
     return userId;
   }
 
-  function linkAdditionalWallet(
-    GMStorage.MintingData storage mintingData,
-    address caller,
-    address newWallet,
-    bytes calldata signature
-  ) external {
-    if (!mintingData.unifiedUserSystemEnabled) revert SystemNotEnabled();
-
-    address recoveredSigner = ECDSA.recover(
-      MessageHashUtils.toEthSignedMessageHash(bytes('I want to link this wallet to my GMCoin account')),
-      signature
-    );
-    if (recoveredSigner != newWallet) revert InvalidSignature();
-    if (mintingData.registeredWallets[newWallet]) revert WalletAlreadyRegistered();
-    if (mintingData.walletToUnifiedUserId[newWallet] != 0) revert WalletAlreadyLinked();
-
-    uint256 userId = mintingData.walletToUnifiedUserId[caller];
-    if (userId == 0) revert CallerNotRegistered();
+  function linkAdditionalWallet(GMStorage.MintingData storage mintingData, uint256 userId, address newWallet) external {
+    if (mintingData.unifiedUsers[userId].userId == 0) revert UserNotExist();
 
     mintingData.walletToUnifiedUserId[newWallet] = userId;
     mintingData.unifiedUserWallets[userId].push(newWallet);

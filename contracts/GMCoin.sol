@@ -115,7 +115,7 @@ contract GMCoin is
     super._update(from, to, value);
   }
 
-  function _mintForUserByIndex(uint256 userIndex, uint256 amount) internal override {
+  function _mintForUserByIndex(uint256 userIndex, uint256 amount) internal override(TwitterOracle) {
     address walletAddr = walletByTwitterUserIndex(userIndex);
     require(walletAddr != address(0), "walletAddr shouldn't be zero!");
 
@@ -157,8 +157,7 @@ contract GMCoin is
     address wallet,
     bool isSuccess,
     string memory errorMsg
-  ) internal override {
+  ) internal {
     emit TwitterVerificationResult(twitterId, wallet, isSuccess, errorMsg);
   }
-
 }

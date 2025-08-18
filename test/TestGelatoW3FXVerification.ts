@@ -155,7 +155,7 @@ describe("GelatoW3F Twitter Verification", function () {
             log: log,
             secrets: {
                 TWITTER_GET_TWEET_URL: "http://localhost:8118/tweet/",
-                HEADER_NAME: "Authorization",
+                TWITTER_HEADER_NAME: "Authorization",
                 TWITTER_BEARER: bearerHeader
             }
         });
@@ -273,9 +273,28 @@ describe("GelatoW3F Twitter Verification", function () {
         const walletAddress = "0x7Bf09e0B40D1A4be1ff703f0fd85B47B4e08758E";
         const authCode = "GM21703F0FD85BF3";
         const tweetID = "1933866787050770476";
+        const bearerToken = "test-bearer-token";
+        const bearerHeader = `Bearer ${bearerToken}`;
 
         const verifierAddress = await smartContract.getAddress();
         console.log(`deployed GMCoin to ${verifierAddress}`);
+
+        // Mock Twitter API response
+        mockServer.mockFunc(`/tweet/`, 'GET', (url, headers) => {
+            expect(headers.authorization).to.equal(bearerHeader);
+            return {
+                data: {
+                    tweet_results: {
+                        result: {
+                            legacy: {
+                                full_text: `Verifying my GMCoin account with code: ${authCode}`,
+                                user_id_str: userID
+                            }
+                        }
+                    }
+                }
+            };
+        });
 
         // Generate event log for verifyTwitterByAuthCodeRequested
         const log = await generateEventLog('verifyTwitterByAuthCodeRequested', [walletAddress, authCode, tweetID, userID]);
@@ -287,7 +306,12 @@ describe("GelatoW3F Twitter Verification", function () {
             userArgs: {
                 verifierContractAddress: verifierAddress
             },
-            log: log
+            log: log,
+            secrets: {
+                TWITTER_GET_TWEET_URL: "http://localhost:8118/tweet/",
+                TWITTER_HEADER_NAME: "Authorization",
+                TWITTER_BEARER: bearerHeader
+            }
         });
         result = result as Web3FunctionResultV2;
 

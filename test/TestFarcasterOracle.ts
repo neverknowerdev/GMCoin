@@ -49,7 +49,7 @@ describe("FarcasterOracle", function () {
         it("should reject requesting verification for already linked FID", async function () {
             // First verification should succeed
             await gmCoin.connect(user1).requestFarcasterVerification(SAMPLE_FID_1);
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_1, user1.address);
+            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
             
             // Second verification with same FID should fail
             await expect(
@@ -60,7 +60,7 @@ describe("FarcasterOracle", function () {
         it("should reject requesting verification for wallet already linked to different FID", async function () {
             // First verification should succeed
             await gmCoin.connect(user1).requestFarcasterVerification(SAMPLE_FID_1);
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_1, user1.address);
+            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
             
             // Second verification with same wallet but different FID should fail
             await expect(
@@ -69,7 +69,7 @@ describe("FarcasterOracle", function () {
         });
 
         it("should successfully verify new Farcaster user and mint tokens", async function () {
-            const tx = await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_1, user1.address);
+            const tx = await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
             const receipt = await tx.wait();
 
             // Check that verification event was emitted
@@ -84,11 +84,11 @@ describe("FarcasterOracle", function () {
 
         it("should not mint tokens for already verified Farcaster user", async function () {
             // First verification should mint tokens
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_1, user1.address);
+            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
             const initialBalance = await gmCoin.balanceOf(user1.address);
 
             // Second verification should not mint additional tokens
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_1, user1.address);
+            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
             const finalBalance = await gmCoin.balanceOf(user1.address);
 
             expect(finalBalance).to.equal(initialBalance);
@@ -98,8 +98,8 @@ describe("FarcasterOracle", function () {
     describe("Farcaster Query Functions", function () {
         beforeEach(async function () {
             // Set up verified users for testing
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_1, user1.address);
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_2, user2.address);
+            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
+            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_2, user2.address);
         });
 
         it("should correctly report if Farcaster user is registered", async function () {
@@ -122,7 +122,7 @@ describe("FarcasterOracle", function () {
 
         it("should return Farcaster users in batches", async function () {
             // Add a third user
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_3, user3.address);
+            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_3, user3.address);
 
             // Get all users in one batch
             const allUsers = await gmCoin.getFarcasterUsers(0, 10);
@@ -160,188 +160,8 @@ describe("FarcasterOracle", function () {
 
     });
 
-    describe("Farcaster Minting Process", function () {
-        beforeEach(async function () {
-            // Set up verified users
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_1, user1.address);
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_2, user2.address);
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_3, user3.address);
-        });
-
-        it("should successfully process Farcaster minting with valid data", async function () {
-            const currentTime = await time.latest();
-            const startOfTheDayTimestamp = await getStartOfDayTimestamp(currentTime);
-            const startOfYesterday = startOfTheDayTimestamp - 86400; // Yesterday timestamp
-            
-            await gmCoin.connect(relayerServerAcc).startMinting();
-
-            const userData = [
-                {
-                    userIndex: 0,
-                    casts: 10,
-                    hashtagCasts: 2,
-                    cashtagCasts: 1,
-                    simpleCasts: 7,
-                    likes: 50
-                },
-                {
-                    userIndex: 1,
-                    casts: 5,
-                    hashtagCasts: 1,
-                    cashtagCasts: 0,
-                    simpleCasts: 4,
-                    likes: 25
-                }
-            ];
-
-            const batch = {
-                startIndex: 0,
-                endIndex: 1,
-                nextCursor: "",
-                errorCount: 0
-            };
-
-            const tx = await gmCoin.connect(relayerServerAcc).mintCoinsForFarcasterUsers(userData, startOfYesterday, [batch]);
-            const receipt = await tx.wait();
-
-            expect(receipt?.status).to.equal(1);
-        });
-
-        it("should calculate points correctly for Farcaster activity", async function () {
-            const currentTime = await time.latest();
-            const startOfTheDayTimestamp = await getStartOfDayTimestamp(currentTime);
-            const startOfYesterday = startOfTheDayTimestamp - 86400;
-            
-            await gmCoin.connect(relayerServerAcc).startMinting();
-
-            const POINTS_PER_TWEET = await gmCoin.POINTS_PER_TWEET();
-            const POINTS_PER_LIKE = await gmCoin.POINTS_PER_LIKE();
-            const POINTS_PER_HASHTAG = await gmCoin.POINTS_PER_HASHTAG();
-            const POINTS_PER_CASHTAG = await gmCoin.POINTS_PER_CASHTAG();
-            const COINS_MULTIPLICATOR = await gmCoin.COINS_MULTIPLICATOR();
-
-            const userData = [
-                {
-                    userIndex: 0,
-                    casts: 0,
-                    hashtagCasts: 2,
-                    cashtagCasts: 1,
-                    simpleCasts: 3,
-                    likes: 10
-                }
-            ];
-
-            const batch = {
-                startIndex: 0,
-                endIndex: 0,
-                nextCursor: "",
-                errorCount: 0
-            };
-
-            const expectedPoints = 
-                BigInt(userData[0].simpleCasts) * POINTS_PER_TWEET +
-                BigInt(userData[0].likes) * POINTS_PER_LIKE +
-                BigInt(userData[0].hashtagCasts) * POINTS_PER_HASHTAG +
-                BigInt(userData[0].cashtagCasts) * POINTS_PER_CASHTAG;
-
-            const expectedCoins = expectedPoints * COINS_MULTIPLICATOR;
-
-            const initialBalance = await gmCoin.balanceOf(user1.address);
-            await gmCoin.connect(relayerServerAcc).mintCoinsForFarcasterUsers(userData, startOfYesterday, [batch]);
-            const finalBalance = await gmCoin.balanceOf(user1.address);
-
-            expect(finalBalance - initialBalance).to.equal(expectedCoins);
-        });
-
-        it("should not mint tokens for zero activity", async function () {
-            const currentTime = await time.latest();
-            const startOfTheDayTimestamp = await getStartOfDayTimestamp(currentTime);
-            const startOfYesterday = startOfTheDayTimestamp - 86400;
-            
-            await gmCoin.connect(relayerServerAcc).startMinting();
-
-            const userData = [
-                {
-                    userIndex: 0,
-                    casts: 0,
-                    hashtagCasts: 0,
-                    cashtagCasts: 0,
-                    simpleCasts: 0,
-                    likes: 0
-                }
-            ];
-
-            const batch = {
-                startIndex: 0,
-                endIndex: 0,
-                nextCursor: "",
-                errorCount: 0
-            };
-
-            const initialBalance = await gmCoin.balanceOf(user1.address);
-            await gmCoin.connect(relayerServerAcc).mintCoinsForFarcasterUsers(userData, startOfYesterday, [batch]);
-            const finalBalance = await gmCoin.balanceOf(user1.address);
-
-            expect(finalBalance).to.equal(initialBalance);
-        });
-
-        it("should process multiple users correctly", async function () {
-            const currentTime = await time.latest();
-            const startOfTheDayTimestamp = await getStartOfDayTimestamp(currentTime);
-            const startOfYesterday = startOfTheDayTimestamp - 86400;
-            
-            await gmCoin.connect(relayerServerAcc).startMinting();
-
-            const userData = [
-                {
-                    userIndex: 0,
-                    casts: 5,
-                    hashtagCasts: 1,
-                    cashtagCasts: 1,
-                    simpleCasts: 3,
-                    likes: 20
-                },
-                {
-                    userIndex: 1,
-                    casts: 8,
-                    hashtagCasts: 2,
-                    cashtagCasts: 0,
-                    simpleCasts: 6,
-                    likes: 30
-                },
-                {
-                    userIndex: 2,
-                    casts: 0,
-                    hashtagCasts: 0,
-                    cashtagCasts: 0,
-                    simpleCasts: 0,
-                    likes: 0
-                }
-            ];
-
-            const batch = {
-                startIndex: 0,
-                endIndex: 2,
-                nextCursor: "",
-                errorCount: 0
-            };
-
-            const initialBalance1 = await gmCoin.balanceOf(user1.address);
-            const initialBalance2 = await gmCoin.balanceOf(user2.address);
-            const initialBalance3 = await gmCoin.balanceOf(user3.address);
-
-            await gmCoin.connect(relayerServerAcc).mintCoinsForFarcasterUsers(userData, startOfYesterday, [batch]);
-
-            const finalBalance1 = await gmCoin.balanceOf(user1.address);
-            const finalBalance2 = await gmCoin.balanceOf(user2.address);
-            const finalBalance3 = await gmCoin.balanceOf(user3.address);
-
-            // Users 1 and 2 should receive tokens, user 3 should not
-            expect(finalBalance1).to.be.greaterThan(initialBalance1);
-            expect(finalBalance2).to.be.greaterThan(initialBalance2);
-            expect(finalBalance3).to.equal(initialBalance3);
-        });
-    });
+    // Farcaster batch minting is not part of the current contract API.
+    // Minting via Farcaster occurs on first successful verification.
 
     describe("Edge Cases and Error Handling", function () {
         it("should handle verification with zero FID", async function () {
@@ -359,8 +179,8 @@ describe("FarcasterOracle", function () {
 
         it("should maintain data consistency across operations", async function () {
             // Verify multiple users
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_1, user1.address);
-            await gmCoin.connect(relayerServerAcc)["verifyFarcaster(uint256,address)"](SAMPLE_FID_2, user2.address);
+            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
+            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_2, user2.address);
 
             // Check all mappings are consistent
             expect(await gmCoin.getWalletByFID(SAMPLE_FID_1)).to.equal(user1.address);

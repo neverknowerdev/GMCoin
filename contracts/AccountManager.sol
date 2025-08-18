@@ -3,6 +3,9 @@ pragma solidity ^0.8.24;
 
 import { GMStorage } from './Storage.sol';
 import { AccountManagerLib } from './AccountManagerLib.sol';
+import '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
+import '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
+import './Errors.sol';
 
 abstract contract AccountManager {
   // Account management events
@@ -47,9 +50,22 @@ abstract contract AccountManager {
   }
 
   function linkAdditionalWallet(address newWallet, bytes calldata signature) public {
-    AccountManagerLib.linkAdditionalWallet(_getMintingData(), _msgSender(), newWallet, signature);
-    
-    uint256 userId = _getMintingData().walletToUnifiedUserId[_msgSender()];
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    if (!mintingData.unifiedUserSystemEnabled) revert SystemNotEnabled();
+
+    address recoveredSigner = ECDSA.recover(
+      MessageHashUtils.toEthSignedMessageHash(bytes('I want to link this wallet to my GMCoin account')),
+      signature
+    );
+    if (recoveredSigner != newWallet) revert InvalidSignature();
+    if (mintingData.registeredWallets[newWallet]) revert WalletAlreadyRegistered();
+    if (mintingData.walletToUnifiedUserId[newWallet] != 0) revert WalletAlreadyLinked();
+
+    uint256 userId = mintingData.walletToUnifiedUserId[recoveredSigner];
+    if (userId == 0) revert CallerNotRegistered();
+
+    AccountManagerLib.linkAdditionalWallet(_getMintingData(), userId, newWallet);
+
     emit UnifiedWalletLinked(userId, newWallet);
   }
 
@@ -95,6 +111,10 @@ abstract contract AccountManager {
   function totalUnifiedUsersCount() public view returns (uint256) {
     GMStorage.MintingData storage mintingData = _getMintingData();
     return mintingData.allUnifiedUsers.length;
+  }
+
+  function getUnifiedUserIDByWallet(address wallet) public view returns (uint256) {
+    return AccountManagerLib.getUnifiedUserByWallet(_getMintingData(), wallet).userId;
   }
 
   function getUnifiedUserById(uint256 userId) public view returns (GMStorage.UnifiedUser memory) {
