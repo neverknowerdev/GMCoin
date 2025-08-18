@@ -52,6 +52,9 @@ abstract contract FarcasterOracle {
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
 
+    if (mintingData.farcasterWalletsByFIDs[farcasterFid] != address(0)) revert FarcasterAccountAlreadyLinked();
+    if (mintingData.farcasterUsersByWallets[wallet] != 0) revert WalletAlreadyLinkedToFid();
+
     (bool shouldMint, uint256 userIndex, uint256 mintAmount) = FarcasterOracleLib.verifyFarcaster(
       mintingData,
       mintingConfig,
@@ -71,6 +74,13 @@ abstract contract FarcasterOracle {
     }
 
     emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
+  }
+
+  function linkFarcasterWalletToUnifiedUser(uint256 userId, address wallet) public onlyGelato {
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    if (mintingData.unifiedUsers[userId].userId == 0) revert UserNotExist();
+
+    AccountManagerLib.linkAdditionalWallet(mintingData, userId, wallet);
   }
 
   // Farcaster query functions

@@ -74,6 +74,9 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
   }
 
   function verifyTwitter(string calldata userID, address wallet) public onlyGelato {
+    if (mintingData.walletsByUserIDs[userID] != address(0)) revert WalletAlreadyLinked();
+    if (mintingData.registeredWallets[wallet]) revert WalletAlreadyLinked();
+
     (bool shouldMint, uint256 userIndex, uint256 mintAmount) = TwitterOracleLib.verifyTwitter(
       mintingData,
       mintingConfig,
