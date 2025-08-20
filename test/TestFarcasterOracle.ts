@@ -49,7 +49,7 @@ describe("FarcasterOracle", function () {
         it("should reject requesting verification for already linked FID", async function () {
             // First verification should succeed
             await gmCoin.connect(user1).requestFarcasterVerification(SAMPLE_FID_1);
-            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
+            await gmCoin.connect(relayerServerAcc).verifyFarcaster(SAMPLE_FID_1, user1.address);
             
             // Second verification with same FID should fail
             await expect(
@@ -60,7 +60,7 @@ describe("FarcasterOracle", function () {
         it("should reject requesting verification for wallet already linked to different FID", async function () {
             // First verification should succeed
             await gmCoin.connect(user1).requestFarcasterVerification(SAMPLE_FID_1);
-            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
+            await gmCoin.connect(relayerServerAcc).verifyFarcaster(SAMPLE_FID_1, user1.address);
             
             // Second verification with same wallet but different FID should fail
             await expect(
@@ -69,7 +69,7 @@ describe("FarcasterOracle", function () {
         });
 
         it("should successfully verify new Farcaster user and mint tokens", async function () {
-            const tx = await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
+            const tx = await gmCoin.connect(relayerServerAcc).verifyFarcaster(SAMPLE_FID_1, user1.address);
             const receipt = await tx.wait();
 
             // Check that verification event was emitted
@@ -82,24 +82,22 @@ describe("FarcasterOracle", function () {
             expect(await gmCoin.getFIDByWallet(user1.address)).to.equal(SAMPLE_FID_1);
         });
 
-        it("should not mint tokens for already verified Farcaster user", async function () {
-            // First verification should mint tokens
-            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
-            const initialBalance = await gmCoin.balanceOf(user1.address);
+        it("should not allow duplicate verification for already verified Farcaster user", async function () {
+            // First verification should succeed
+            await gmCoin.connect(relayerServerAcc).verifyFarcaster(SAMPLE_FID_1, user1.address);
 
-            // Second verification should not mint additional tokens
-            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
-            const finalBalance = await gmCoin.balanceOf(user1.address);
-
-            expect(finalBalance).to.equal(initialBalance);
+            // Second verification should be rejected
+            await expect(
+                gmCoin.connect(relayerServerAcc).verifyFarcaster(SAMPLE_FID_1, user1.address)
+            ).to.be.revertedWithCustomError(gmCoin, "FarcasterAccountAlreadyLinked");
         });
     });
 
     describe("Farcaster Query Functions", function () {
         beforeEach(async function () {
             // Set up verified users for testing
-            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
-            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_2, user2.address);
+            await gmCoin.connect(relayerServerAcc).verifyFarcaster(SAMPLE_FID_1, user1.address);
+            await gmCoin.connect(relayerServerAcc).verifyFarcaster(SAMPLE_FID_2, user2.address);
         });
 
         it("should correctly report if Farcaster user is registered", async function () {
@@ -122,7 +120,7 @@ describe("FarcasterOracle", function () {
 
         it("should return Farcaster users in batches", async function () {
             // Add a third user
-            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_3, user3.address);
+            await gmCoin.connect(relayerServerAcc).verifyFarcaster(SAMPLE_FID_3, user3.address);
 
             // Get all users in one batch
             const allUsers = await gmCoin.getFarcasterUsers(0, 10);
@@ -179,8 +177,8 @@ describe("FarcasterOracle", function () {
 
         it("should maintain data consistency across operations", async function () {
             // Verify multiple users
-            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
-            await gmCoin.connect(relayerServerAcc).completeFarcasterVerification(SAMPLE_FID_2, user2.address);
+            await gmCoin.connect(relayerServerAcc).verifyFarcaster(SAMPLE_FID_1, user1.address);
+            await gmCoin.connect(relayerServerAcc).verifyFarcaster(SAMPLE_FID_2, user2.address);
 
             // Check all mappings are consistent
             expect(await gmCoin.getWalletByFID(SAMPLE_FID_1)).to.equal(user1.address);

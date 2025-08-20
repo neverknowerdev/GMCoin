@@ -25,7 +25,7 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     _;
   }
 
-  modifier onlyServerRelayer() {
+  modifier onlyServerRelayer() virtual {
     if (_msgSender() != serverRelayerAddress) revert OnlyServerRelayer();
     _;
   }
