@@ -148,8 +148,6 @@ async function executeFarcasterWorker(logger: CloudwatchLogger, context: Web3Fun
 
         let UserResults = await storage.loadUserResults();
 
-        let castsToVerify: Cast[] = await storage.getCastsToVerify();
-
         if (batchesToProcess.length > 0) { // process batches
             logger.info(`Processing`, batchesToProcess.length, `batches`);
 
@@ -165,28 +163,12 @@ async function executeFarcasterWorker(logger: CloudwatchLogger, context: Web3Fun
             logger.info(`batchesToProcess:`, batchesToProcess.length, `errorBatches:`, errorBatches.length);
             logger.info(`Fetched`, casts.length, `casts`);
 
-            let minLikesCount = castsToVerify.length > 0 ? castsToVerify[castsToVerify.length - 1].likesCount : 0;
-            let isNewCastsToVerify = false;
             for (let i = 0; i < casts.length; i++) {
                 const foundKeyword = findKeywordWithPrefix(casts[i].castContent)
                 if (foundKeyword == "") {
                     continue;
                 }
                 logger.info(`casts[i] ${JSON.stringify(casts[i])}`);
-
-                // add to verifyCasts only casts with more than 100 likes and more than the last element(with least likes) in castsToVerify array
-                if (casts[i].likesCount > 100 && casts[i].likesCount > minLikesCount) {
-                    castsToVerify.push(casts[i]);
-                    isNewCastsToVerify = true;
-
-                    castsToVerify.sort((a, b) => b.likesCount - a.likesCount);
-                    if (castsToVerify.length > verifyCastBatchSize) {
-                        casts.push(...castsToVerify.slice(verifyCastBatchSize));
-                        castsToVerify = castsToVerify.slice(0, verifyCastBatchSize);
-                    }
-                    minLikesCount = castsToVerify[castsToVerify.length - 1].likesCount;
-                    continue;
-                }
 
                 let result = UserResults.get(casts[i].userIndex) || { ...defaultResult };
                 result.userIndex = casts[i].userIndex;
@@ -202,24 +184,12 @@ async function executeFarcasterWorker(logger: CloudwatchLogger, context: Web3Fun
                 UserResults.set(casts[i].userIndex, result);
             }
 
-            if (isNewCastsToVerify) {
-                await storage.saveCastsToVerify(castsToVerify);
-            }
-
             let results: Result[] = [];
-
-            let userIndexesUnderVerification: Map<number, boolean> = new Map();
-            for (const cast of castsToVerify) {
-                userIndexesUnderVerification.set(cast.userIndex, true);
-            }
 
             let allUserIndexes = Array.from(UserResults.keys()).sort((a, b) => a - b);
 
             const ongoingBatches = batchesToProcess.concat(errorBatches).filter((b) => b.nextCursor != '');
             for (const userIndex of allUserIndexes) {
-                if (userIndexesUnderVerification.get(userIndex) === true) {
-                    continue;
-                }
 
                 let isOngoingBatch = false;
                 for (const batch of ongoingBatches) {
@@ -307,24 +277,6 @@ async function executeFarcasterWorker(logger: CloudwatchLogger, context: Web3Fun
 
             let transactions: Web3FunctionResultCallData[] = [];
             try {
-                if (castsToVerify.length > 0) {
-                    const verifiedCasts = await farcasterRequester.fetchCastsByHashes(castsToVerify);
-                    logger.info(`verifiedCasts ${verifiedCasts.length}`);
-                    for (let i = 0; i < verifiedCasts.length; i++) {
-                        const result = UserResults.get(verifiedCasts[i].userIndex) || { ...defaultResult };
-
-                        let castProcessResult = calculateCastByKeyword(result, verifiedCasts[i].likesCount, findKeywordWithPrefix(verifiedCasts[i].castContent));
-                        batchUploader.add(verifiedCasts[i], castProcessResult);
-                        if (castProcessResult == CastProcessingType.Skipped) {
-                            continue;
-                        }
-
-                        if (!result.userIndex) {
-                            result.userIndex = verifiedCasts[i].userIndex;
-                        }
-                        UserResults.set(verifiedCasts[i].userIndex, result);
-                    }
-                }
 
                 const results = [...UserResults.values()].sort((a, b) => Number(a.userIndex - b.userIndex));
 
