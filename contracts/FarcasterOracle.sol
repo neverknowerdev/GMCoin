@@ -80,6 +80,51 @@ abstract contract FarcasterOracle {
     emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
 
+  function verifyFarcasterUnified(uint256 farcasterFid, address wallet) public onlyGelato {
+    // Same as verifyFarcaster but always creates unified user
+    GMStorage.MintingData storage mintingData = _getMintingData();
+    GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
+
+    if (mintingData.farcasterWalletsByFIDs[farcasterFid] != address(0)) revert FarcasterAccountAlreadyLinked();
+    if (mintingData.farcasterUsersByWallets[wallet] != 0) revert WalletAlreadyLinkedToFid();
+
+    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = FarcasterOracleLib.verifyFarcaster(
+      mintingData,
+      mintingConfig,
+      farcasterFid,
+      wallet
+    );
+
+    if (shouldMint) {
+      _mintForFarcasterUserByIndex(userIndex, mintAmount);
+    }
+
+    // Always create unified user
+    uint256 userId = _createOrLinkUnifiedUser(wallet, '', farcasterFid);
+    if (userId > 0) {
+      _emitUnifiedUserCreated(userId, wallet, '', farcasterFid);
+    }
+
+    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
+  }
+
+  function verifyBothFarcasterAndTwitter(
+    uint256 farcasterFid,
+    address wallet,
+    string calldata /* twitterId */
+  ) public onlyGelato {
+    // Just call verifyFarcasterUnified
+    verifyFarcasterUnified(farcasterFid, wallet);
+  }
+
+  function verifyFarcasterAndMergeWithTwitter(
+    uint256 farcasterFid,
+    address wallet,
+    string calldata twitterId
+  ) public onlyGelato {
+    verifyBothFarcasterAndTwitter(farcasterFid, wallet, twitterId);
+  }
+
   function linkFarcasterWalletToUnifiedUser(uint256 userId, address wallet) public onlyGelato {
     GMStorage.MintingData storage mintingData = _getMintingData();
     if (mintingData.unifiedUsers[userId].userId == 0) revert UserNotExist();
@@ -130,9 +175,6 @@ abstract contract FarcasterOracle {
 
 
   function startFarcasterMinting() public onlyGelato {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
-    
     // Start minting process similar to Twitter
     emit FarcasterMintingStarted(uint32(block.timestamp));
     emit farcasterMintingProcessed(uint32(block.timestamp), new GMStorage.Batch[](0));

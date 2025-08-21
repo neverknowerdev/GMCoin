@@ -98,6 +98,31 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     emit TwitterVerificationResult(userID, wallet, true, '');
   }
 
+  function verifyTwitterUnified(string calldata userID, address wallet) public onlyGelato {
+    // Same as verifyTwitter but always creates unified user
+    if (mintingData.walletsByUserIDs[userID] != address(0)) revert WalletAlreadyLinked();
+    if (mintingData.registeredWallets[wallet]) revert WalletAlreadyLinked();
+
+    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = TwitterOracleLib.verifyTwitter(
+      mintingData,
+      mintingConfig,
+      userID,
+      wallet
+    );
+
+    if (shouldMint) {
+      _mintForUserByIndex(userIndex, mintAmount);
+    }
+
+    // Always create unified user
+    uint256 userId = _createOrLinkUnifiedUser(wallet, userID, 0);
+    if (userId > 0) {
+      _emitUnifiedUserCreated(userId, wallet, userID, 0);
+    }
+
+    emit TwitterVerificationResult(userID, wallet, true, '');
+  }
+
   // Twitter query functions
 
   function isTwitterUserRegistered(string calldata userID) public view returns (bool) {

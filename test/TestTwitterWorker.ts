@@ -156,7 +156,17 @@ describe("GelatoW3F", function () {
             return response;
         });
 
-        mockServer.mock('/SaveTweets', 'POST', {success: true});
+        mockServer.mockFunc('/SaveTweets', 'POST', (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => {
+            const receivedJSON = JSON.parse(body);
+            const apiKey = headers.authorization;
+            expect(apiKey?.indexOf('sN') === 0).to.be.true;
+
+            expect(receivedJSON.mintingDayTimestamp).to.be.equal(mintingDay);
+
+            return {
+                success: true
+            }
+        });
 
         mockServer.mockFunc('/UploadTweetsToIPFS', 'POST', (url: url.UrlWithParsedQuery, headers: IncomingHttpHeaders, body: any) => {
             const receivedJSON = JSON.parse(body);

@@ -61,7 +61,8 @@ abstract contract AccountManager {
     if (mintingData.registeredWallets[newWallet]) revert WalletAlreadyRegistered();
     if (mintingData.walletToUnifiedUserId[newWallet] != 0) revert WalletAlreadyLinked();
 
-    uint256 userId = mintingData.walletToUnifiedUserId[recoveredSigner];
+    // The caller must be an existing unified user
+    uint256 userId = mintingData.walletToUnifiedUserId[_msgSender()];
     if (userId == 0) revert CallerNotRegistered();
 
     AccountManagerLib.linkAdditionalWallet(_getMintingData(), userId, newWallet);
