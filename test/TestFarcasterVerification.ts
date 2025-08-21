@@ -37,7 +37,7 @@ describe("FarcasterVerification", function () {
 
     // Gelato completes verification
     await expect(
-      coinContract.connect(gelatoAddr).completeFarcasterVerification(SAMPLE_FID_1, user1.address)
+      coinContract.connect(gelatoAddr).verifyFarcaster(SAMPLE_FID_1, user1.address)
     ).to.emit(coinContract, "FarcasterVerificationResult")
      .withArgs(SAMPLE_FID_1, user1.address, true, '');
 
@@ -65,7 +65,7 @@ describe("FarcasterVerification", function () {
 
     const initialBalance = await coinContract.balanceOf(user1.address);
     
-    await coinContract.connect(gelatoAddr).completeFarcasterVerification(SAMPLE_FID_1, user1.address);
+    await coinContract.connect(gelatoAddr).verifyFarcaster(SAMPLE_FID_1, user1.address);
     
     const finalBalance = await coinContract.balanceOf(user1.address);
     expect(finalBalance).to.be.greaterThan(initialBalance);

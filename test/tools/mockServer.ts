@@ -99,18 +99,17 @@ export class MockHttpServer {
                 let body = '';
                 req.on('data', chunk => body += chunk);
                 req.on('end', () => {
-                    resolve(body);
-                    // try {
-                    //     if (contentType === 'application/json') {
-                    //         resolve(JSON.parse(body));
-                    //     } else if (contentType === 'application/x-www-form-urlencoded') {
-                    //         resolve(querystring.parse(body));
-                    //     } else {
-                    //         resolve(body); // Handle other content types or plain text
-                    //     }
-                    // } catch (error) {
-                    //     reject(error);
-                    // }
+                    try {
+                        if (contentType && contentType.includes('application/json')) {
+                            resolve(JSON.parse(body));
+                        } else if (contentType === 'application/x-www-form-urlencoded') {
+                            resolve(querystring.parse(body));
+                        } else {
+                            resolve(body); // Handle other content types or plain text
+                        }
+                    } catch (error) {
+                        reject(error);
+                    }
                 });
             } else {
                 resolve(null);

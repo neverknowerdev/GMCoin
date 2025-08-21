@@ -6,6 +6,8 @@ import { GMStorage } from './Storage.sol';
 import { GMWeb3Functions } from './GelatoWeb3Functions.sol';
 import { TwitterOracleLib } from './TwitterOracleLib.sol';
 import { MintingLib } from './MintingLib.sol';
+import { TwitterVerificationLib } from './libraries/TwitterVerificationLib.sol';
+import { TwitterMintingLib } from './libraries/TwitterMintingLib.sol';
 import './Errors.sol';
 
 abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
@@ -25,7 +27,7 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     _;
   }
 
-  modifier onlyServerRelayer() {
+  modifier onlyServerRelayer() virtual {
     if (_msgSender() != serverRelayerAddress) revert OnlyServerRelayer();
     _;
   }
@@ -53,16 +55,11 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     string calldata userID,
     string calldata tweetID
   ) public {
-    if (mintingData.walletsByUserIDs[userID] != address(0)) revert UserAlreadyLinked();
-    if (mintingData.registeredWallets[_msgSender()]) revert WalletAlreadyLinked();
-
-    emit verifyTwitterByAuthCodeRequested(_msgSender(), authCode, tweetID, userID);
+    TwitterVerificationLib.requestTwitterVerificationByAuthCode(mintingData, authCode, userID, tweetID, _msgSender());
   }
 
   function requestTwitterVerification(string calldata accessCodeEncrypted, string calldata userID) public {
-    if (mintingData.walletsByUserIDs[userID] != address(0)) revert WalletAlreadyLinked();
-
-    emit VerifyTwitterRequested(accessCodeEncrypted, userID, _msgSender());
+    TwitterVerificationLib.requestTwitterVerification(mintingData, accessCodeEncrypted, userID, _msgSender());
   }
 
   function twitterVerificationError(
@@ -70,18 +67,17 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     string calldata userID,
     string calldata errorMsg
   ) public onlyGelato {
-    emit TwitterVerificationResult(userID, wallet, false, errorMsg);
+    TwitterVerificationLib.twitterVerificationError(userID, wallet, errorMsg);
   }
 
   function verifyTwitter(string calldata userID, address wallet) public onlyGelato {
-    if (mintingData.walletsByUserIDs[userID] != address(0)) revert WalletAlreadyLinked();
-    if (mintingData.registeredWallets[wallet]) revert WalletAlreadyLinked();
-
-    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = TwitterOracleLib.verifyTwitter(
+    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = TwitterVerificationLib.verifyTwitter(
       mintingData,
       mintingConfig,
-      userID,
-      wallet
+      TwitterVerificationLib.VerificationParams({
+        userID: userID,
+        wallet: wallet
+      })
     );
 
     if (shouldMint) {
@@ -94,8 +90,28 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
         _emitUnifiedUserCreated(userId, wallet, userID, 0);
       }
     }
+  }
 
-    emit TwitterVerificationResult(userID, wallet, true, '');
+  function verifyTwitterUnified(string calldata userID, address wallet) public onlyGelato {
+    // Same as verifyTwitter but always creates unified user
+    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = TwitterVerificationLib.verifyTwitterUnified(
+      mintingData,
+      mintingConfig,
+      TwitterVerificationLib.VerificationParams({
+        userID: userID,
+        wallet: wallet
+      })
+    );
+
+    if (shouldMint) {
+      _mintForUserByIndex(userIndex, mintAmount);
+    }
+
+    // Always create unified user
+    uint256 userId = _createOrLinkUnifiedUser(wallet, userID, 0);
+    if (userId > 0) {
+      _emitUnifiedUserCreated(userId, wallet, userID, 0);
+    }
   }
 
   // Twitter query functions
@@ -136,38 +152,26 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
   // Twitter minting functions
 
   function startMinting() public onlyGelatoOrOwner {
-    (uint32 dayToMint, bool shouldContinue, int32 newPointsDeltaStreak) = mintingData.startMintingProcess(
+    (, bool shouldReturn, int32 newPointsDeltaStreak, uint256 totalPointsToAdd) = TwitterMintingLib.startMinting(
+      mintingData,
       mintingConfig,
       pointsDeltaStreak
     );
     pointsDeltaStreak = newPointsDeltaStreak;
-
-    if (shouldContinue) {
-      emit twitterMintingProcessed(dayToMint, emptyArray);
+    
+    if (shouldReturn) {
       return;
     }
-
-    emit changedComplexity(
-      mintingConfig.COINS_MULTIPLICATOR,
-      mintingData.lastEpochPoints,
-      mintingData.currentEpochPoints
-    );
-
-    totalPoints += mintingData.currentEpochPoints;
-    emit MintingStarted(dayToMint);
-    emit twitterMintingProcessed(dayToMint, emptyArray);
+    
+    totalPoints += totalPointsToAdd;
   }
 
   function continueMintingForADay() public onlyOwner {
-    if (mintingData.mintingInProgressForDay == 0) revert NoOngoingMinting();
-
-    emit twitterMintingProcessed(mintingData.mintingInProgressForDay, emptyArray);
+    TwitterMintingLib.continueMintingForADay(mintingData);
   }
 
   function finishMinting(uint32 mintingDayTimestamp, string calldata runningHash) public onlyGelato {
-    bool shouldStartNext = mintingData.finishMintingProcess(mintingDayTimestamp);
-
-    emit MintingFinished(mintingDayTimestamp, runningHash);
+    bool shouldStartNext = TwitterMintingLib.finishMinting(mintingData, mintingDayTimestamp, runningHash);
 
     if (shouldStartNext) {
       startMinting();
@@ -179,11 +183,11 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     string calldata finalHash,
     string calldata cid
   ) public onlyServerRelayer {
-    emit MintingFinished_TweetsUploadedToIPFS(mintingDayTimestamp, finalHash, cid);
+    TwitterMintingLib.attachIPFSTweetsFile(mintingDayTimestamp, finalHash, cid);
   }
 
   function logErrorBatches(uint32 mintingDayTimestamp, Batch[] calldata batches) public onlyGelato {
-    emit twitterMintingErrored(mintingDayTimestamp, batches);
+    TwitterMintingLib.logErrorBatches(mintingDayTimestamp, batches);
   }
 
   function mintCoinsForTwitterUsers(
@@ -191,21 +195,18 @@ abstract contract TwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     uint32 mintingDayTimestamp,
     Batch[] calldata batches
   ) public onlyGelato {
-    UserMintingResult[] memory results = TwitterOracleLib.processTwitterMinting(
+    UserMintingResult[] memory results = TwitterMintingLib.processTwitterMinting(
       mintingData,
       mintingConfig,
       userData,
-      mintingDayTimestamp
+      mintingDayTimestamp,
+      batches
     );
 
     for (uint256 i = 0; i < results.length; i++) {
       if (results[i].shouldMint) {
         _mintForUserByIndex(results[i].userIndex, results[i].mintAmount);
       }
-    }
-
-    if (batches.length > 0) {
-      emit twitterMintingProcessed(mintingDayTimestamp, batches);
     }
   }
 

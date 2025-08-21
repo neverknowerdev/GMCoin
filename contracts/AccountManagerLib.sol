@@ -184,11 +184,20 @@ library AccountManagerLib {
     delete mintingData.walletsByUserIDs[userID];
     delete mintingData.usersByWallets[wallet];
 
-    string memory lastIndexUserID = mintingData.allTwitterUsers[mintingData.allTwitterUsers.length - 1];
-    mintingData.allTwitterUsers[userIndex] = lastIndexUserID;
-    mintingData.allTwitterUsers.pop();
+    // Check if array has elements before accessing length - 1
+    if (mintingData.allTwitterUsers.length > 0) {
+      string memory lastIndexUserID = mintingData.allTwitterUsers[mintingData.allTwitterUsers.length - 1];
+      mintingData.allTwitterUsers[userIndex] = lastIndexUserID;
+      mintingData.allTwitterUsers.pop();
 
-    mintingData.userIndexByUserID[lastIndexUserID] = userIndex;
+      // Only update index if we moved an element
+      if (userIndex < mintingData.allTwitterUsers.length) {
+        mintingData.userIndexByUserID[lastIndexUserID] = userIndex;
+      }
+    }
+    
+    // Clean up user index mapping
+    delete mintingData.userIndexByUserID[userID];
   }
 
   function walletByUnifiedUserIndex(

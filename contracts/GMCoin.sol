@@ -72,6 +72,11 @@ contract GMCoin is
     _;
   }
 
+  modifier onlyServerRelayer() override(TwitterOracle, FarcasterOracle) {
+    if (_msgSender() != serverRelayerAddress) revert OnlyServerRelayer();
+    _;
+  }
+
   function _checkOwner() internal view override(OwnableUpgradeable) {
     super._checkOwner();
   }
