@@ -76,12 +76,55 @@ describe("GM", function () {
         await accountLib.waitForDeployment();
         const accountLibAddress = await accountLib.getAddress();
 
+        // Deploy new libraries
+        const TwitterVerificationLib = await ethers.getContractFactory("TwitterVerificationLib", {
+            libraries: {
+                "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
+            },
+        });
+        const twitterVerifLib = await TwitterVerificationLib.deploy();
+        await twitterVerifLib.waitForDeployment();
+        const twitterVerifLibAddress = await twitterVerifLib.getAddress();
+
+        const TwitterMintingLib = await ethers.getContractFactory("TwitterMintingLib", {
+            libraries: {
+                "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
+                "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+            },
+        });
+        const twitterMintLib = await TwitterMintingLib.deploy();
+        await twitterMintLib.waitForDeployment();
+        const twitterMintLibAddress = await twitterMintLib.getAddress();
+
+        const FarcasterVerificationLib = await ethers.getContractFactory("FarcasterVerificationLib", {
+            libraries: {
+                "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
+                "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
+            },
+        });
+        const farcasterVerifLib = await FarcasterVerificationLib.deploy();
+        await farcasterVerifLib.waitForDeployment();
+        const farcasterVerifLibAddress = await farcasterVerifLib.getAddress();
+
+        const FarcasterMintingLib = await ethers.getContractFactory("FarcasterMintingLib", {
+            libraries: {
+                "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
+            },
+        });
+        const farcasterMintLib = await FarcasterMintingLib.deploy();
+        await farcasterMintLib.waitForDeployment();
+        const farcasterMintLibAddress = await farcasterMintLib.getAddress();
+
         const GMCoinFactory: ContractFactory = await ethers.getContractFactory("GMCoin", {
             libraries: {
                 "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
                 "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
                 "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
                 "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
+                "contracts/libraries/TwitterVerificationLib.sol:TwitterVerificationLib": twitterVerifLibAddress,
+                "contracts/libraries/TwitterMintingLib.sol:TwitterMintingLib": twitterMintLibAddress,
+                "contracts/libraries/FarcasterVerificationLib.sol:FarcasterVerificationLib": farcasterVerifLibAddress,
+                "contracts/libraries/FarcasterMintingLib.sol:FarcasterMintingLib": farcasterMintLibAddress,
             },
         });
 

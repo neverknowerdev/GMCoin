@@ -4,6 +4,8 @@ pragma solidity ^0.8.24;
 import { GMStorage } from './Storage.sol';
 import { FarcasterOracleLib } from './FarcasterOracleLib.sol';
 import { AccountManagerLib } from './AccountManagerLib.sol';
+import { FarcasterVerificationLib } from './libraries/FarcasterVerificationLib.sol';
+import { FarcasterMintingLib } from './libraries/FarcasterMintingLib.sol';
 import './Errors.sol';
 
 abstract contract FarcasterOracle {
@@ -35,11 +37,7 @@ abstract contract FarcasterOracle {
 
   // Request Farcaster verification (called by users)
   function requestFarcasterVerification(uint256 farcasterFid) public {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    if (mintingData.farcasterWalletsByFIDs[farcasterFid] != address(0)) revert FarcasterAccountAlreadyLinked();
-    if (mintingData.farcasterUsersByWallets[_msgSender()] != 0) revert WalletAlreadyLinkedToFid();
-
-    emit VerifyFarcasterRequested(farcasterFid, _msgSender());
+    FarcasterVerificationLib.requestFarcasterVerification(_getMintingData(), farcasterFid, _msgSender());
   }
 
   // Process Farcaster verification error (called by Gelato)
@@ -48,7 +46,7 @@ abstract contract FarcasterOracle {
     address wallet,
     string calldata errorMsg
   ) public onlyGelato {
-    emit FarcasterVerificationResult(farcasterFid, wallet, false, errorMsg);
+    FarcasterVerificationLib.farcasterVerificationError(farcasterFid, wallet, errorMsg);
   }
 
   // Process successful Farcaster verification (called by Gelato after API verification)
@@ -56,10 +54,7 @@ abstract contract FarcasterOracle {
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
 
-    if (mintingData.farcasterWalletsByFIDs[farcasterFid] != address(0)) revert FarcasterAccountAlreadyLinked();
-    if (mintingData.farcasterUsersByWallets[wallet] != 0) revert WalletAlreadyLinkedToFid();
-
-    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = FarcasterOracleLib.verifyFarcaster(
+    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = FarcasterVerificationLib.verifyFarcaster(
       mintingData,
       mintingConfig,
       farcasterFid,
@@ -76,8 +71,6 @@ abstract contract FarcasterOracle {
         _emitUnifiedUserCreated(userId, wallet, '', farcasterFid);
       }
     }
-
-    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
 
   function verifyFarcasterUnified(uint256 farcasterFid, address wallet) public onlyGelato {
@@ -85,10 +78,7 @@ abstract contract FarcasterOracle {
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
 
-    if (mintingData.farcasterWalletsByFIDs[farcasterFid] != address(0)) revert FarcasterAccountAlreadyLinked();
-    if (mintingData.farcasterUsersByWallets[wallet] != 0) revert WalletAlreadyLinkedToFid();
-
-    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = FarcasterOracleLib.verifyFarcaster(
+    (bool shouldMint, uint256 userIndex, uint256 mintAmount) = FarcasterVerificationLib.verifyFarcaster(
       mintingData,
       mintingConfig,
       farcasterFid,
@@ -104,8 +94,6 @@ abstract contract FarcasterOracle {
     if (userId > 0) {
       _emitUnifiedUserCreated(userId, wallet, '', farcasterFid);
     }
-
-    emit FarcasterVerificationResult(farcasterFid, wallet, true, '');
   }
 
   function verifyBothFarcasterAndTwitter(
@@ -126,10 +114,7 @@ abstract contract FarcasterOracle {
   }
 
   function linkFarcasterWalletToUnifiedUser(uint256 userId, address wallet) public onlyGelato {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    if (mintingData.unifiedUsers[userId].userId == 0) revert UserNotExist();
-
-    AccountManagerLib.linkAdditionalWallet(mintingData, userId, wallet);
+    FarcasterVerificationLib.linkFarcasterWalletToUnifiedUser(_getMintingData(), userId, wallet);
   }
 
   // Farcaster query functions
@@ -175,17 +160,15 @@ abstract contract FarcasterOracle {
 
 
   function startFarcasterMinting() public onlyGelato {
-    // Start minting process similar to Twitter
-    emit FarcasterMintingStarted(uint32(block.timestamp));
-    emit farcasterMintingProcessed(uint32(block.timestamp), new GMStorage.Batch[](0));
+    FarcasterMintingLib.startFarcasterMinting();
   }
 
   function finishFarcasterMinting(uint32 mintingDayTimestamp, string calldata runningHash) public onlyGelato {
-    emit FarcasterMintingFinished(mintingDayTimestamp, runningHash);
+    FarcasterMintingLib.finishFarcasterMinting(mintingDayTimestamp, runningHash);
   }
 
   function logFarcasterErrorBatches(uint32 mintingDayTimestamp, GMStorage.Batch[] calldata batches) public onlyGelato {
-    emit farcasterMintingErrored(mintingDayTimestamp, batches);
+    FarcasterMintingLib.logFarcasterErrorBatches(mintingDayTimestamp, batches);
   }
 
   function mintCoinsForFarcasterUsers(
@@ -196,21 +179,18 @@ abstract contract FarcasterOracle {
     GMStorage.MintingData storage mintingData = _getMintingData();
     GMStorage.MintingConfig storage mintingConfig = _getMintingConfig();
     
-    GMStorage.UserMintingResult[] memory results = FarcasterOracleLib.processFarcasterMinting(
+    GMStorage.UserMintingResult[] memory results = FarcasterMintingLib.processFarcasterMinting(
       mintingData,
       mintingConfig,
       userData,
-      mintingDayTimestamp
+      mintingDayTimestamp,
+      batches
     );
 
     for (uint256 i = 0; i < results.length; i++) {
       if (results[i].shouldMint) {
         _mintForFarcasterUserByIndex(results[i].userIndex, results[i].mintAmount);
       }
-    }
-
-    if (batches.length > 0) {
-      emit farcasterMintingProcessed(mintingDayTimestamp, batches);
     }
   }
 
@@ -219,7 +199,7 @@ abstract contract FarcasterOracle {
     string calldata finalHash,
     string calldata cid
   ) public onlyServerRelayer {
-    emit FarcasterMintingFinished_CastsUploadedToIPFS(mintingDayTimestamp, finalHash, cid);
+    FarcasterMintingLib.attachIPFSCastsFile(mintingDayTimestamp, finalHash, cid);
   }
 
   // Abstract functions to be implemented by main contract
