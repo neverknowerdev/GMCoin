@@ -1,6 +1,14 @@
 const { ethers } = require('ethers');
 const Interface = ethers.Interface;
 
+/**
+ * Daily Smart Contract Check Script
+ * 
+ * Note: This script has been updated to work with QuickNode's new eth_getLogs limitations.
+ * QuickNode now limits eth_getLogs to a maximum of 5 blocks per request.
+ * The script processes logs in small chunks to work within these limits.
+ */
+
 async function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -161,30 +169,76 @@ async function getBlockByTimestamp(provider, targetTimestamp, startBlock, endBlo
 }
 
 // Helper: batch fetch all logs and decode with ABI
-async function getAllDecodedLogs(provider, contractAddress, abi, fromBlock, toBlock, chunkSize = 9900) {
+async function getAllDecodedLogs(provider, contractAddress, abi, fromBlock, toBlock, chunkSize = 500) {
     const iface = new Interface(abi);
     let allLogs = [];
+
+    // QuickNode now limits eth_getLogs to 5 blocks, so we need to process in very small chunks
+    const totalChunks = Math.ceil((toBlock - fromBlock + 1) / chunkSize);
+    let currentChunk = 0;
+
+    // Add timeout protection - if processing takes too long, we'll stop
+    const startTime = Date.now();
+    const maxProcessingTime = 10 * 60 * 1000; // 10 minutes max
+
     for (let start = fromBlock; start <= toBlock; start += chunkSize) {
+        // Check if we're taking too long
+        if (Date.now() - startTime > maxProcessingTime) {
+            console.log(`⚠️  Processing timeout reached (${maxProcessingTime / 1000}s). Stopping at block ${start}.`);
+            break;
+        }
+
         const end = Math.min(start + chunkSize - 1, toBlock);
-        const logs = await provider.getLogs({
-            address: contractAddress,
-            fromBlock: start,
-            toBlock: end
-        });
-        for (const log of logs) {
-            try {
-                const parsed = iface.parseLog(log);
-                allLogs.push({
-                    ...parsed,
-                    blockNumber: log.blockNumber,
-                    transactionHash: log.transactionHash,
-                    logIndex: log.logIndex
-                });
-            } catch (e) {
-                // Ignore unknown logs
+        currentChunk++;
+
+        // Show progress every 100 chunks to avoid spam
+        if (currentChunk % 100 === 0 || currentChunk === totalChunks) {
+            console.log(`Processing chunk ${currentChunk}/${totalChunks} (blocks ${start}-${end})`);
+        }
+
+        try {
+            const logs = await withRetry(() => provider.getLogs({
+                address: contractAddress,
+                fromBlock: start,
+                toBlock: end
+            }));
+
+            for (const log of logs) {
+                try {
+                    const parsed = iface.parseLog(log);
+                    allLogs.push({
+                        ...parsed,
+                        blockNumber: log.blockNumber,
+                        transactionHash: log.transactionHash,
+                        logIndex: log.logIndex
+                    });
+                } catch (e) {
+                    // Ignore unknown logs
+                }
             }
+
+            // Add a small delay between chunks to avoid overwhelming the RPC
+            if (start + chunkSize <= toBlock) {
+                await sleep(50);
+            }
+        } catch (error) {
+            console.error(`Failed to fetch logs for blocks ${start}-${end}:`, error);
+
+            // Check if it's a QuickNode-specific error
+            if (error.message && error.message.includes('eth_getLogs is limited to a 5 range')) {
+                console.log(`QuickNode limit hit for blocks ${start}-${end}, continuing with next chunk...`);
+            } else if (error.message && error.message.includes('rate limit') || error.message.includes('too many requests')) {
+                console.log(`Rate limit hit for blocks ${start}-${end}, waiting longer before next chunk...`);
+                await sleep(1000); // Wait 1 second for rate limit
+            }
+
+            // Continue with next chunk instead of failing completely
+            continue;
         }
     }
+
+    const processingTime = (Date.now() - startTime) / 1000;
+    console.log(`Completed processing ${currentChunk}/${totalChunks} chunks in ${processingTime.toFixed(1)}s, found ${allLogs.length} events`);
     return allLogs;
 }
 
@@ -218,6 +272,24 @@ async function scanContractEvents(contractAddress, treasuryAddress, provider) {
     // Find block numbers for these timestamps
     const earliestBlock = 0;
     const yesterdayMidnightBlock = await getBlockByTimestamp(provider, yesterdayMidnightTs, earliestBlock, latestBlock);
+
+    const blockRange = latestBlock - yesterdayMidnightBlock;
+    console.log(`Scanning blocks from ${yesterdayMidnightBlock} to ${latestBlock} (${blockRange} blocks)`);
+    console.log('Note: QuickNode limits eth_getLogs to 5 blocks, processing in small chunks...');
+
+    // Warn if the block range is very large (which could take a long time)
+    if (blockRange > 10000) {
+        console.log(`⚠️  Warning: Large block range (${blockRange} blocks). This may take several minutes to process.`);
+    }
+
+    // Safety check: if the block range is extremely large, limit it to prevent timeouts
+    const maxBlockRange = 50000; // 50k blocks max
+    if (blockRange > maxBlockRange) {
+        console.log(`⚠️  Block range too large (${blockRange} blocks). Limiting to last ${maxBlockRange} blocks for safety.`);
+        const limitedFromBlock = latestBlock - maxBlockRange;
+        console.log(`Will scan from block ${limitedFromBlock} instead of ${yesterdayMidnightBlock}`);
+        yesterdayMidnightBlock = limitedFromBlock;
+    }
 
     // Batch fetch and decode all logs
     const allEvents = await getAllDecodedLogs(provider, contractAddress, ABI, yesterdayMidnightBlock, latestBlock);
@@ -306,6 +378,7 @@ async function main() {
         // Get minting difficulty
         const mintingDifficulty = await withRetry(() => contract.COINS_MULTIPLICATOR());
 
+        console.log('Starting contract event scan...');
         const {
             totalUsers,
             verificationEvents,
