@@ -155,7 +155,7 @@ async function getTopUsersByTransfers(transferEvents, contractAddress, limit = 1
 }
 
 // Helper: get block number for a given timestamp using Basescan API
-async function getBlockByTimestamp(provider, targetTimestamp, startBlock, endBlock) {
+async function getBlockByTimestamp(targetTimestamp) {
     const apiKey = process.env.BASESCAN_API_KEY;
     const url = `https://api.basescan.org/api?module=block&action=getblocknobytime&timestamp=${targetTimestamp}&closest=before&apikey=${apiKey}`;
 
@@ -262,19 +262,21 @@ async function scanContractEvents(contractAddress, treasuryAddress, provider) {
     // Calculate timestamps
     const now = new Date();
     const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-    const yesterdayMidnight = new Date(todayMidnight.getTime() - 24 * 60 * 60 * 1000);
-    const todayMidnightTs = Math.floor(todayMidnight.getTime() / 1000);
-    const yesterdayMidnightTs = Math.floor(yesterdayMidnight.getTime() / 1000);
-    const nowTs = Math.floor(Date.now() / 1000);
 
-    // Get latest block and its timestamp
-    const latestBlock = await withRetry(() => provider.getBlockNumber());
-    // Find block numbers for these timestamps
-    const earliestBlock = 0;
-    const yesterdayMidnightBlock = await getBlockByTimestamp(provider, yesterdayMidnightTs, earliestBlock, latestBlock);
+    const today1AM = new Date(todayMidnight.getTime() + 1 * 60 * 55 * 1000); // 1AM - 5mins
+    const today1AmTs = Math.floor(today1AM.getTime() / 1000);
 
-    const blockRange = latestBlock - yesterdayMidnightBlock;
-    console.log(`Scanning blocks from ${yesterdayMidnightBlock} to ${latestBlock} (${blockRange} blocks)`);
+    const today2Am = new Date(todayMidnight.getTime() + 2 * 60 * 60 * 1000);
+    const today2AmTs = Math.floor(today2Am.getTime() / 1000);
+
+    console.log('today1Am', today1AM.toISOString());
+    console.log('today2Am', today2Am.toISOString());
+
+    const today1AmBlock = await getBlockByTimestamp(today1AmTs);
+    const today2AmBlock = await getBlockByTimestamp(today2AmTs);
+
+    const blockRange = today2AmBlock - today1AmBlock;
+    console.log(`Scanning blocks from ${today1AmBlock} to ${today2AmBlock} (${blockRange} blocks)`);
     console.log('Note: QuickNode limits eth_getLogs to 5 blocks, processing in small chunks...');
 
     // Warn if the block range is very large (which could take a long time)
@@ -282,17 +284,9 @@ async function scanContractEvents(contractAddress, treasuryAddress, provider) {
         console.log(`⚠️  Warning: Large block range (${blockRange} blocks). This may take several minutes to process.`);
     }
 
-    // Safety check: if the block range is extremely large, limit it to prevent timeouts
-    const maxBlockRange = 50000; // 50k blocks max
-    if (blockRange > maxBlockRange) {
-        console.log(`⚠️  Block range too large (${blockRange} blocks). Limiting to last ${maxBlockRange} blocks for safety.`);
-        const limitedFromBlock = latestBlock - maxBlockRange;
-        console.log(`Will scan from block ${limitedFromBlock} instead of ${yesterdayMidnightBlock}`);
-        yesterdayMidnightBlock = limitedFromBlock;
-    }
 
     // Batch fetch and decode all logs
-    const allEvents = await getAllDecodedLogs(provider, contractAddress, ABI, yesterdayMidnightBlock, latestBlock);
+    const allEvents = await getAllDecodedLogs(provider, contractAddress, ABI, today1AmBlock, today2AmBlock);
 
     // Batch and throttle block timestamp lookups
     const uniqueBlockNumbers = [...new Set(allEvents.map(e => e.blockNumber))];
