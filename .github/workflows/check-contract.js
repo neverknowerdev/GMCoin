@@ -137,7 +137,6 @@ async function getTopUsersByTransfers(transferEvents, contractAddress, limit = 1
 
     // Filter out null/empty userIds and log
     const filteredUserIds = userIds.filter(id => id && id !== '');
-    console.log('Sending userIds to RapidAPI:', filteredUserIds);
     const userMap = await getTwitterUsernames(filteredUserIds);
     // Map results
     return sortedWallets.map(([wallet, amount], index) => {
