@@ -262,6 +262,7 @@ async function scanContractEvents(contractAddress, treasuryAddress, provider) {
     // Calculate timestamps
     const now = new Date();
     const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const todayMidnightTs = Math.floor(todayMidnight.getTime() / 1000);
 
     const today1AM = new Date(todayMidnight.getTime() + 1 * 60 * 55 * 1000); // 1AM - 5mins
     const today1AmTs = Math.floor(today1AM.getTime() / 1000);
