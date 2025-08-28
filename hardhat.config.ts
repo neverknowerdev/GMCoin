@@ -18,8 +18,9 @@ const config = {
         settings: {
             optimizer: {
                 enabled: true,
-                runs: 200
+                runs: 1  // Minimal runs for maximum size reduction
             },
+            viaIR: true,
             outputSelection: {
                 "*": {
                     "*": ["storageLayout"],

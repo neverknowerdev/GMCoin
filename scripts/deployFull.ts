@@ -16,12 +16,45 @@ import dotenv from "dotenv";
 const {w3f} = hre;
 
 async function main(): Promise<void> {
-    // Get the ContractFactory for "TwitterCoin"
-    const contract = await ethers.getContractFactory("GMCoin");
-
     if (hre.network.name !== "baseSepolia") {
         throw new Error(`This script must be run on the 'baseSepolia' network. Current network: ${hre.network.name}`);
     }
+
+    // Deploy libraries first
+    console.log('Deploying libraries...');
+    const TwitterOracleLib = await ethers.getContractFactory("TwitterOracleLib");
+    const twitterLib = await TwitterOracleLib.deploy();
+    await twitterLib.waitForDeployment();
+    const twitterLibAddress = await twitterLib.getAddress();
+    console.log('TwitterOracleLib deployed to:', twitterLibAddress);
+
+    const MintingLib = await ethers.getContractFactory("MintingLib");
+    const mintingLib = await MintingLib.deploy();
+    await mintingLib.waitForDeployment();
+    const mintingLibAddress = await mintingLib.getAddress();
+    console.log('MintingLib deployed to:', mintingLibAddress);
+
+    const FarcasterOracleLib = await ethers.getContractFactory("FarcasterOracleLib");
+    const farcasterLib = await FarcasterOracleLib.deploy();
+    await farcasterLib.waitForDeployment();
+    const farcasterLibAddress = await farcasterLib.getAddress();
+    console.log('FarcasterOracleLib deployed to:', farcasterLibAddress);
+
+    const AccountManagerLib = await ethers.getContractFactory("AccountManagerLib");
+    const accountLib = await AccountManagerLib.deploy();
+    await accountLib.waitForDeployment();
+    const accountLibAddress = await accountLib.getAddress();
+    console.log('AccountManagerLib deployed to:', accountLibAddress);
+
+    // Get the ContractFactory for "GMCoin" with library linking
+    const contract = await ethers.getContractFactory("GMCoin", {
+        libraries: {
+            "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
+            "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+            "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
+            "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
+        },
+    });
 
     const twitterVerificationFunc = w3f.get('twitter-verification');
     const twitterVerificationCID = await twitterVerificationFunc.deploy();
@@ -41,12 +74,13 @@ async function main(): Promise<void> {
     console.log('treasuryContract addrress', treasuryAddress);
 
     // init GMCoin contract
-    // Deploy an upgradeable proxy for TwitterCoin using UUPS pattern
+    // Deploy an upgradeable proxy for GMCoin using UUPS pattern
     const GMCoin = await upgrades.deployProxy(contract,
         [owner.address, owner.address, treasuryAddress, '0x12EBb8C121b706aE6368147afc5B54702cB26637', 100_000, 2],
         {
             kind: "uups",
-            initializer: 'initialize'
+            initializer: 'initialize',
+            unsafeAllowLinkedLibraries: true,
         });
 
     // Wait for the deployment to be completed
@@ -108,7 +142,7 @@ async function main(): Promise<void> {
     console.log('calling GMCoin.createTwitterWorkerFunction..');
     //  function createTwitterWorkerFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner {
     tx = await GMCoin.createTwitterWorkerFunction(twitterWorkerCID, twitterWorkerArgsHex, twitterWorkerTopics);
-    await tx.wait()
+    await tx.wait();
 
     console.log('calling GMCoin.createDailyFunction..');
     const secondsUntil2AM = secondsUntilNext2AM();
