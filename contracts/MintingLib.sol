@@ -2,79 +2,44 @@
 pragma solidity ^0.8.24;
 
 import { GMStorage } from './Storage.sol';
+import './Errors.sol';
 
 library MintingLib {
   using MintingLib for GMStorage.MintingData;
 
-  function startMintingProcess(
+  function getStartOfYesterday() public view returns (uint32) {
+    uint32 startOfToday = uint32((block.timestamp / 1 days) * 1 days);
+    return startOfToday - 1 days;
+  }
+
+  function calculateComplexity(
     GMStorage.MintingData storage mintingData,
     GMStorage.MintingConfig storage mintingConfig,
-    int32 currentPointsDeltaStreak
-  ) external returns (uint32 dayToMint, bool shouldContinue, int32 newPointsDeltaStreak) {
-    uint32 yesterday = getStartOfYesterday();
-    dayToMint = mintingData.lastMintedDay + 1 days;
-
-    // if minting for previous day is not finished - continue it
-    if (mintingData.mintingInProgressForDay > 0 && mintingData.mintingInProgressForDay < yesterday) {
-      return (mintingData.mintingInProgressForDay, true, currentPointsDeltaStreak);
-    }
-
-    require(dayToMint <= yesterday, 'dayToMint should be not further than yesterday');
-    require(mintingData.mintingInProgressForDay == 0, 'minting process already started');
-
-    mintingData.mintingInProgressForDay = dayToMint;
-
-    // complexity calculation - start new epoch
+    uint32 dayToMint,
+    int32 pointsDeltaStreak
+  ) internal view returns (bool isNewEpoch, uint256 newMultiplicator, int32 newPointsDeltaStreak) {
     if (
       dayToMint > mintingData.epochStartedAt &&
       dayToMint - mintingData.epochStartedAt >= mintingConfig.EPOCH_DAYS * 1 days
     ) {
-      newPointsDeltaStreak = adjustPointsStreak(
+      isNewEpoch = true;
+      newPointsDeltaStreak = MintingLib.adjustPointsStreak(
         mintingData.lastEpochPoints,
         mintingData.currentEpochPoints,
-        currentPointsDeltaStreak
+        pointsDeltaStreak
       );
 
-      uint256 newMultiplicator = changeComplexity(
+      newMultiplicator = MintingLib.changeComplexity(
         mintingConfig.COINS_MULTIPLICATOR,
         mintingData.lastEpochPoints,
         mintingData.currentEpochPoints,
-        newPointsDeltaStreak
+        pointsDeltaStreak
       );
 
-      mintingConfig.COINS_MULTIPLICATOR = newMultiplicator;
-      mintingData.epochStartedAt = dayToMint;
-      mintingConfig.epochNumber++;
-      mintingData.lastEpochPoints = mintingData.currentEpochPoints;
-      mintingData.currentEpochPoints = 0;
-    } else {
-      newPointsDeltaStreak = currentPointsDeltaStreak;
+      return (isNewEpoch, newMultiplicator, newPointsDeltaStreak);
     }
 
-    return (dayToMint, false, newPointsDeltaStreak);
-  }
-
-  function finishMintingProcess(
-    GMStorage.MintingData storage mintingData,
-    uint32 mintingDayTimestamp
-  ) external returns (bool shouldStartNext) {
-    require(mintingDayTimestamp == mintingData.mintingInProgressForDay, 'wrong mintingDay');
-    require(mintingData.lastMintedDay < mintingDayTimestamp, 'wrong mintingDayTimestamp');
-
-    mintingData.currentEpochPoints += mintingData.mintingDayPointsFromUsers;
-    mintingData.lastMintedDay = mintingDayTimestamp;
-    mintingData.mintingDayPointsFromUsers = 0;
-    mintingData.mintingInProgressForDay = 0;
-
-    uint32 yesterday = getStartOfYesterday();
-    return (mintingData.lastMintedDay < yesterday);
-  }
-
-  // processTwitterMinting moved to TwitterOracleLib for proper separation of concerns
-
-  function getStartOfYesterday() public view returns (uint32) {
-    uint32 startOfToday = uint32((block.timestamp / 1 days) * 1 days);
-    return startOfToday - 1 days;
+    return (false, mintingConfig.COINS_MULTIPLICATOR, pointsDeltaStreak);
   }
 
   function changeComplexity(
@@ -123,5 +88,46 @@ library MintingLib {
     }
 
     return currentPointsDeltaStreak;
+  }
+
+  function getTwitterUsers(
+    GMStorage.MintingData storage mintingData,
+    uint16 start,
+    uint16 end
+  ) external view returns (string[] memory) {
+    uint16 batchSize = uint16(end - start);
+    string[] memory batchArr = new string[](batchSize);
+    for (uint16 i = 0; i < batchSize; i++) {
+      batchArr[i] = mintingData.allTwitterUsers[start + i];
+    }
+
+    return batchArr;
+  }
+
+  function getTwitterUsersByIndexes(
+    GMStorage.MintingData storage mintingData,
+    uint64[] calldata indexes
+  ) external view returns (string[] memory) {
+    string[] memory batchArr = new string[](indexes.length);
+    for (uint16 i = 0; i < indexes.length; i++) {
+      batchArr[i] = mintingData.allTwitterUsers[i];
+    }
+
+    return batchArr;
+  }
+
+  function calculatePoints(
+    GMStorage.UserMintingData calldata userData,
+    GMStorage.MintingConfig storage mintingConfig
+  ) internal view returns (uint256) {
+    return
+      userData.simplePosts *
+      mintingConfig.POINTS_PER_TWEET +
+      userData.likes *
+      mintingConfig.POINTS_PER_LIKE +
+      userData.hashtagPosts *
+      mintingConfig.POINTS_PER_HASHTAG +
+      userData.cashtagPosts *
+      mintingConfig.POINTS_PER_CASHTAG;
   }
 }

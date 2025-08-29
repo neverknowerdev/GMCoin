@@ -6,19 +6,19 @@ import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
 import '@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol';
-import './TwitterOracle.sol';
-import './FarcasterOracle.sol';
+import './MintingOracle.sol';
 import './AccountManager.sol';
 import './Errors.sol';
 
 contract GMCoin is
+  GMStorage,
   Initializable,
   OwnableUpgradeable,
   ERC20Upgradeable,
   UUPSUpgradeable,
-  TwitterOracle,
-  FarcasterOracle,
-  AccountManager
+  MintingOracle,
+  AccountManager,
+  GMWeb3Functions
 {
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
@@ -41,6 +41,7 @@ contract GMCoin is
     __Ownable_init(_owner);
     __UUPSUpgradeable_init();
     __ERC20_init('GM Coin', 'GM');
+    __GelatoWeb3Functions__init(_owner);
 
     // Initialize Gelato config
     gelatoConfig.gelatoAddress = _gelatoAddress;
@@ -66,14 +67,24 @@ contract GMCoin is
   event UpgradePlanned(uint256 plannedTime, address newImplementation);
   event UpgradeApplied(uint256 time, address newImplementation);
 
+  modifier _onlyOwner() override(MintingOracle) {
+    if (_msgSender() != owner()) revert OnlyOwner();
+    _;
+  }
+
   // Override modifiers from parent contracts
-  modifier onlyGelato() override(TwitterOracle, FarcasterOracle) {
+  modifier onlyGelato() override(MintingOracle, AccountManager) {
     if (_msgSender() != gelatoConfig.gelatoAddress) revert OnlyGelato();
     _;
   }
 
-  modifier onlyServerRelayer() override(TwitterOracle, FarcasterOracle) {
+  modifier onlyServerRelayer() override(MintingOracle) {
     if (_msgSender() != serverRelayerAddress) revert OnlyServerRelayer();
+    _;
+  }
+
+  modifier onlyGelatoOrOwner() override(MintingOracle) {
+    if (_msgSender() != gelatoConfig.gelatoAddress && _msgSender() != owner()) revert OnlyGelatoOrOwner();
     _;
   }
 
@@ -86,20 +97,11 @@ contract GMCoin is
   }
 
   // Provide storage access to parent contracts
-  function _getMintingData()
-    internal
-    view
-    override(FarcasterOracle, AccountManager)
-    returns (GMStorage.MintingData storage)
-  {
+  function _getMintingData() internal view override(AccountManager) returns (GMStorage.MintingData storage) {
     return mintingData;
   }
 
-  function _getMintingConfig() internal view override returns (GMStorage.MintingConfig storage) {
-    return mintingConfig;
-  }
-
-  function _msgSender() internal view override(ContextUpgradeable, FarcasterOracle, AccountManager) returns (address) {
+  function msgSender() internal view override(MintingOracle, AccountManager) returns (address) {
     return super._msgSender();
   }
 
@@ -120,49 +122,23 @@ contract GMCoin is
     super._update(from, to, value);
   }
 
-  function _mintForUserByIndex(uint256 userIndex, uint256 amount) internal override(TwitterOracle) {
-    address walletAddr = walletByTwitterUserIndex(userIndex);
+  function _mintForUserByTwitterIndex(uint256 userIndex, uint256 amount) internal override(MintingOracle) {
+    address walletAddr = mintingData
+      .unifiedUsers[mintingData.twitterIdToUnifiedUserId[mintingData.allTwitterUsers[userIndex]]]
+      .primaryWallet;
     require(walletAddr != address(0), "walletAddr shouldn't be zero!");
 
     _mint(walletAddr, amount);
     mintingData.mintedAmountByWallet[walletAddr] += amount;
   }
 
-  function _mintForFarcasterUserByIndex(uint256 userIndex, uint256 amount) internal override {
-    address walletAddr = walletByFarcasterUserIndex(userIndex);
+  function _mintForUserByFarcasterIndex(uint256 userIndex, uint256 amount) internal override(MintingOracle) {
+    address walletAddr = mintingData
+      .unifiedUsers[mintingData.farcasterFidToUnifiedUserId[mintingData.allFarcasterUsers[userIndex]]]
+      .primaryWallet;
     require(walletAddr != address(0), "walletAddr shouldn't be zero!");
 
     _mint(walletAddr, amount);
     mintingData.mintedAmountByWallet[walletAddr] += amount;
-  }
-
-  // =============================================================================
-  // Unified User System Implementation
-  // =============================================================================
-
-  function _createOrLinkUnifiedUser(
-    address wallet,
-    string memory twitterId,
-    uint256 farcasterFid
-  ) internal override(TwitterOracle, FarcasterOracle) returns (uint256) {
-    return createOrLinkUnifiedUser(wallet, twitterId, farcasterFid);
-  }
-
-  function _emitUnifiedUserCreated(
-    uint256 userId,
-    address wallet,
-    string memory twitterId,
-    uint256 farcasterFid
-  ) internal override(TwitterOracle, FarcasterOracle) {
-    emit UnifiedUserCreated(userId, wallet, twitterId, farcasterFid);
-  }
-
-  function _emitTwitterVerificationResult(
-    string memory twitterId,
-    address wallet,
-    bool isSuccess,
-    string memory errorMsg
-  ) internal {
-    emit TwitterVerificationResult(twitterId, wallet, isSuccess, errorMsg);
   }
 }

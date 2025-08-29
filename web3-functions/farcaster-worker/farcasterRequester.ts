@@ -31,7 +31,7 @@ export class FarcasterRequester {
         // Step 2: Prepare and send parallel requests
         const requests = batches.map(async (batch) => {
             const fidString = batch.join(',');
-            
+
             try {
                 const response = await ky
                     .get(this.urlList.neynarFeedURL, {
@@ -73,7 +73,7 @@ export class FarcasterRequester {
                                 recastsCount: cast.reactions.recasts_count,
                                 timestamp: cast.timestamp,
                             };
-                            
+
                             results.push(processedCast);
                         }
                     });
@@ -89,8 +89,8 @@ export class FarcasterRequester {
     }
 
     async fetchCastsInBatches(
-        batchesToProcess: Batch[], 
-        fidBatches: number[][], 
+        batchesToProcess: Batch[],
+        fidBatches: number[][],
         userIndexByFID: Map<number, number>
     ): Promise<{
         casts: Cast[],
@@ -105,7 +105,7 @@ export class FarcasterRequester {
             batchesToProcess.map(async (cur, index) => {
                 try {
                     let { casts, nextCursor } = await this.fetchCastsByFIDsWithCursor(
-                        fidBatches[index], 
+                        fidBatches[index],
                         cur.nextCursor
                     );
 
@@ -146,7 +146,7 @@ export class FarcasterRequester {
     async fetchCastsByFIDsWithCursor(fids: number[], cursor: string): Promise<{ casts: Cast[], nextCursor: string }> {
         try {
             const fidString = fids.join(',');
-            
+
             const searchParams: any = {
                 feed_type: 'filter',
                 filter_type: 'fids',
@@ -182,7 +182,7 @@ export class FarcasterRequester {
 
                 response.casts.forEach((cast) => {
                     const castDate = new Date(cast.timestamp);
-                    
+
                     if (castDate >= yesterday && castDate < today) {
                         const processedCast: Cast = {
                             userIndex: 0, // Will be set later
@@ -194,12 +194,12 @@ export class FarcasterRequester {
                             recastsCount: cast.reactions.recasts_count,
                             timestamp: cast.timestamp,
                         };
-                        
+
                         if (processedCast.castHash == "" || processedCast.fid == 0 || processedCast.username == "" || processedCast.castContent == "") {
                             console.error("one of required field for cast is empty", cast);
                             return;
                         }
-                        
+
                         casts.push(processedCast);
                     }
                 });

@@ -7,6 +7,120 @@ import { GMStorage } from './Storage.sol';
 import './Errors.sol';
 
 library AccountManagerLib {
+  function _removeTwitterIdFromUser(
+    GMStorage.MintingData storage mintingData,
+    uint256 userId,
+    string memory twitterId
+  ) internal {
+    if (mintingData.userIndexByTwitterId[twitterId] > 0) {
+      mintingData.allTwitterUsers[mintingData.userIndexByTwitterId[twitterId]] = mintingData.allTwitterUsers[
+        mintingData.allTwitterUsers.length - 1
+      ];
+      mintingData.allTwitterUsers.pop();
+      mintingData.userIndexByTwitterId[twitterId] = 0;
+    }
+    delete mintingData.twitterIdToUnifiedUserId[twitterId];
+    delete mintingData.userIdToTwitterId[userId];
+
+    mintingData.unifiedUsers[userId].twitterId = '';
+  }
+
+  function _removeFarcasterIdFromUser(
+    GMStorage.MintingData storage mintingData,
+    uint256 userId,
+    uint256 farcasterFid
+  ) internal {
+    if (mintingData.farcasterUserIndexByFID[farcasterFid] > 0) {
+      mintingData.allFarcasterUsers[mintingData.farcasterUserIndexByFID[farcasterFid]] = mintingData.allFarcasterUsers[
+        mintingData.allFarcasterUsers.length - 1
+      ];
+      mintingData.allFarcasterUsers.pop();
+      delete mintingData.farcasterUserIndexByFID[farcasterFid];
+    }
+    delete mintingData.farcasterFidToUnifiedUserId[farcasterFid];
+
+    mintingData.unifiedUsers[userId].farcasterFid = 0;
+    mintingData.unifiedUsers[userId].farcasterWallet = address(0);
+  }
+
+  function mergeUsers(
+    GMStorage.MintingData storage mintingData,
+    uint256 fromUserId,
+    uint256 toUserId,
+    bool overrideTwitterId,
+    bool overrideFarcasterFid
+  ) internal returns (uint256) {
+    if (!mintingData.unifiedUserSystemEnabled) revert SystemNotEnabled();
+    if (mintingData.unifiedUsers[fromUserId].userId == 0) revert FromUserNotExist();
+    if (mintingData.unifiedUsers[toUserId].userId == 0) revert ToUserNotExist();
+    if (fromUserId == toUserId) revert CannotMergeSameUser();
+
+    GMStorage.UnifiedUser storage fromUser = mintingData.unifiedUsers[fromUserId];
+    GMStorage.UnifiedUser storage toUser = mintingData.unifiedUsers[toUserId];
+
+    // Move social accounts if not already present
+    if (bytes(fromUser.twitterId).length > 0 && (bytes(toUser.twitterId).length == 0 || overrideTwitterId)) {
+      // delete old twitterId
+      if (mintingData.userIndexByTwitterId[toUser.twitterId] > 0) {
+        _removeTwitterIdFromUser(mintingData, fromUserId, toUser.twitterId);
+      }
+
+      // if no new twitterId addded - add it
+      if (mintingData.userIndexByTwitterId[fromUser.twitterId] == 0) {
+        linkSocialAccountToUser(mintingData, toUserId, fromUser.primaryWallet, fromUser.twitterId, 0);
+      }
+
+      toUser.twitterId = fromUser.twitterId;
+    }
+
+    if (fromUser.farcasterFid != 0 && (toUser.farcasterFid == 0 || overrideFarcasterFid)) {
+      if (mintingData.farcasterUserIndexByFID[toUser.farcasterFid] > 0) {
+        _removeFarcasterIdFromUser(mintingData, fromUserId, toUser.farcasterFid);
+      }
+
+      // if no new farcasterFid addded - add it
+      if (mintingData.farcasterUserIndexByFID[fromUser.farcasterFid] == 0) {
+        linkSocialAccountToUser(mintingData, toUserId, fromUser.primaryWallet, '', fromUser.farcasterFid);
+      }
+
+      toUser.farcasterFid = fromUser.farcasterFid;
+    }
+
+    // Move all wallets from fromUser to toUser
+    address[] memory walletsToMove = mintingData.unifiedUserWallets[fromUserId];
+    for (uint256 i = 0; i < walletsToMove.length; i++) {
+      mintingData.walletToUnifiedUserId[walletsToMove[i]] = toUserId;
+      mintingData.unifiedUserWallets[toUserId].push(walletsToMove[i]);
+    }
+
+    toUser.primaryWallet = fromUser.primaryWallet;
+
+    // Clean up fromUser data
+    delete mintingData.unifiedUsers[fromUserId];
+    delete mintingData.unifiedUserWallets[fromUserId];
+
+    // O(1) remove from allUnifiedUsers via swap-with-last
+    uint256 fromUserIndex = mintingData.unifiedUserIndexById[fromUserId];
+    uint256 lastIdx = mintingData.allUnifiedUsers.length - 1;
+    if (fromUserIndex < lastIdx) {
+      uint256 lastUserId = mintingData.allUnifiedUsers[lastIdx];
+      mintingData.allUnifiedUsers[fromUserIndex] = lastUserId;
+      mintingData.unifiedUserIndexById[lastUserId] = fromUserIndex;
+      mintingData.allUnifiedUsers.pop();
+      delete mintingData.unifiedUserIndexById[lastUserId];
+    }
+
+    return toUserId;
+  }
+
+  function linkAdditionalWallet(GMStorage.MintingData storage mintingData, uint256 userId, address newWallet) public {
+    if (mintingData.unifiedUsers[userId].userId == 0) revert UserNotExist();
+
+    mintingData.walletToUnifiedUserId[newWallet] = userId;
+    mintingData.unifiedUserWallets[userId].push(newWallet);
+    mintingData.registeredWallets[newWallet] = true;
+  }
+
   function createOrLinkUnifiedUser(
     GMStorage.MintingData storage mintingData,
     address wallet,
@@ -20,22 +134,25 @@ library AccountManagerLib {
     uint256 existingUserId = mintingData.walletToUnifiedUserId[wallet];
 
     if (existingUserId != 0) {
-      return linkSocialAccountToUser(mintingData, existingUserId, twitterId, farcasterFid);
+      return linkSocialAccountToUser(mintingData, existingUserId, wallet, twitterId, farcasterFid);
     }
 
     // If wallet has no unified user yet, try to attach to an existing user by social IDs
     uint256 userIdByTwitter = bytes(twitterId).length > 0 ? mintingData.twitterIdToUnifiedUserId[twitterId] : 0;
     uint256 userIdByFarcaster = farcasterFid != 0 ? mintingData.farcasterFidToUnifiedUserId[farcasterFid] : 0;
 
+    if (userIdByTwitter != 0 && userIdByFarcaster != 0 && userIdByTwitter != userIdByFarcaster) {
+      return mergeUsers(mintingData, userIdByTwitter, userIdByFarcaster, true, false);
+    }
+
     uint256 targetUserId = userIdByTwitter != 0 ? userIdByTwitter : userIdByFarcaster;
     if (targetUserId != 0) {
       // Link socials to the target user if missing
-      linkSocialAccountToUser(mintingData, targetUserId, twitterId, farcasterFid);
+      linkSocialAccountToUser(mintingData, targetUserId, wallet, twitterId, farcasterFid);
 
       // Link the wallet to that unified user if not linked yet
       if (mintingData.walletToUnifiedUserId[wallet] == 0) {
-        mintingData.walletToUnifiedUserId[wallet] = targetUserId;
-        mintingData.unifiedUserWallets[targetUserId].push(wallet);
+        linkAdditionalWallet(mintingData, targetUserId, wallet);
       }
 
       return targetUserId;
@@ -67,12 +184,7 @@ library AccountManagerLib {
     mintingData.walletToUnifiedUserId[primaryWallet] = userId;
     mintingData.unifiedUserWallets[userId].push(primaryWallet);
 
-    if (bytes(twitterId).length > 0) {
-      mintingData.twitterIdToUnifiedUserId[twitterId] = userId;
-    }
-    if (farcasterFid != 0) {
-      mintingData.farcasterFidToUnifiedUserId[farcasterFid] = userId;
-    }
+    linkSocialAccountToUser(mintingData, userId, primaryWallet, twitterId, farcasterFid);
 
     return userId;
   }
@@ -80,6 +192,7 @@ library AccountManagerLib {
   function linkSocialAccountToUser(
     GMStorage.MintingData storage mintingData,
     uint256 userId,
+    address wallet,
     string memory twitterId,
     uint256 farcasterFid
   ) public returns (uint256) {
@@ -89,115 +202,78 @@ library AccountManagerLib {
       if (mintingData.twitterIdToUnifiedUserId[twitterId] != 0) revert TwitterIdAlreadyLinked();
       user.twitterId = twitterId;
       mintingData.twitterIdToUnifiedUserId[twitterId] = userId;
+      mintingData.allTwitterUsers.push(twitterId);
+      mintingData.userIndexByTwitterId[twitterId] = mintingData.allTwitterUsers.length - 1;
+
+      mintingData.allTwitterUsers.push(twitterId);
+      mintingData.userIndexByTwitterId[twitterId] = mintingData.allTwitterUsers.length - 1;
     }
 
     if (farcasterFid != 0 && user.farcasterFid == 0) {
       if (mintingData.farcasterFidToUnifiedUserId[farcasterFid] != 0) revert FarcasterFidAlreadyLinked();
       user.farcasterFid = farcasterFid;
+      user.farcasterWallet = wallet;
       mintingData.farcasterFidToUnifiedUserId[farcasterFid] = userId;
+      mintingData.allFarcasterUsers.push(farcasterFid);
+      mintingData.farcasterUserIndexByFID[farcasterFid] = mintingData.allFarcasterUsers.length - 1;
+
+      mintingData.allFarcasterUsers.push(farcasterFid);
+      mintingData.farcasterUserIndexByFID[farcasterFid] = mintingData.allFarcasterUsers.length - 1;
     }
 
     return userId;
   }
 
-  function linkAdditionalWallet(GMStorage.MintingData storage mintingData, uint256 userId, address newWallet) external {
-    if (mintingData.unifiedUsers[userId].userId == 0) revert UserNotExist();
-
-    mintingData.walletToUnifiedUserId[newWallet] = userId;
-    mintingData.unifiedUserWallets[userId].push(newWallet);
-    mintingData.registeredWallets[newWallet] = true;
-  }
-
   function setUnifiedUserHumanVerification(
     GMStorage.MintingData storage mintingData,
+    address ownerWallet,
     uint256 userId,
     bool isVerified
   ) external {
     if (!mintingData.unifiedUserSystemEnabled) revert SystemNotEnabled();
     if (mintingData.unifiedUsers[userId].userId == 0) revert UserNotExist();
+    if (mintingData.walletToUnifiedUserId[ownerWallet] != userId) revert WalletNotLinked();
 
     mintingData.unifiedUsers[userId].isHumanVerified = isVerified;
   }
 
   function setPrimaryWallet(
     GMStorage.MintingData storage mintingData,
+    address ownerWallet,
     uint256 userId,
     address newPrimaryWallet
   ) external {
     if (!mintingData.unifiedUserSystemEnabled) revert SystemNotEnabled();
     if (mintingData.unifiedUsers[userId].userId == 0) revert UserNotExist();
     if (mintingData.walletToUnifiedUserId[newPrimaryWallet] != userId) revert WalletNotLinked();
+    if (mintingData.walletToUnifiedUserId[ownerWallet] != userId) revert WalletNotLinked();
 
     mintingData.unifiedUsers[userId].primaryWallet = newPrimaryWallet;
   }
 
-  function mergeUsers(GMStorage.MintingData storage mintingData, uint256 fromUserId, uint256 toUserId) external {
-    if (!mintingData.unifiedUserSystemEnabled) revert SystemNotEnabled();
-    if (mintingData.unifiedUsers[fromUserId].userId == 0) revert FromUserNotExist();
-    if (mintingData.unifiedUsers[toUserId].userId == 0) revert ToUserNotExist();
-    if (fromUserId == toUserId) revert CannotMergeSameUser();
-
-    GMStorage.UnifiedUser storage fromUser = mintingData.unifiedUsers[fromUserId];
-    GMStorage.UnifiedUser storage toUser = mintingData.unifiedUsers[toUserId];
-
-    // Move social accounts if not already present
-    if (bytes(fromUser.twitterId).length > 0 && bytes(toUser.twitterId).length == 0) {
-      toUser.twitterId = fromUser.twitterId;
-      mintingData.twitterIdToUnifiedUserId[fromUser.twitterId] = toUserId;
-    }
-
-    if (fromUser.farcasterFid != 0 && toUser.farcasterFid == 0) {
-      toUser.farcasterFid = fromUser.farcasterFid;
-      mintingData.farcasterFidToUnifiedUserId[fromUser.farcasterFid] = toUserId;
-    }
-
-    // Move all wallets from fromUser to toUser
-    address[] memory walletsToMove = mintingData.unifiedUserWallets[fromUserId];
-    for (uint256 i = 0; i < walletsToMove.length; i++) {
-      mintingData.walletToUnifiedUserId[walletsToMove[i]] = toUserId;
-      mintingData.unifiedUserWallets[toUserId].push(walletsToMove[i]);
-    }
-
-    // Clean up fromUser data
-    delete mintingData.unifiedUsers[fromUserId];
-    delete mintingData.unifiedUserWallets[fromUserId];
-
-    // O(1) remove from allUnifiedUsers via swap-with-last
-    uint256 idx = mintingData.unifiedUserIndexById[fromUserId];
-    uint256 lastIdx = mintingData.allUnifiedUsers.length - 1;
-    if (idx <= lastIdx) {
-      uint256 lastId = mintingData.allUnifiedUsers[lastIdx];
-      mintingData.allUnifiedUsers[idx] = lastId;
-      mintingData.unifiedUserIndexById[lastId] = idx;
-      mintingData.allUnifiedUsers.pop();
-      delete mintingData.unifiedUserIndexById[fromUserId];
-    }
-  }
-
-  function removeUser(GMStorage.MintingData storage mintingData, address wallet) external {
+  function removeUser(GMStorage.MintingData storage mintingData, uint256 userId) external {
     if (mintingData.mintingInProgressForDay != 0) revert CannotRemoveUserActiveWorkers();
-    if (!mintingData.registeredWallets[wallet]) revert WalletNotRegistered();
+    if (mintingData.unifiedUsers[userId].userId == 0) revert UserNotExist();
 
-    string memory userID = mintingData.usersByWallets[wallet];
-    uint userIndex = mintingData.userIndexByUserID[userID];
-    delete mintingData.registeredWallets[wallet];
-    delete mintingData.walletsByUserIDs[userID];
-    delete mintingData.usersByWallets[wallet];
+    _removeTwitterIdFromUser(mintingData, userId, mintingData.unifiedUsers[userId].twitterId);
+    _removeFarcasterIdFromUser(mintingData, userId, mintingData.unifiedUsers[userId].farcasterFid);
 
-    // Check if array has elements before accessing length - 1
-    if (mintingData.allTwitterUsers.length > 0) {
-      string memory lastIndexUserID = mintingData.allTwitterUsers[mintingData.allTwitterUsers.length - 1];
-      mintingData.allTwitterUsers[userIndex] = lastIndexUserID;
-      mintingData.allTwitterUsers.pop();
-
-      // Only update index if we moved an element
-      if (userIndex < mintingData.allTwitterUsers.length) {
-        mintingData.userIndexByUserID[lastIndexUserID] = userIndex;
-      }
+    for (uint256 i = 0; i < mintingData.unifiedUserWallets[userId].length; i++) {
+      delete mintingData.walletToUnifiedUserId[mintingData.unifiedUserWallets[userId][i]];
     }
-    
+
     // Clean up user index mapping
-    delete mintingData.userIndexByUserID[userID];
+    delete mintingData.unifiedUsers[userId];
+    delete mintingData.unifiedUserWallets[userId];
+
+    if (mintingData.unifiedUserIndexById[userId] > 0) {
+      uint256 lastUserId = mintingData.allUnifiedUsers[mintingData.allUnifiedUsers.length - 1];
+      uint256 currentUserIndex = mintingData.unifiedUserIndexById[userId];
+      mintingData.allUnifiedUsers[currentUserIndex] = lastUserId;
+      mintingData.unifiedUserIndexById[lastUserId] = currentUserIndex;
+      mintingData.allUnifiedUsers.pop();
+      delete mintingData.unifiedUserIndexById[userId];
+    }
   }
 
   function walletByUnifiedUserIndex(

@@ -25,6 +25,15 @@ contract GMStorage {
 
   uint256[253] __gap;
 
+  struct UserMintingData {
+    uint64 userIndex;
+    uint16 posts;
+    uint16 hashtagPosts;
+    uint16 cashtagPosts;
+    uint16 simplePosts;
+    uint32 likes;
+  }
+
   struct UserTwitterData {
     uint64 userIndex;
     uint16 tweets;
@@ -48,7 +57,6 @@ contract GMStorage {
   struct UserMintingResult {
     uint64 userIndex;
     uint256 mintAmount;
-    bool shouldMint;
   }
 
   // NEW: Unified User Structure
@@ -59,6 +67,7 @@ contract GMStorage {
     uint32 createdAt; // Creation timestamp
     string twitterId; // Twitter ID (empty if not linked)
     uint256 farcasterFid; // Farcaster FID (0 if not linked)
+    address farcasterWallet;
     // Future social platforms can be added here
   }
 
@@ -110,12 +119,15 @@ contract GMStorage {
 
   // @custom:storage-location
   struct MintingData {
-    mapping(string => address) wallets;
+    // Deprecated placeholder to maintain storage layout (slot 0)
+    mapping(string => address) __deprecated_wallets; // Previously `wallets`
+    //
     string[] allTwitterUsers;
-    mapping(address => string) usersByWallets;
-    mapping(string => address) walletsByUserIDs;
+    mapping(address => string) __deprecated_twitterIdByWallet;
+    mapping(string => address) __deprecated_walletByTwitterID;
+    //
     mapping(address => bool) registeredWallets;
-    mapping(string => uint) userIndexByUserID;
+    mapping(string => uint) userIndexByTwitterId;
     uint256 mintingDayPointsFromUsers;
     uint32 mintingInProgressForDay;
     uint32 lastMintedDay;
@@ -131,8 +143,6 @@ contract GMStorage {
     bytes32 __deprecated_gelatoVar5;
     bytes32 __deprecated_gelatoVar6;
     // Farcaster mappings
-    mapping(uint256 => address) farcasterWalletsByFIDs; // FID -> wallet
-    mapping(address => uint256) farcasterUsersByWallets; // wallet -> FID
     uint256[] allFarcasterUsers; // All Farcaster FIDs
     mapping(uint256 => uint) farcasterUserIndexByFID; // FID -> array index
     // NEW: Unified User Structure (using gap space)
@@ -144,8 +154,11 @@ contract GMStorage {
     mapping(uint256 => address[]) unifiedUserWallets; // User ID -> all wallets
     mapping(string => uint256) twitterIdToUnifiedUserId; // Twitter ID -> User ID
     mapping(uint256 => uint256) farcasterFidToUnifiedUserId; // Farcaster FID -> User ID
+    mapping(uint256 => string) userIdToTwitterId; // User ID -> Twitter ID
     bool unifiedUserSystemEnabled; // Feature flag for unified system
-    uint256[40] __gap; // Reduced gap (49 - 9 used = 40 remaining)
+    bool isTwitterMintingFinished;
+    bool isFarcasterMintingFinished;
+    uint256[40] __gap; // Gap after all used slots (49 - 9 used = 40 remaining)
   }
 
   function COINS_MULTIPLICATOR() public view returns (uint256) {

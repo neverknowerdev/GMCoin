@@ -74,50 +74,15 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
     }
 
     // Step 3: Check if Farcaster user has Twitter username linked
-    const twitterUserID = await fetchTwitterUserIDFromFarcaster(farcasterFid.toString());
+    const twitterID = await fetchTwitterUserIDFromFarcaster(farcasterFid.toString());
 
     let callData: any[] = [];
-
-    if (twitterUserID) {
-      console.log(`✅ Found Twitter user ID: ${twitterUserID} for FID ${farcasterFid}`);
-
-      // Step 4: Check if this Twitter user is already registered in GM
-      let alreadyRegisteredWallet: string | null = null;
-      try {
-        alreadyRegisteredWallet = await verifierContract.getWalletByUserID(twitterUserID);
-      } catch (contractError: unknown) {
-        const msg = (contractError as any)?.message || String(contractError);
-        console.error(`❌ Error checking Twitter user registration:`, contractError);
-        return returnError(userArgs.verifierContractAddress as string, iface, farcasterFid, wallet, `Error checking Twitter registration: ${msg}`);
-      }
-
-      if (alreadyRegisteredWallet) {
-        const unifiedUserID = await verifierContract.getUnifiedUserIDByWallet(alreadyRegisteredWallet);
-        if (unifiedUserID) {
-          callData.push({
-            to: userArgs.verifierContractAddress as string,
-            data: iface.encodeFunctionData("linkFarcasterWalletToUnifiedUser", [
-              unifiedUserID,
-              wallet
-            ])
-          });
-        }
-      } else {
-        callData.push({
-          to: userArgs.verifierContractAddress as string,
-          data: iface.encodeFunctionData("verifyTwitter", [
-            twitterUserID,
-            wallet
-          ])
-        });
-      }
-    }
-
     callData.push({
       to: userArgs.verifierContractAddress as string,
-      data: iface.encodeFunctionData("verifyFarcaster", [
-        farcasterFid,
-        wallet
+      data: iface.encodeFunctionData("createOrLinkUnifiedUser", [
+        primaryWallet,
+        twitterID,
+        farcasterFid
       ])
     });
 
@@ -199,7 +164,7 @@ async function fetchPrimaryWalletForFid(fid: string, neynarApiKey: string): Prom
   return null;
 }
 
-async function fetchTwitterUserIDFromFarcaster(fid: string): Promise<string | null> {
+async function fetchTwitterUserIDFromFarcaster(fid: string): Promise<string> {
   try {
     console.log(`🔍 Fetching Twitter username for FID ${fid}`);
 
@@ -214,21 +179,21 @@ async function fetchTwitterUserIDFromFarcaster(fid: string): Promise<string | nu
       // Look for Twitter verification in the verifications array
       for (const verification of verifications) {
         if (verification && (verification.platform === 'x' || verification.platform === 'twitter' || verification.type === 'twitter')) {
-          const username = verification.platformId;
-          if (username) {
+          const twitterId = verification.platformId;
+          if (twitterId) {
             console.log(`✅ Found Twitter username: ${verification.platformUsername}`);
-            return username;
+            return twitterId;
           }
         }
       }
     }
 
     console.log(`ℹ️ No Twitter username found for FID ${fid} - this is OK`);
-    return null;
+    return "";
 
   } catch (error) {
     console.error(`❌ Error fetching Twitter username for FID ${fid}:`, error);
-    return null;
+    return "";
   }
 }
 

@@ -19,13 +19,16 @@ abstract contract AccountManager {
   event UnifiedWalletLinked(uint256 indexed userId, address indexed wallet);
   event UnifiedHumanVerificationUpdated(uint256 indexed userId, bool isVerified);
 
+  modifier onlyGelato() virtual {
+    _;
+  }
   // Access control - to be inherited from main contract
   function _requireOwner() internal view virtual;
 
   // Internal storage access - to be provided by main contract
   function _getMintingData() internal view virtual returns (GMStorage.MintingData storage);
 
-  function _msgSender() internal view virtual returns (address);
+  function msgSender() internal view virtual returns (address);
 
   // Unified User System Functions
 
@@ -45,8 +48,12 @@ abstract contract AccountManager {
     address wallet,
     string memory twitterId,
     uint256 farcasterFid
-  ) internal returns (uint256) {
+  ) public onlyGelato returns (uint256) {
     return AccountManagerLib.createOrLinkUnifiedUser(_getMintingData(), wallet, twitterId, farcasterFid);
+  }
+
+  function createOrLinkUnifiedUser(string memory twitterId, uint256 farcasterFid) public returns (uint256) {
+    return AccountManagerLib.createOrLinkUnifiedUser(_getMintingData(), msgSender(), twitterId, farcasterFid);
   }
 
   function linkAdditionalWallet(address newWallet, bytes calldata signature) public {
@@ -62,7 +69,7 @@ abstract contract AccountManager {
     if (mintingData.walletToUnifiedUserId[newWallet] != 0) revert WalletAlreadyLinked();
 
     // The caller must be an existing unified user
-    uint256 userId = mintingData.walletToUnifiedUserId[_msgSender()];
+    uint256 userId = mintingData.walletToUnifiedUserId[msgSender()];
     if (userId == 0) revert CallerNotRegistered();
 
     AccountManagerLib.linkAdditionalWallet(_getMintingData(), userId, newWallet);
@@ -71,8 +78,7 @@ abstract contract AccountManager {
   }
 
   function setUnifiedUserHumanVerification(uint256 userId, bool isVerified) public {
-    _requireOwner();
-    AccountManagerLib.setUnifiedUserHumanVerification(_getMintingData(), userId, isVerified);
+    AccountManagerLib.setUnifiedUserHumanVerification(_getMintingData(), msgSender(), userId, isVerified);
     emit UnifiedHumanVerificationUpdated(userId, isVerified);
   }
 
@@ -86,21 +92,20 @@ abstract contract AccountManager {
   }
 
   function setPrimaryWallet(uint256 userId, address newPrimaryWallet) public {
-    _requireOwner();
-    AccountManagerLib.setPrimaryWallet(_getMintingData(), userId, newPrimaryWallet);
+    AccountManagerLib.setPrimaryWallet(_getMintingData(), msgSender(), userId, newPrimaryWallet);
   }
 
   function mergeUsers(uint256 fromUserId, uint256 toUserId) public {
     _requireOwner();
-    AccountManagerLib.mergeUsers(_getMintingData(), fromUserId, toUserId);
+    AccountManagerLib.mergeUsers(_getMintingData(), fromUserId, toUserId, false, false);
   }
 
-  function removeUser(address wallet) internal {
-    AccountManagerLib.removeUser(_getMintingData(), wallet);
+  function removeUser(uint256 userId) internal {
+    AccountManagerLib.removeUser(_getMintingData(), userId);
   }
 
   function removeMe() public {
-    removeUser(_msgSender());
+    removeUser(getUnifiedUserIDByWallet(msgSender()));
   }
 
   // Query functions for unified users

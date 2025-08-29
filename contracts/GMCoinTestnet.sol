@@ -2,19 +2,13 @@
 pragma solidity ^0.8.24;
 
 import './GMCoin.sol';
-import { TestnetLib } from './libraries/TestnetLib.sol';
 
 contract GMCoinTestnet is GMCoin {
-  function clearUser() public onlyOwner {
-    TestnetLib.clearUser(mintingData);
-  }
-
   function addTwitterUsername(string calldata userID, address walletAddress) public {
-    TestnetLib.addTwitterUsername(mintingData, userID, walletAddress);
-  }
-
-  function removeUser(string memory userID, address wallet) public {
-    TestnetLib.removeUser(mintingData, userID, wallet);
+    mintingData.allTwitterUsers.push(userID);
+    mintingData.twitterIdToUnifiedUserId[userID] = mintingData.nextUserId;
+    mintingData.unifiedUsers[mintingData.nextUserId].twitterId = userID;
+    mintingData.nextUserId++;
   }
 
   function getCurrentComplexity() public view returns (uint256) {
@@ -44,13 +38,6 @@ contract GMCoinTestnet is GMCoin {
   }
 
   function triggerVerifyTwitter(string calldata userID, address wallet) public onlyOwner {
-    (bool shouldMint, uint256 mintAmount) = TestnetLib.triggerVerifyTwitter(mintingData, mintingConfig, userID, wallet);
-    
-    if (shouldMint) {
-      _mintForUserByIndex(
-        mintingData.allTwitterUsers.length - 1,
-        mintAmount
-      ); // mint welcome coins
-    }
+    emit TwitterVerificationResult(userID, wallet, true, '');
   }
 }
