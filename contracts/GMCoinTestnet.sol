@@ -2,45 +2,19 @@
 pragma solidity ^0.8.24;
 
 import './GMCoin.sol';
+import { TestnetLib } from './libraries/TestnetLib.sol';
 
 contract GMCoinTestnet is GMCoin {
   function clearUser() public onlyOwner {
-    string memory userID = '1796129942104657921';
-    address wallet = mintingData.walletsByUserIDs[userID];
-
-    uint userIndex = mintingData.userIndexByUserID[userID];
-    delete mintingData.registeredWallets[wallet];
-    delete mintingData.walletsByUserIDs[userID];
-    delete mintingData.usersByWallets[wallet];
-
-    // remove from array
-    string memory lastIndexUserID = mintingData.allTwitterUsers[mintingData.allTwitterUsers.length - 1];
-    mintingData.allTwitterUsers[userIndex] = lastIndexUserID;
-    mintingData.allTwitterUsers.pop();
-
-    mintingData.userIndexByUserID[lastIndexUserID] = userIndex;
+    TestnetLib.clearUser(mintingData);
   }
 
   function addTwitterUsername(string calldata userID, address walletAddress) public {
-    mintingData.walletsByUserIDs[userID] = walletAddress;
-    mintingData.allTwitterUsers.push(userID);
-    emit TwitterVerificationResult(userID, walletAddress, true, '');
+    TestnetLib.addTwitterUsername(mintingData, userID, walletAddress);
   }
 
   function removeUser(string memory userID, address wallet) public {
-    if (mintingData.registeredWallets[wallet]) {
-      uint userIndex = mintingData.userIndexByUserID[userID];
-      delete mintingData.registeredWallets[wallet];
-      delete mintingData.walletsByUserIDs[userID];
-      delete mintingData.usersByWallets[wallet];
-
-      // remove from array
-      string memory lastIndexUserID = mintingData.allTwitterUsers[mintingData.allTwitterUsers.length - 1];
-      mintingData.allTwitterUsers[userIndex] = lastIndexUserID;
-      mintingData.allTwitterUsers.pop();
-
-      mintingData.userIndexByUserID[lastIndexUserID] = userIndex;
-    }
+    TestnetLib.removeUser(mintingData, userID, wallet);
   }
 
   function getCurrentComplexity() public view returns (uint256) {
@@ -70,20 +44,13 @@ contract GMCoinTestnet is GMCoin {
   }
 
   function triggerVerifyTwitter(string calldata userID, address wallet) public onlyOwner {
-    mintingData.usersByWallets[wallet] = userID;
-    mintingData.registeredWallets[wallet] = true;
-
-    if (mintingData.walletsByUserIDs[userID] == address(0)) {
-      mintingData.walletsByUserIDs[userID] = wallet;
-      mintingData.allTwitterUsers.push(userID);
-      mintingData.userIndexByUserID[userID] = mintingData.allTwitterUsers.length - 1;
-
+    (bool shouldMint, uint256 mintAmount) = TestnetLib.triggerVerifyTwitter(mintingData, mintingConfig, userID, wallet);
+    
+    if (shouldMint) {
       _mintForUserByIndex(
         mintingData.allTwitterUsers.length - 1,
-        mintingConfig.COINS_MULTIPLICATOR * mintingConfig.POINTS_PER_TWEET
+        mintAmount
       ); // mint welcome coins
-
-      emit TwitterVerificationResult(userID, wallet, true, '');
     }
   }
 }

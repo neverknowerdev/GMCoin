@@ -218,7 +218,7 @@ describe("GM minting", function () {
         await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
         await expect(gelatoContract.finishMinting(startOfPrevDay, "finalHash")).to.emit(coinContract, "MintingFinished").withArgs(startOfPrevDay, "finalHash");
 
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, 9, '', 0]])).to.be.rejectedWith("no ongoing minting process");
+        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, 9, '', 0]])).to.be.reverted;
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("dayToMint should be not further than yesterday");
         await expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);

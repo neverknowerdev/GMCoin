@@ -93,6 +93,36 @@ contract GMWeb3Functions is
     emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_dailyTrigger);
   }
 
+  // Farcaster Gelato functions
+
+  function createFarcasterVerificationFunction(
+    string calldata _w3fHash,
+    bytes calldata argsHash,
+    bytes32[][] calldata topics
+  ) public onlyOwner {
+    bytes32 oldGelatoId = gelatoConfig.gelatoTaskId_farcasterVerification;
+    if (gelatoConfig.gelatoTaskId_farcasterVerification != bytes32('')) {
+      _cancelTask(gelatoConfig.gelatoTaskId_farcasterVerification);
+    }
+
+    gelatoConfig.gelatoTaskId_farcasterVerification = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
+    emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_farcasterVerification);
+  }
+
+  function createFarcasterWorkerFunction(
+    string calldata _w3fHash,
+    bytes calldata argsHash,
+    bytes32[][] calldata topics
+  ) public onlyOwner {
+    bytes32 oldGelatoId = gelatoConfig.gelatoTaskId_farcasterWorker;
+    if (gelatoConfig.gelatoTaskId_farcasterWorker != bytes32('')) {
+      _cancelTask(gelatoConfig.gelatoTaskId_farcasterWorker);
+    }
+
+    gelatoConfig.gelatoTaskId_farcasterWorker = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
+    emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_farcasterWorker);
+  }
+
   function createWeb3FunctionEvent(
     string calldata _gelatoW3fHash,
     bytes calldata w3fArgsHash,
