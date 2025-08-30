@@ -134,14 +134,13 @@ contract GMStorage {
     uint32 epochStartedAt;
     uint256 lastEpochPoints;
     uint256 currentEpochPoints;
-    // deprecated vars
-
+    // deprecated vars - these MUST stay in the exact V1 positions
+    bytes32 __deprecated_gelatoTaskId_twitterVerification;
+    bytes32 __deprecated_gelatoTaskId_twitterWorker;
+    bytes32 __deprecated_gelatoTaskId_dailyTrigger;
+    address __deprecated_trustedSigner;
+    // NEW: fields added after V1 (consuming gap space)
     mapping(address => uint256) mintedAmountByWallet;
-    bytes32 __deprecated_gelatoVar2;
-    bytes32 __deprecated_gelatoVar3;
-    address __deprecated_gelatoVar4;
-    bytes32 __deprecated_gelatoVar5;
-    bytes32 __deprecated_gelatoVar6;
     // Farcaster mappings
     uint256[] allFarcasterUsers; // All Farcaster FIDs
     mapping(uint256 => uint) farcasterUserIndexByFID; // FID -> array index
@@ -158,7 +157,7 @@ contract GMStorage {
     bool unifiedUserSystemEnabled; // Feature flag for unified system
     bool isTwitterMintingFinished;
     bool isFarcasterMintingFinished;
-    uint256[40] __gap; // Gap after all used slots (49 - 9 used = 40 remaining)
+    uint256[42] __gap; // Gap: V1 had 55, adjusted to maintain exact struct size
   }
 
   function COINS_MULTIPLICATOR() public view returns (uint256) {
