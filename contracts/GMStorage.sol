@@ -23,7 +23,9 @@ contract GMStorage {
   int32 public pointsDeltaStreak;
   uint256 public totalPoints;
 
-  uint256[253] __gap;
+  address accountManager;
+
+  uint256[252] __gap;
 
   struct UserMintingData {
     uint64 userIndex;
@@ -34,41 +36,10 @@ contract GMStorage {
     uint32 likes;
   }
 
-  struct UserTwitterData {
-    uint64 userIndex;
-    uint16 tweets;
-    uint16 hashtagTweets; // Number of hashtags in the tweet
-    uint16 cashtagTweets; // Number of cashtags in the tweet
-    uint16 simpleTweets; // Number of simple tags in the tweet
-    uint32 likes; // Number of likes for the tweet
-  }
-
-  // Farcaster user data
-  struct UserFarcasterData {
-    uint64 userIndex;
-    uint16 casts;
-    uint16 hashtagCasts;
-    uint16 cashtagCasts;
-    uint16 simpleCasts;
-    uint32 likes;
-  }
-
   // Minting result data
   struct UserMintingResult {
     uint64 userIndex;
     uint256 mintAmount;
-  }
-
-  // NEW: Unified User Structure
-  struct UnifiedUser {
-    uint256 userId; // Unique user identifier
-    address primaryWallet; // Primary wallet for minting
-    bool isHumanVerified; // Human verification status
-    uint32 createdAt; // Creation timestamp
-    string twitterId; // Twitter ID (empty if not linked)
-    uint256 farcasterFid; // Farcaster FID (0 if not linked)
-    address farcasterWallet;
-    // Future social platforms can be added here
   }
 
   struct Batch {
@@ -123,8 +94,8 @@ contract GMStorage {
     mapping(string => address) __deprecated_wallets; // Previously `wallets`
     //
     string[] allTwitterUsers;
-    mapping(address => string) __deprecated_twitterIdByWallet;
-    mapping(string => address) __deprecated_walletByTwitterID;
+    mapping(address => string) twitterIdByWallet;
+    mapping(string => address) walletByTwitterID;
     //
     mapping(address => bool) registeredWallets;
     mapping(string => uint) userIndexByTwitterId;
@@ -144,20 +115,13 @@ contract GMStorage {
     // Farcaster mappings
     uint256[] allFarcasterUsers; // All Farcaster FIDs
     mapping(uint256 => uint) farcasterUserIndexByFID; // FID -> array index
+    mapping(uint256 => address) walletByFarcasterFID;
     // NEW: Unified User Structure (using gap space)
-    uint256 nextUserId; // Auto-increment user ID counter
-    mapping(uint256 => UnifiedUser) unifiedUsers; // User ID -> User data
-    uint256[] allUnifiedUsers; // All user IDs for iteration
-    mapping(uint256 => uint256) unifiedUserIndexById; // User ID -> index in allUnifiedUsers
-    mapping(address => uint256) walletToUnifiedUserId; // Wallet -> User ID
-    mapping(uint256 => address[]) unifiedUserWallets; // User ID -> all wallets
-    mapping(string => uint256) twitterIdToUnifiedUserId; // Twitter ID -> User ID
-    mapping(uint256 => uint256) farcasterFidToUnifiedUserId; // Farcaster FID -> User ID
-    mapping(uint256 => string) userIdToTwitterId; // User ID -> Twitter ID
+
     bool unifiedUserSystemEnabled; // Feature flag for unified system
     bool isTwitterMintingFinished;
     bool isFarcasterMintingFinished;
-    uint256[42] __gap; // Gap: V1 had 55, adjusted to maintain exact struct size
+    uint256[41] __gap; // Gap: V1 had 55, adjusted to maintain exact struct size
   }
 
   function COINS_MULTIPLICATOR() public view returns (uint256) {
@@ -219,6 +183,17 @@ contract GMStorage {
 
   function gelatoTaskId_farcasterWorker() public view returns (bytes32) {
     return gelatoConfig.gelatoTaskId_farcasterWorker;
+  }
+
+  function twitterUserExist(string memory twitterId) public view returns (bool) {
+    return mintingData.userIndexByTwitterId[twitterId] != 0;
+  }
+
+  function farcasterUserExist(uint256 farcasterFid) public view returns (bool) {
+    return mintingData.farcasterUserIndexByFID[farcasterFid] != 0;
+  }
+  function isActiveMintingProcess() public view returns (bool) {
+    return mintingData.mintingInProgressForDay != 0;
   }
 
   // totalFarcasterUsersCount moved to FarcasterOracle

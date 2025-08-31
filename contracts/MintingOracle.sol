@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
-import { GMStorage } from './Storage.sol';
+import { GMStorage } from './GMStorage.sol';
 import { GMWeb3Functions } from './GelatoWeb3Functions.sol';
 import { MintingLib } from './MintingLib.sol';
 import './Errors.sol';
@@ -30,11 +30,6 @@ abstract contract MintingOracle is GMStorage {
     _;
   }
 
-  // Twitter events
-  event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet);
-  event TwitterVerificationResult(string userID, address indexed wallet, bool isSuccess, string errorMsg);
-  event verifyTwitterByAuthCodeRequested(address wallet, string authCode, string tweetID, string userID);
-
   event twitterMintingProcessed(uint32 indexed mintingDayTimestamp, GMStorage.Batch[] batches);
   event twitterMintingErrored(uint32 indexed mintingDayTimestamp, GMStorage.Batch[] errorBatches);
 
@@ -52,62 +47,8 @@ abstract contract MintingOracle is GMStorage {
   event farcasterMintingProcessed(uint32 indexed mintingDayTimestamp, GMStorage.Batch[] batches);
   event farcasterMintingErrored(uint32 indexed mintingDayTimestamp, GMStorage.Batch[] errorBatches);
 
-  // Twitter verification functions
-
-  function requestTwitterVerificationByAuthCode(
-    string calldata authCode,
-    string calldata userID,
-    string calldata tweetID
-  ) public {
-    if (mintingData.twitterIdToUnifiedUserId[userID] != 0) revert UserAlreadyLinked();
-    if (mintingData.registeredWallets[msgSender()]) revert WalletAlreadyLinked();
-
-    emit verifyTwitterByAuthCodeRequested(msgSender(), authCode, tweetID, userID);
-  }
-
-  function requestTwitterVerification(string calldata accessCodeEncrypted, string calldata userID) public {
-    if (mintingData.twitterIdToUnifiedUserId[userID] != 0) revert WalletAlreadyLinked();
-    if (mintingData.walletToUnifiedUserId[msgSender()] != 0) revert WalletAlreadyLinkedToFid();
-
-    emit VerifyTwitterRequested(accessCodeEncrypted, userID, msgSender());
-  }
-
-  function twitterVerificationError(
-    address wallet,
-    string calldata userID,
-    string calldata errorMsg
-  ) public onlyGelato {
-    emit TwitterVerificationResult(userID, wallet, false, errorMsg);
-  }
-
-  // Farcaster verification functions
-  event VerifyFarcasterRequested(uint256 indexed farcasterFid, address indexed wallet);
-  event FarcasterVerificationResult(
-    uint256 indexed farcasterFid,
-    address indexed wallet,
-    bool isSuccess,
-    string errorMsg
-  );
-
-  function requestFarcasterVerification(uint256 farcasterFid, address wallet) external {
-    if (mintingData.farcasterFidToUnifiedUserId[farcasterFid] != 0) revert FarcasterAccountAlreadyLinked();
-    if (mintingData.walletToUnifiedUserId[wallet] != 0) revert WalletAlreadyLinkedToFid();
-
-    emit VerifyFarcasterRequested(farcasterFid, wallet);
-  }
-
-  function farcasterVerificationError(uint256 farcasterFid, address wallet, string calldata errorMsg) external {
-    emit FarcasterVerificationResult(farcasterFid, wallet, false, errorMsg);
-  }
-
-  //
-
-  function getUserIdByTwitterId(string calldata twitterId) public view returns (uint256) {
-    return mintingData.twitterIdToUnifiedUserId[twitterId];
-  }
-
   function isTwitterUserRegistered(string calldata userID) public view returns (bool) {
-    return mintingData.twitterIdToUnifiedUserId[userID] != 0;
+    return mintingData.userIndexByTwitterId[userID] != 0;
   }
 
   function totalTwitterUsersCount() public view returns (uint256) {

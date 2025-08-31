@@ -9,7 +9,7 @@ import '@openzeppelin/contracts/utils/introspection/ERC165.sol';
 import './vendor/gelato/AutomateModuleHelper.sol';
 import './vendor/gelato/AutomateTaskCreatorUpgradeable.sol';
 import './vendor/gelato/Types.sol';
-import { GMStorage } from './Storage.sol';
+import { GMStorage } from './GMStorage.sol';
 
 contract GMWeb3Functions is
   GMStorage,

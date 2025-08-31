@@ -7,7 +7,6 @@ import '@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol';
 import './MintingOracle.sol';
-import './AccountManager.sol';
 import './Errors.sol';
 
 contract GMCoin is
@@ -17,7 +16,6 @@ contract GMCoin is
   ERC20Upgradeable,
   UUPSUpgradeable,
   MintingOracle,
-  AccountManager,
   GMWeb3Functions
 {
   /// @custom:oz-upgrades-unsafe-allow constructor
@@ -73,8 +71,13 @@ contract GMCoin is
   }
 
   // Override modifiers from parent contracts
-  modifier onlyGelato() override(MintingOracle, AccountManager) {
+  modifier onlyGelato() override(MintingOracle) {
     if (_msgSender() != gelatoConfig.gelatoAddress) revert OnlyGelato();
+    _;
+  }
+
+  modifier onlyAccountManager() {
+    if (_msgSender() != accountManager) revert OnlyAccountManager();
     _;
   }
 
@@ -92,16 +95,7 @@ contract GMCoin is
     super._checkOwner();
   }
 
-  function _requireOwner() internal view override {
-    _checkOwner();
-  }
-
-  // Provide storage access to parent contracts
-  function _getMintingData() internal view override(AccountManager) returns (GMStorage.MintingData storage) {
-    return mintingData;
-  }
-
-  function msgSender() internal view override(MintingOracle, AccountManager) returns (address) {
+  function msgSender() internal view override(MintingOracle) returns (address) {
     return super._msgSender();
   }
 
@@ -123,9 +117,7 @@ contract GMCoin is
   }
 
   function _mintForUserByTwitterIndex(uint256 userIndex, uint256 amount) internal override(MintingOracle) {
-    address walletAddr = mintingData
-      .unifiedUsers[mintingData.twitterIdToUnifiedUserId[mintingData.allTwitterUsers[userIndex]]]
-      .primaryWallet;
+    address walletAddr = mintingData.walletByTwitterID[mintingData.allTwitterUsers[userIndex]];
     require(walletAddr != address(0), "walletAddr shouldn't be zero!");
 
     _mint(walletAddr, amount);
@@ -133,12 +125,55 @@ contract GMCoin is
   }
 
   function _mintForUserByFarcasterIndex(uint256 userIndex, uint256 amount) internal override(MintingOracle) {
-    address walletAddr = mintingData
-      .unifiedUsers[mintingData.farcasterFidToUnifiedUserId[mintingData.allFarcasterUsers[userIndex]]]
-      .primaryWallet;
+    address walletAddr = mintingData.walletByFarcasterFID[mintingData.allFarcasterUsers[userIndex]];
     require(walletAddr != address(0), "walletAddr shouldn't be zero!");
 
     _mint(walletAddr, amount);
     mintingData.mintedAmountByWallet[walletAddr] += amount;
+  }
+
+  // functions to call from AccountManager
+  function addTwitterUser(string memory twitterId, address wallet) external onlyAccountManager {
+    if (mintingData.userIndexByTwitterId[twitterId] > 0) revert TwitterAccountAlreadyLinked();
+    mintingData.allTwitterUsers.push(twitterId);
+    mintingData.userIndexByTwitterId[twitterId] = mintingData.allTwitterUsers.length - 1;
+    mintingData.walletByTwitterID[twitterId] = wallet;
+  }
+
+  function removeTwitterUser(string memory twitterId) external onlyAccountManager {
+    if (mintingData.userIndexByTwitterId[twitterId] > 0) {
+      mintingData.allTwitterUsers[mintingData.userIndexByTwitterId[twitterId]] = mintingData.allTwitterUsers[
+        mintingData.allTwitterUsers.length - 1
+      ];
+      mintingData.allTwitterUsers.pop();
+      delete mintingData.userIndexByTwitterId[twitterId];
+      delete mintingData.walletByTwitterID[twitterId];
+    }
+  }
+
+  function addFarcasterUser(uint256 farcasterFid, address wallet) external onlyAccountManager {
+    if (mintingData.farcasterUserIndexByFID[farcasterFid] > 0) revert FarcasterAccountAlreadyLinked();
+    mintingData.allFarcasterUsers.push(farcasterFid);
+    mintingData.farcasterUserIndexByFID[farcasterFid] = mintingData.allFarcasterUsers.length - 1;
+    mintingData.walletByFarcasterFID[farcasterFid] = wallet;
+  }
+
+  function removeFarcasterUser(uint256 farcasterFid) external onlyAccountManager {
+    if (mintingData.farcasterUserIndexByFID[farcasterFid] > 0) {
+      mintingData.allFarcasterUsers[mintingData.farcasterUserIndexByFID[farcasterFid]] = mintingData.allFarcasterUsers[
+        mintingData.allFarcasterUsers.length - 1
+      ];
+      mintingData.allFarcasterUsers.pop();
+      delete mintingData.farcasterUserIndexByFID[farcasterFid];
+      delete mintingData.walletByFarcasterFID[farcasterFid];
+    }
+  }
+
+  function changeTwitterUserWallet(string memory twitterId, address wallet) external onlyAccountManager {
+    mintingData.walletByTwitterID[twitterId] = wallet;
+  }
+
+  function changeFarcasterUserWallet(uint256 farcasterFid, address wallet) external onlyAccountManager {
+    mintingData.walletByFarcasterFID[farcasterFid] = wallet;
   }
 }

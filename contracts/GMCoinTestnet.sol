@@ -6,9 +6,7 @@ import './GMCoin.sol';
 contract GMCoinTestnet is GMCoin {
   function addTwitterUsername(string calldata userID, address walletAddress) public {
     mintingData.allTwitterUsers.push(userID);
-    mintingData.twitterIdToUnifiedUserId[userID] = mintingData.nextUserId;
-    mintingData.unifiedUsers[mintingData.nextUserId].twitterId = userID;
-    mintingData.nextUserId++;
+    mintingData.userIndexByTwitterId[userID] = mintingData.allTwitterUsers.length - 1;
   }
 
   function getCurrentComplexity() public view returns (uint256) {
@@ -26,18 +24,5 @@ contract GMCoinTestnet is GMCoin {
   function forceTimeLockUpdateTestnet(address newImplementation) public {
     timeLockConfig.plannedNewImplementation = newImplementation;
     timeLockConfig.plannedNewImplementationTime = block.timestamp - 1 minutes;
-  }
-
-  function triggerTwitterVerificationResult(
-    string calldata userID,
-    address wallet,
-    bool isVerified,
-    string calldata errorMessage
-  ) public onlyOwner {
-    emit TwitterVerificationResult(userID, wallet, isVerified, errorMessage);
-  }
-
-  function triggerVerifyTwitter(string calldata userID, address wallet) public onlyOwner {
-    emit TwitterVerificationResult(userID, wallet, true, '');
   }
 }

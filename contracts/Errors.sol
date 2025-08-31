@@ -28,6 +28,8 @@ error CannotMergeSameUser();
 error FromUserNotExist();
 error ToUserNotExist();
 error FarcasterAccountAlreadyLinked();
+error TwitterAccountAlreadyLinked();
 error WalletAlreadyLinkedToFid();
 error DayToMintTooFar();
 error MintingAlreadyStarted();
+error OnlyAccountManager();

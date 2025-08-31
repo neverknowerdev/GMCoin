@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-import { GMStorage } from './Storage.sol';
+import { GMStorage } from './GMStorage.sol';
 import './Errors.sol';
 
 library MintingLib {

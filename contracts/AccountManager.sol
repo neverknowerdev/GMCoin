@@ -1,13 +1,97 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-import { GMStorage } from './Storage.sol';
 import { AccountManagerLib } from './AccountManagerLib.sol';
 import '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
 import '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
+import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
+import '@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol';
+import '@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol';
 import './Errors.sol';
+import './IGMCoin.sol';
 
-abstract contract AccountManager {
+abstract contract AccountManager is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+  using AccountManagerLib for AccountManagerLib.AccountStorage;
+
+  IGMCoin gmCoin;
+  AccountManagerLib.AccountStorage accountStorage;
+
+  error OnlyGMCoinContract();
+
+  /// @custom:oz-upgrades-unsafe-allow constructor
+  constructor() {
+    _disableInitializers();
+  }
+
+  function initialize(address _gmCoin) public initializer {
+    __Ownable_init(_gmCoin);
+    __UUPSUpgradeable_init();
+    gmCoin = IGMCoin(_gmCoin);
+  }
+
+  function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
+
+  // Getter and setter for gmCoin
+  function getGmCoin() public view returns (address) {
+    return address(gmCoin);
+  }
+
+  function setGmCoin(address _gmCoin) public {
+    _requireOwner();
+    gmCoin = IGMCoin(_gmCoin);
+  }
+
+  // Twitter events
+  event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet);
+  event TwitterVerificationResult(string userID, address indexed wallet, bool isSuccess, string errorMsg);
+  event verifyTwitterByAuthCodeRequested(address wallet, string authCode, string tweetID, string userID);
+
+  event VerifyFarcasterRequested(uint256 indexed farcasterFid, address indexed wallet);
+  event FarcasterVerificationResult(
+    uint256 indexed farcasterFid,
+    address indexed wallet,
+    bool isSuccess,
+    string errorMsg
+  );
+
+  function twitterVerificationError(
+    address wallet,
+    string calldata userID,
+    string calldata errorMsg
+  ) public onlyGelato {
+    emit TwitterVerificationResult(userID, wallet, false, errorMsg);
+  }
+
+  function requestTwitterVerificationByAuthCode(
+    string calldata authCode,
+    string calldata userID,
+    string calldata tweetID
+  ) public {
+    if (accountStorage.twitterIdToUnifiedUserId[userID] != 0) revert UserAlreadyLinked();
+    if (accountStorage.registeredWallets[msgSender()]) revert WalletAlreadyLinked();
+
+    emit verifyTwitterByAuthCodeRequested(msgSender(), authCode, tweetID, userID);
+  }
+
+  function requestTwitterVerification(string calldata accessCodeEncrypted, string calldata userID) public {
+    if (accountStorage.twitterIdToUnifiedUserId[userID] != 0) revert WalletAlreadyLinked();
+    if (accountStorage.walletToUnifiedUserId[msgSender()] != 0) revert WalletAlreadyLinkedToFid();
+
+    emit VerifyTwitterRequested(accessCodeEncrypted, userID, msgSender());
+  }
+
+  // Farcaster verification functions
+  function requestFarcasterVerification(uint256 farcasterFid, address wallet) external {
+    if (accountStorage.farcasterFidToUnifiedUserId[farcasterFid] != 0) revert FarcasterAccountAlreadyLinked();
+    if (accountStorage.walletToUnifiedUserId[wallet] != 0) revert WalletAlreadyLinkedToFid();
+
+    emit VerifyFarcasterRequested(farcasterFid, wallet);
+  }
+
+  function farcasterVerificationError(uint256 farcasterFid, address wallet, string calldata errorMsg) external {
+    emit FarcasterVerificationResult(farcasterFid, wallet, false, errorMsg);
+  }
+
   // Account management events
   event UnifiedUserCreated(
     uint256 indexed userId,
@@ -25,23 +109,20 @@ abstract contract AccountManager {
   // Access control - to be inherited from main contract
   function _requireOwner() internal view virtual;
 
-  // Internal storage access - to be provided by main contract
-  function _getMintingData() internal view virtual returns (GMStorage.MintingData storage);
-
   function msgSender() internal view virtual returns (address);
 
   // Unified User System Functions
 
   function enableUnifiedUserSystem() public {
     _requireOwner();
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    mintingData.unifiedUserSystemEnabled = true;
+    accountStorage.unifiedUserSystemEnabled = true;
+    accountStorage.unifiedUserSystemEnabled = true;
   }
 
   function disableUnifiedUserSystem() public {
     _requireOwner();
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    mintingData.unifiedUserSystemEnabled = false;
+    accountStorage.unifiedUserSystemEnabled = false;
+    accountStorage.unifiedUserSystemEnabled = false;
   }
 
   function createOrLinkUnifiedUser(
@@ -49,59 +130,57 @@ abstract contract AccountManager {
     string memory twitterId,
     uint256 farcasterFid
   ) public onlyGelato returns (uint256) {
-    return AccountManagerLib.createOrLinkUnifiedUser(_getMintingData(), wallet, twitterId, farcasterFid);
+    return AccountManagerLib.createOrLinkUnifiedUser(accountStorage, wallet, twitterId, farcasterFid);
   }
 
   function createOrLinkUnifiedUser(string memory twitterId, uint256 farcasterFid) public returns (uint256) {
-    return AccountManagerLib.createOrLinkUnifiedUser(_getMintingData(), msgSender(), twitterId, farcasterFid);
+    return AccountManagerLib.createOrLinkUnifiedUser(accountStorage, msgSender(), twitterId, farcasterFid);
   }
 
   function linkAdditionalWallet(address newWallet, bytes calldata signature) public {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    if (!mintingData.unifiedUserSystemEnabled) revert SystemNotEnabled();
+    if (!accountStorage.unifiedUserSystemEnabled) revert SystemNotEnabled();
 
     address recoveredSigner = ECDSA.recover(
       MessageHashUtils.toEthSignedMessageHash(bytes('I want to link this wallet to my GMCoin account')),
       signature
     );
     if (recoveredSigner != newWallet) revert InvalidSignature();
-    if (mintingData.registeredWallets[newWallet]) revert WalletAlreadyRegistered();
-    if (mintingData.walletToUnifiedUserId[newWallet] != 0) revert WalletAlreadyLinked();
+    if (accountStorage.registeredWallets[newWallet]) revert WalletAlreadyRegistered();
+    if (accountStorage.walletToUnifiedUserId[newWallet] != 0) revert WalletAlreadyLinked();
 
     // The caller must be an existing unified user
-    uint256 userId = mintingData.walletToUnifiedUserId[msgSender()];
+    uint256 userId = accountStorage.walletToUnifiedUserId[msgSender()];
     if (userId == 0) revert CallerNotRegistered();
 
-    AccountManagerLib.linkAdditionalWallet(_getMintingData(), userId, newWallet);
+    AccountManagerLib.linkAdditionalWallet(accountStorage, userId, newWallet);
 
     emit UnifiedWalletLinked(userId, newWallet);
   }
 
   function setUnifiedUserHumanVerification(uint256 userId, bool isVerified) public {
-    AccountManagerLib.setUnifiedUserHumanVerification(_getMintingData(), msgSender(), userId, isVerified);
+    AccountManagerLib.setUnifiedUserHumanVerification(accountStorage, msgSender(), userId, isVerified);
     emit UnifiedHumanVerificationUpdated(userId, isVerified);
   }
 
   function walletByUnifiedUserIndex(uint256 userIndex) internal view returns (address) {
-    return AccountManagerLib.walletByUnifiedUserIndex(_getMintingData(), userIndex);
+    return AccountManagerLib.walletByUnifiedUserIndex(accountStorage, userIndex);
   }
 
   function isWalletRegistered(address wallet) public view returns (bool) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    return mintingData.registeredWallets[wallet];
+    return accountStorage.registeredWallets[wallet];
   }
 
   function setPrimaryWallet(uint256 userId, address newPrimaryWallet) public {
-    AccountManagerLib.setPrimaryWallet(_getMintingData(), msgSender(), userId, newPrimaryWallet);
+    AccountManagerLib.setPrimaryWallet(accountStorage, msgSender(), userId, newPrimaryWallet);
   }
 
   function mergeUsers(uint256 fromUserId, uint256 toUserId) public {
     _requireOwner();
-    AccountManagerLib.mergeUsers(_getMintingData(), fromUserId, toUserId, false, false);
+    AccountManagerLib.mergeUsers(accountStorage, fromUserId, toUserId, false, false);
   }
 
   function removeUser(uint256 userId) internal {
-    AccountManagerLib.removeUser(_getMintingData(), userId);
+    AccountManagerLib.removeUser(accountStorage, userId);
   }
 
   function removeMe() public {
@@ -110,40 +189,36 @@ abstract contract AccountManager {
 
   // Query functions for unified users
   function isUnifiedUserSystemEnabled() public view returns (bool) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    return mintingData.unifiedUserSystemEnabled;
+    return accountStorage.unifiedUserSystemEnabled;
   }
 
   function totalUnifiedUsersCount() public view returns (uint256) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    return mintingData.allUnifiedUsers.length;
+    return accountStorage.allUnifiedUsers.length;
   }
 
   function getUnifiedUserIDByWallet(address wallet) public view returns (uint256) {
-    return AccountManagerLib.getUnifiedUserByWallet(_getMintingData(), wallet).userId;
+    return AccountManagerLib.getUnifiedUserByWallet(accountStorage, wallet).userId;
   }
 
-  function getUnifiedUserById(uint256 userId) public view returns (GMStorage.UnifiedUser memory) {
-    return AccountManagerLib.getUnifiedUserById(_getMintingData(), userId);
+  function getUnifiedUserById(uint256 userId) public view returns (AccountManagerLib.UnifiedUser memory) {
+    return AccountManagerLib.getUnifiedUserById(accountStorage, userId);
   }
 
-  function getUnifiedUserByWallet(address wallet) public view returns (GMStorage.UnifiedUser memory) {
-    return AccountManagerLib.getUnifiedUserByWallet(_getMintingData(), wallet);
+  function getUnifiedUserByWallet(address wallet) public view returns (AccountManagerLib.UnifiedUser memory) {
+    return AccountManagerLib.getUnifiedUserByWallet(accountStorage, wallet);
   }
 
   function getUnifiedUserWallets(uint256 userId) public view returns (address[] memory) {
-    return AccountManagerLib.getUnifiedUserWallets(_getMintingData(), userId);
+    return AccountManagerLib.getUnifiedUserWallets(accountStorage, userId);
   }
 
   function isUnifiedUserHumanVerified(uint256 userId) public view returns (bool) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    if (!mintingData.unifiedUserSystemEnabled) return false;
-    return mintingData.unifiedUsers[userId].isHumanVerified;
+    if (!accountStorage.unifiedUserSystemEnabled) return false;
+    return accountStorage.unifiedUsers[userId].isHumanVerified;
   }
 
   function isWalletLinkedToUnifiedUser(address wallet) public view returns (bool) {
-    GMStorage.MintingData storage mintingData = _getMintingData();
-    if (!mintingData.unifiedUserSystemEnabled) return false;
-    return mintingData.walletToUnifiedUserId[wallet] != 0;
+    if (!accountStorage.unifiedUserSystemEnabled) return false;
+    return accountStorage.walletToUnifiedUserId[wallet] != 0;
   }
 }
