@@ -25,7 +25,7 @@ contract GMStorage {
 
   address accountManager;
 
-  uint256[255] __gap;
+  uint256[252] __gap;
 
   struct UserMintingData {
     uint64 userIndex;
@@ -121,7 +121,7 @@ contract GMStorage {
     bool unifiedUserSystemEnabled; // Feature flag for unified system
     bool isTwitterMintingFinished;
     bool isFarcasterMintingFinished;
-    uint256[41] __gap; // Gap: V1 had 55, adjusted to maintain exact struct size
+    uint256[50] __gap; // Gap: V1 had 55, adjusted to maintain exact struct size
   }
 
   function COINS_MULTIPLICATOR() public view returns (uint256) {
