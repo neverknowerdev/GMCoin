@@ -25,7 +25,7 @@ contract GMStorage {
 
   address accountManager;
 
-  uint256[252] __gap;
+  uint256[255] __gap;
 
   struct UserMintingData {
     uint64 userIndex;
