@@ -23,7 +23,7 @@ abstract contract AccountManager is Initializable, OwnableUpgradeable, UUPSUpgra
     _disableInitializers();
   }
 
-  function initialize(address _gmCoin) public initializer {
+  function initialize(address _gmCoin) public virtual initializer {
     __Ownable_init(_gmCoin);
     __UUPSUpgradeable_init();
     gmCoin = IGMCoin(_gmCoin);

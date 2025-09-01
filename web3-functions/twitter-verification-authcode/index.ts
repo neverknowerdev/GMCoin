@@ -5,7 +5,7 @@ import { Web3FunctionResult } from "@gelatonetwork/web3-functions-sdk/types";
 import ky, { HTTPError } from "ky";
 
 const VerifierContractABI = [
-    "function verifyTwitter(string calldata userID, address wallet) public",
+    "function createOrLinkUnifiedUser(address wallet, string memory twitterId, uint256 farcasterFid) public returns (uint256)",
     "function twitterVerificationError(address wallet, string calldata userID, string calldata errorMsg) public",
     "event verifyTwitterByAuthCodeRequested(address wallet, string authCode, string tweetID, string userID)",
 ];
@@ -108,15 +108,16 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             return await returnError(verifierContract, userID, wallet, "User ID mismatch");
         }
 
-        // Call verifyTwitter if auth code is found
+        // Call createOrLinkUnifiedUser if auth code is found
         return {
             canExec: true,
             callData: [
                 {
                     to: userArgs.verifierContractAddress as string,
-                    data: verifierContract.interface.encodeFunctionData("verifyTwitter", [
+                    data: verifierContract.interface.encodeFunctionData("createOrLinkUnifiedUser", [
+                        wallet,
                         userID,
-                        wallet
+                        0  // farcasterFid is 0 for Twitter verification
                     ]),
                 },
             ],

@@ -18,12 +18,12 @@ describe("FarcasterVerification", function () {
   });
 
   async function deployFixture() {
-    const { coinContract } = await loadFixture(createGMCoinFixture(2));
-    return { coinContract };
+    const { coinContract, accountManager } = await loadFixture(createGMCoinFixture(2));
+    return { coinContract, accountManager };
   }
 
   it("should allow users to request Farcaster verification", async function () {
-    const { coinContract } = await deployFixture();
+    const { coinContract, accountManager } = await deployFixture();
 
     // User requests Farcaster verification
     await expect(
@@ -33,7 +33,7 @@ describe("FarcasterVerification", function () {
   });
 
   it("should complete Farcaster verification when called by Gelato", async function () {
-    const { coinContract } = await deployFixture();
+    const { coinContract, accountManager } = await deployFixture();
 
     // Gelato completes verification
     await expect(
@@ -48,7 +48,7 @@ describe("FarcasterVerification", function () {
   });
 
   it("should handle verification errors", async function () {
-    const { coinContract } = await deployFixture();
+    const { coinContract, accountManager } = await deployFixture();
 
     await expect(
       coinContract.connect(gelatoAddr).farcasterVerificationError(
@@ -61,7 +61,7 @@ describe("FarcasterVerification", function () {
   });
 
   it("should mint tokens on first verification", async function () {
-    const { coinContract } = await deployFixture();
+    const { coinContract, accountManager } = await deployFixture();
 
     const initialBalance = await coinContract.balanceOf(user1.address);
     

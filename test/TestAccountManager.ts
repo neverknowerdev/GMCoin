@@ -26,10 +26,10 @@ describe("AccountManagement", function () {
   });
 
   async function deployAndEnable() {
-    const { coinContract } = await loadFixture(createGMCoinFixture(2));
+    const { accountManager } = await loadFixture(createGMCoinFixture(2));
     // enable unified system
-    await coinContract.connect(owner).enableUnifiedUserSystem();
-    return { coinContract };
+    await accountManager.connect(owner).enableUnifiedUserSystem();
+    return { accountManager };
   }
 
   async function signLinkMessage(fromWallet: HDNodeWallet) {
@@ -39,108 +39,108 @@ describe("AccountManagement", function () {
   }
 
   it("creates unified user via verifyTwitterUnified and queries back", async () => {
-    const { coinContract } = await deployAndEnable();
+    const { accountManager } = await deployAndEnable();
 
-    const gelato = coinContract.connect(gelatoAddr);
+    const gelato = accountManager.connect(gelatoAddr);
     const userID = "user_alpha";
 
     await expect(gelato.verifyTwitterUnified(userID, wallet1.address))
-      .to.emit(coinContract, "UnifiedUserCreated");
+      .to.emit(accountManager, "UnifiedUserCreated");
 
     // user exists and primary wallet matches
-    const user = await coinContract.getUnifiedUserByWallet(wallet1.address);
+    const user = await accountManager.getUnifiedUserByWallet(wallet1.address);
     expect(user.userId).to.not.equal(0n);
     expect(user.primaryWallet).to.equal(wallet1.address);
 
     // queries
-    expect(await coinContract.isUnifiedUserSystemEnabled()).to.equal(true);
-    expect(await coinContract.isWalletLinkedToUnifiedUser(wallet1.address)).to.equal(true);
-    const allWallets = await coinContract.getUnifiedUserWallets(user.userId);
+    expect(await accountManager.isUnifiedUserSystemEnabled()).to.equal(true);
+    expect(await accountManager.isWalletLinkedToUnifiedUser(wallet1.address)).to.equal(true);
+    const allWallets = await accountManager.getUnifiedUserWallets(user.userId);
     expect(allWallets).to.deep.equal([wallet1.address]);
   });
 
   it("links additional wallet with signature", async () => {
-    const { coinContract } = await deployAndEnable();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { accountManager } = await deployAndEnable();
+    const gelato = accountManager.connect(gelatoAddr);
 
     await gelato.verifyTwitterUnified("user_beta", wallet1.address);
-    const user = await coinContract.getUnifiedUserByWallet(wallet1.address);
+    const user = await accountManager.getUnifiedUserByWallet(wallet1.address);
 
     const sig = await signLinkMessage(wallet2);
-    await coinContract.connect(wallet1).linkAdditionalWallet(wallet2.address, sig);
+    await accountManager.connect(wallet1).linkAdditionalWallet(wallet2.address, sig);
 
     // new wallet is now linked to same user
-    const user2 = await coinContract.getUnifiedUserByWallet(wallet2.address);
+    const user2 = await accountManager.getUnifiedUserByWallet(wallet2.address);
     expect(user2.userId).to.equal(user.userId);
-    const wallets = await coinContract.getUnifiedUserWallets(user.userId);
+    const wallets = await accountManager.getUnifiedUserWallets(user.userId);
     expect(wallets).to.include.members([wallet1.address, wallet2.address]);
   });
 
   it("setPrimaryWallet onlyOwner", async () => {
-    const { coinContract } = await deployAndEnable();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { accountManager } = await deployAndEnable();
+    const gelato = accountManager.connect(gelatoAddr);
 
     await gelato.verifyTwitterUnified("user_gamma", wallet1.address);
-    const user = await coinContract.getUnifiedUserByWallet(wallet1.address);
+    const user = await accountManager.getUnifiedUserByWallet(wallet1.address);
 
     // link wallet2 to the same user
     const sig = await signLinkMessage(wallet2);
-    await coinContract.connect(wallet1).linkAdditionalWallet(wallet2.address, sig);
+    await accountManager.connect(wallet1).linkAdditionalWallet(wallet2.address, sig);
 
     // non-owner cannot set primary
     await expect(
-      coinContract.connect(wallet1).setPrimaryWallet(user.userId, wallet2.address)
+      accountManager.connect(wallet1).setPrimaryWallet(user.userId, wallet2.address)
     ).to.be.reverted; // owner-gated at AccountManager
 
     // owner can set primary
-    await coinContract.connect(owner).setPrimaryWallet(user.userId, wallet2.address);
-    const updated = await coinContract.getUnifiedUserById(user.userId);
+    await accountManager.connect(owner).setPrimaryWallet(user.userId, wallet2.address);
+    const updated = await accountManager.getUnifiedUserById(user.userId);
     expect(updated.primaryWallet).to.equal(wallet2.address);
   });
 
   it("mergeUsers onlyOwner and moves wallets/social ids", async () => {
-    const { coinContract } = await deployAndEnable();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { accountManager } = await deployAndEnable();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // create two users
     await gelato.verifyTwitterUnified("user_delta", wallet1.address);
     await gelato.verifyTwitterUnified("user_epsilon", wallet3.address);
 
-    const u1 = await coinContract.getUnifiedUserByWallet(wallet1.address);
-    const u2 = await coinContract.getUnifiedUserByWallet(wallet3.address);
+    const u1 = await accountManager.getUnifiedUserByWallet(wallet1.address);
+    const u2 = await accountManager.getUnifiedUserByWallet(wallet3.address);
 
     // non-owner cannot merge
-    await expect(coinContract.connect(wallet1).mergeUsers(u1.userId, u2.userId)).to.be.reverted;
+    await expect(accountManager.connect(wallet1).mergeUsers(u1.userId, u2.userId)).to.be.reverted;
 
     // owner merges u1 -> u2
-    await coinContract.connect(owner).mergeUsers(u1.userId, u2.userId);
+    await accountManager.connect(owner).mergeUsers(u1.userId, u2.userId);
 
     // wallet1 should now map to u2
-    const newUser = await coinContract.getUnifiedUserByWallet(wallet1.address);
+    const newUser = await accountManager.getUnifiedUserByWallet(wallet1.address);
     expect(newUser.userId).to.equal(u2.userId);
 
     // original fromUser removed
-    await expect(coinContract.getUnifiedUserById(u1.userId)).to.be.reverted;
+    await expect(accountManager.getUnifiedUserById(u1.userId)).to.be.reverted;
   });
 
   it("reverts on invalid signature when linking wallet", async () => {
-    const { coinContract } = await deployAndEnable();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { accountManager } = await deployAndEnable();
+    const gelato = accountManager.connect(gelatoAddr);
 
     await gelato.verifyTwitterUnified("user_zeta", wallet1.address);
 
     const badSig = await wallet2.signMessage("WRONG MESSAGE");
     await expect(
-      coinContract.connect(wallet1).linkAdditionalWallet(wallet2.address, badSig)
+      accountManager.connect(wallet1).linkAdditionalWallet(wallet2.address, badSig)
     ).to.be.reverted;
   });
 
   it("no unified user created when system disabled", async () => {
-    const { coinContract } = await loadFixture(createGMCoinFixture(2));
-    const gelato = coinContract.connect(gelatoAddr);
+    const { accountManager } = await loadFixture(createGMCoinFixture(2));
+    const gelato = accountManager.connect(gelatoAddr);
 
     await gelato.verifyTwitterUnified("user_eta", wallet1.address);
     // should not throw, but no user gets created
-    expect(await coinContract.totalUnifiedUsersCount()).to.equal(0n);
+    expect(await accountManager.totalUnifiedUsersCount()).to.equal(0n);
   });
 });

@@ -29,47 +29,47 @@ describe("UnifiedUserEdgeCases", function () {
   });
 
   async function deploy() {
-    const { coinContract } = await loadFixture(createGMCoinFixture(2));
-    await coinContract.connect(owner).enableUnifiedUserSystem();
-    return { coinContract };
+    const { coinContract, accountManager } = await loadFixture(createGMCoinFixture(2));
+    await accountManager.connect(owner).enableUnifiedUserSystem();
+    return { coinContract, accountManager };
   }
 
   it("verifyFarcasterUnified onlyGelato", async () => {
-    const { coinContract } = await deploy();
+    const { coinContract, accountManager } = await deploy();
     await expect(
-      coinContract.connect(owner).verifyFarcasterUnified(FID_1, wallet1.address)
-    ).to.be.revertedWithCustomError(coinContract, "OnlyGelato");
+      accountManager.connect(owner).verifyFarcasterUnified(FID_1, wallet1.address)
+    ).to.be.revertedWithCustomError(accountManager, "OnlyGelato");
   });
 
   it("verifyBothFarcasterAndTwitter onlyGelato", async () => {
-    const { coinContract } = await deploy();
+    const { coinContract, accountManager } = await deploy();
     await expect(
-      coinContract.connect(owner).verifyBothFarcasterAndTwitter(FID_1, wallet1.address, TWITTER_ALPHA)
-    ).to.be.revertedWithCustomError(coinContract, "OnlyGelato");
+      accountManager.connect(owner).verifyBothFarcasterAndTwitter(FID_1, wallet1.address, TWITTER_ALPHA)
+    ).to.be.revertedWithCustomError(accountManager, "OnlyGelato");
   });
 
   it("verifyFarcasterAndMergeWithTwitter onlyGelato", async () => {
-    const { coinContract } = await deploy();
+    const { coinContract, accountManager } = await deploy();
     await expect(
-      coinContract.connect(owner).verifyFarcasterAndMergeWithTwitter(FID_1, wallet1.address, TWITTER_ALPHA)
-    ).to.be.revertedWithCustomError(coinContract, "OnlyGelato");
+      accountManager.connect(owner).verifyFarcasterAndMergeWithTwitter(FID_1, wallet1.address, TWITTER_ALPHA)
+    ).to.be.revertedWithCustomError(accountManager, "OnlyGelato");
   });
 
   it("setPrimaryWallet reverts if new wallet not linked", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     await gelato.verifyTwitterUnified(TWITTER_ALPHA, wallet1.address);
-    const user = await coinContract.getUnifiedUserByWallet(wallet1.address);
+    const user = await accountManager.getUnifiedUserByWallet(wallet1.address);
 
     await expect(
-      coinContract.connect(owner).setPrimaryWallet(user.userId, wallet3.address)
+      accountManager.connect(owner).setPrimaryWallet(user.userId, wallet3.address)
     ).to.be.reverted;
   });
 
   it("linkAdditionalWallet reverts for WalletAlreadyRegistered", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     await gelato.verifyTwitterUnified(TWITTER_ALPHA, wallet1.address);
     await gelato.verifyTwitterUnified(TWITTER_BETA, wallet2.address);
@@ -77,32 +77,32 @@ describe("UnifiedUserEdgeCases", function () {
     const sig = await wallet2.signMessage(LINK_MESSAGE);
 
     await expect(
-      coinContract.connect(wallet1).linkAdditionalWallet(wallet2.address, sig)
+      accountManager.connect(wallet1).linkAdditionalWallet(wallet2.address, sig)
     ).to.be.reverted;
   });
 
   it("mergeUsers reverts when merging same user", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     await gelato.verifyTwitterUnified(TWITTER_ALPHA, wallet1.address);
-    const u1 = await coinContract.getUnifiedUserByWallet(wallet1.address);
+    const u1 = await accountManager.getUnifiedUserByWallet(wallet1.address);
 
     await expect(
-      coinContract.connect(owner).mergeUsers(u1.userId, u1.userId)
+      accountManager.connect(owner).mergeUsers(u1.userId, u1.userId)
     ).to.be.reverted;
   });
 
   it("queries revert when unified system is disabled", async () => {
-    const { coinContract } = await loadFixture(createGMCoinFixture(2));
+    const { coinContract, accountManager } = await loadFixture(createGMCoinFixture(2));
     await expect(
-      coinContract.getUnifiedUserByWallet(wallet1.address)
+      accountManager.getUnifiedUserByWallet(wallet1.address)
     ).to.be.revertedWith('Unified user system not enabled');
   });
 
   it("conflict: adding farcaster to twitter-linked user when fid is already linked elsewhere", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create twitter user on wallet1
     await gelato.verifyTwitterUnified(TWITTER_ALPHA, wallet1.address);

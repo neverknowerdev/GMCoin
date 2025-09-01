@@ -7,10 +7,9 @@ import { Contract, Interface } from "ethers";
 import ky from "ky";
 
 const VerifierContractABI = [
-  "function verifyFarcaster(uint256 farcasterFid, address wallet) external",
+  "function createOrLinkUnifiedUser(address wallet, string memory twitterId, uint256 farcasterFid) public returns (uint256)",
   "function farcasterVerificationError(uint256 farcasterFid, address wallet, string calldata errorMsg) external",
   "function getWalletByUserID(string calldata username) public returns (address)",
-  "function verifyTwitter(string calldata userID, address wallet) public",
   "function getUnifiedUserIDByWallet(address wallet) public view returns (uint256)",
   "event VerifyFarcasterRequested(uint256 indexed farcasterFid, address indexed wallet)",
   "function linkFarcasterWalletToUnifiedUser(uint256 userId, address wallet) public"

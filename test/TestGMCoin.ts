@@ -282,6 +282,7 @@ describe("GM", function () {
     it('removeMe', async function () {
         const {
             coinContract,
+            accountManager,
             owner,
             feeAddr,
             relayerServerAcc,
@@ -301,28 +302,28 @@ describe("GM", function () {
         await gelatoContract.verifyTwitter("user4" as any, wallet4 as any);
 
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal(["user1", "user2", "user3", "user4"]);
-        await coinContract.connect(wallet4).removeMe();
+        await accountManager.connect(wallet4).removeMe();
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal(["user1", "user2", "user3"]);
-        await coinContract.connect(wallet1).removeMe();
+        await accountManager.connect(wallet1).removeMe();
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal(["user3", "user2"]);
-        await coinContract.connect(wallet3).removeMe();
+        await accountManager.connect(wallet3).removeMe();
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal(["user2"]);
-        await coinContract.connect(wallet2).removeMe();
+        await accountManager.connect(wallet2).removeMe();
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal([]);
 
-        await expect(coinContract.connect(wallet1).removeMe()).to.be.reverted;
-        await expect(coinContract.connect(wallet2).removeMe()).to.be.reverted;
-        await expect(coinContract.connect(wallet3).removeMe()).to.be.reverted;
-        await expect(coinContract.connect(wallet4).removeMe()).to.be.reverted;
+        await expect(accountManager.connect(wallet1).removeMe()).to.be.reverted;
+        await expect(accountManager.connect(wallet2).removeMe()).to.be.reverted;
+        await expect(accountManager.connect(wallet3).removeMe()).to.be.reverted;
+        await expect(accountManager.connect(wallet4).removeMe()).to.be.reverted;
 
         await gelatoContract.verifyTwitter("user1" as any, wallet1 as any);
         await gelatoContract.verifyTwitter("user2" as any, wallet2 as any);
 
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal(["user1", "user2"]);
 
-        await coinContract.connect(wallet1).removeMe();
+        await accountManager.connect(wallet1).removeMe();
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal(["user2"]);
-        await coinContract.connect(wallet2).removeMe();
+        await accountManager.connect(wallet2).removeMe();
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal([]);
     });
 

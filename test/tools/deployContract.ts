@@ -77,7 +77,7 @@ export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number =
 
         const contractAddress = await coinContractV1.getAddress();
 
-        const { GMCoinExposedFactory } = await deployLibrariesAndGetFactories();
+        const { GMCoinExposedFactory, accountLibAddress } = await deployLibrariesAndGetFactories();
         const coinContract: GMCoinExposed = await upgrades.upgradeProxy(contractAddress, GMCoinExposedFactory, {
             unsafeAllowLinkedLibraries: true,
         }) as GMCoinExposed;
@@ -116,8 +116,28 @@ export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number =
         // });
         // await tx.wait();
 
+        // Deploy AccountManagerStub for testing
+        const AccountManagerStub = await ethers.getContractFactory("AccountManagerStub", {
+            libraries: {
+                "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
+            },
+        });
+        const accountManager = await upgrades.deployProxy(AccountManagerStub, 
+            [await coinContract.getAddress()],
+            { kind: "uups", unsafeAllowLinkedLibraries: true, unsafeAllow: ['constructor'] }
+        );
+        await accountManager.waitForDeployment();
+        
+        // Set gelato address in AccountManagerStub
+        await accountManager.setGelatoAddress(gelatoAddr.address);
+        
+        // Set accountManager address in GMCoin
+        const accountManagerAddress = await accountManager.getAddress();
+        // Note: GMCoin needs a setter for accountManager or it should be set during initialization
+
         return {
             coinContract,
+            accountManager,
             owner,
             feeAddr,
             treasuryAddr,

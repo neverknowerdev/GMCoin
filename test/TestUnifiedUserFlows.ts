@@ -26,23 +26,23 @@ describe("UnifiedUserFlows", function () {
   });
 
   async function deploy() {
-    const { coinContract } = await loadFixture(createGMCoinFixture(2));
+    const { coinContract, accountManager } = await loadFixture(createGMCoinFixture(2));
     // In the proxy upgrade path, unified system may be disabled by default, so ensure it's enabled
     const [owner] = await ethers.getSigners();
-    await coinContract.connect(owner).enableUnifiedUserSystem();
-    return { coinContract };
+    await accountManager.connect(owner).enableUnifiedUserSystem();
+    return { coinContract, accountManager };
   }
 
   it("creates unified user on verifyFarcaster", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     await gelato.verifyFarcaster(FID_1, user1.address);
 
-    const count = await coinContract.totalUnifiedUsersCount();
+    const count = await accountManager.totalUnifiedUsersCount();
     expect(count).to.equal(1n);
 
-    const u = await coinContract.getUnifiedUserByWallet(user1.address);
+    const u = await accountManager.getUnifiedUserByWallet(user1.address);
     expect(u.userId).to.not.equal(0n);
     expect(u.primaryWallet).to.equal(user1.address);
     expect(u.farcasterFid).to.equal(BigInt(FID_1));
@@ -50,43 +50,43 @@ describe("UnifiedUserFlows", function () {
   });
 
   it("links additional wallet to existing unified user", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create user with Farcaster
     await gelato.verifyFarcaster(FID_1, user1.address);
-    const user = await coinContract.getUnifiedUserByWallet(user1.address);
+    const user = await accountManager.getUnifiedUserByWallet(user1.address);
 
     // Sign message for linking wallet
     const message = "I want to link this wallet to my GMCoin account";
     const signature = await user2.signMessage(message);
 
     // Link additional wallet
-    await coinContract.connect(user1).linkAdditionalWallet(user2.address, signature);
+    await accountManager.connect(user1).linkAdditionalWallet(user2.address, signature);
 
     // Verify both wallets are now linked to the same user
-    const userFromWallet1 = await coinContract.getUnifiedUserByWallet(user1.address);
-    const userFromWallet2 = await coinContract.getUnifiedUserByWallet(user2.address);
+    const userFromWallet1 = await accountManager.getUnifiedUserByWallet(user1.address);
+    const userFromWallet2 = await accountManager.getUnifiedUserByWallet(user2.address);
 
     expect(userFromWallet1.userId).to.equal(user.userId);
     expect(userFromWallet2.userId).to.equal(user.userId);
 
     // Check all wallets for the user
-    const wallets = await coinContract.getUnifiedUserWallets(user.userId);
+    const wallets = await accountManager.getUnifiedUserWallets(user.userId);
     expect(wallets).to.include.members([user1.address, user2.address]);
     expect(wallets.length).to.equal(2);
   });
 
   it("mergeUsers combines two users and moves all data", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create two separate users
     await gelato.verifyFarcaster(FID_1, user1.address);
     await gelato.verifyTwitter(TWITTER_ALPHA, user2.address);
 
-    const user1Data = await coinContract.getUnifiedUserByWallet(user1.address);
-    const user2Data = await coinContract.getUnifiedUserByWallet(user2.address);
+    const user1Data = await accountManager.getUnifiedUserByWallet(user1.address);
+    const user2Data = await accountManager.getUnifiedUserByWallet(user2.address);
 
     // Verify initial state
     expect(user1Data.farcasterFid).to.equal(BigInt(FID_1));
@@ -95,102 +95,102 @@ describe("UnifiedUserFlows", function () {
     expect(user2Data.twitterId).to.equal(TWITTER_ALPHA);
 
     // Merge user1 into user2 (from -> to)
-    await coinContract.connect(owner).mergeUsers(user1Data.userId, user2Data.userId);
+    await accountManager.connect(owner).mergeUsers(user1Data.userId, user2Data.userId);
 
     // Verify user1 is removed
-    await expect(coinContract.getUnifiedUserById(user1Data.userId)).to.be.reverted;
+    await expect(accountManager.getUnifiedUserById(user1Data.userId)).to.be.reverted;
 
     // Verify user2 now has combined data
-    const mergedUser = await coinContract.getUnifiedUserByWallet(user1.address);
+    const mergedUser = await accountManager.getUnifiedUserByWallet(user1.address);
     expect(mergedUser.userId).to.equal(user2Data.userId);
     expect(mergedUser.farcasterFid).to.equal(BigInt(FID_1));
     expect(mergedUser.twitterId).to.equal(TWITTER_ALPHA);
 
     // Verify both wallets now point to the same user
-    const userFromWallet2 = await coinContract.getUnifiedUserByWallet(user2.address);
+    const userFromWallet2 = await accountManager.getUnifiedUserByWallet(user2.address);
     expect(userFromWallet2.userId).to.equal(user2Data.userId);
 
     // Check total user count decreased
-    const count = await coinContract.totalUnifiedUsersCount();
+    const count = await accountManager.totalUnifiedUsersCount();
     expect(count).to.equal(1n);
   });
 
   it("removeMe allows user to remove themselves", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create user
     await gelato.verifyFarcaster(FID_1, user1.address);
 
     // Verify user exists
-    const initialCount = await coinContract.totalUnifiedUsersCount();
+    const initialCount = await accountManager.totalUnifiedUsersCount();
     expect(initialCount).to.equal(1n);
 
-    const user = await coinContract.getUnifiedUserByWallet(user1.address);
+    const user = await accountManager.getUnifiedUserByWallet(user1.address);
     expect(user.userId).to.not.equal(0n);
 
     // User removes themselves
-    await coinContract.connect(user1).removeMe();
+    await accountManager.connect(user1).removeMe();
 
     // Verify user is removed
-    await expect(coinContract.getUnifiedUserByWallet(user1.address)).to.be.reverted;
+    await expect(accountManager.getUnifiedUserByWallet(user1.address)).to.be.reverted;
 
-    const finalCount = await coinContract.totalUnifiedUsersCount();
+    const finalCount = await accountManager.totalUnifiedUsersCount();
     expect(finalCount).to.equal(0n);
   });
 
   it("mergeUsers fails when trying to merge same user", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create user
     await gelato.verifyFarcaster(FID_1, user1.address);
-    const user = await coinContract.getUnifiedUserByWallet(user1.address);
+    const user = await accountManager.getUnifiedUserByWallet(user1.address);
 
     // Try to merge user with itself
     await expect(
-      coinContract.connect(owner).mergeUsers(user.userId, user.userId)
+      accountManager.connect(owner).mergeUsers(user.userId, user.userId)
     ).to.be.reverted;
   });
 
   it("mergeUsers fails when fromUser doesn't exist", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create only one user
     await gelato.verifyFarcaster(FID_1, user1.address);
-    const user = await coinContract.getUnifiedUserByWallet(user1.address);
+    const user = await accountManager.getUnifiedUserByWallet(user1.address);
 
     // Try to merge from non-existent user
     await expect(
-      coinContract.connect(owner).mergeUsers(999, user.userId)
+      accountManager.connect(owner).mergeUsers(999, user.userId)
     ).to.be.reverted;
   });
 
   it("mergeUsers fails when toUser doesn't exist", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create only one user
     await gelato.verifyFarcaster(FID_1, user1.address);
-    const user = await coinContract.getUnifiedUserByWallet(user1.address);
+    const user = await accountManager.getUnifiedUserByWallet(user1.address);
 
     // Try to merge to non-existent user
     await expect(
-      coinContract.connect(owner).mergeUsers(user.userId, 999)
+      accountManager.connect(owner).mergeUsers(user.userId, 999)
     ).to.be.reverted;
   });
 
   it("mergeUsers fails when called by non-owner", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create two users
     await gelato.verifyFarcaster(FID_1, user1.address);
     await gelato.verifyTwitter(TWITTER_ALPHA, user2.address);
 
-    const user1Data = await coinContract.getUnifiedUserByWallet(user1.address);
-    const user2Data = await coinContract.getUnifiedUserByWallet(user2.address);
+    const user1Data = await accountManager.getUnifiedUserByWallet(user1.address);
+    const user2Data = await accountManager.getUnifiedUserByWallet(user2.address);
 
     // Non-owner tries to merge
     await expect(
@@ -199,8 +199,8 @@ describe("UnifiedUserFlows", function () {
   });
 
   it("linkAdditionalWallet fails with invalid signature", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create user
     await gelato.verifyFarcaster(FID_1, user1.address);
@@ -210,13 +210,13 @@ describe("UnifiedUserFlows", function () {
     const wrongSignature = await user2.signMessage(wrongMessage);
 
     await expect(
-      coinContract.connect(user1).linkAdditionalWallet(user2.address, wrongSignature)
+      accountManager.connect(user1).linkAdditionalWallet(user2.address, wrongSignature)
     ).to.be.reverted;
   });
 
   it("linkAdditionalWallet fails when wallet already registered", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create two separate users
     await gelato.verifyFarcaster(FID_1, user1.address);
@@ -227,13 +227,13 @@ describe("UnifiedUserFlows", function () {
     const signature = await user2.signMessage(message);
 
     await expect(
-      coinContract.connect(user1).linkAdditionalWallet(user2.address, signature)
+      accountManager.connect(user1).linkAdditionalWallet(user2.address, signature)
     ).to.be.reverted;
   });
 
   it("linkAdditionalWallet fails when wallet already linked to another user", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create user
     await gelato.verifyFarcaster(FID_1, user1.address);
@@ -244,31 +244,31 @@ describe("UnifiedUserFlows", function () {
 
     const message = "I want to link this wallet to my GMCoin account";
     const signature = await user3.signMessage(message);
-    await coinContract.connect(user1).linkAdditionalWallet(user3.address, signature);
+    await accountManager.connect(user1).linkAdditionalWallet(user3.address, signature);
 
     // Try to link user3 to user2 (user3 already linked to user1)
     const user2Signature = await user3.signMessage(message);
     await expect(
-      coinContract.connect(user2).linkAdditionalWallet(user3.address, user2Signature)
+      accountManager.connect(user2).linkAdditionalWallet(user3.address, user2Signature)
     ).to.be.reverted;
   });
 
   it("linkAdditionalWallet fails when caller is not registered", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Don't create any users, just try to link wallets
     const message = "I want to link this wallet to my GMCoin account";
     const signature = await user2.signMessage(message);
 
     await expect(
-      coinContract.connect(user1).linkAdditionalWallet(user2.address, signature)
+      accountManager.connect(user1).linkAdditionalWallet(user2.address, signature)
     ).to.be.reverted;
   });
 
   it("complex scenario: create, link, merge, and remove users", async () => {
-    const { coinContract } = await deploy();
-    const gelato = coinContract.connect(gelatoAddr);
+    const { coinContract, accountManager } = await deploy();
+    const gelato = accountManager.connect(gelatoAddr);
 
     // Create three users
     await gelato.verifyFarcaster(FID_1, user1.address);
@@ -279,45 +279,45 @@ describe("UnifiedUserFlows", function () {
     await gelato.verifyFarcaster(FID_2, user3.address);
 
     // Verify initial state
-    expect(await coinContract.totalUnifiedUsersCount()).to.equal(3n);
+    expect(await accountManager.totalUnifiedUsersCount()).to.equal(3n);
 
     // Link additional wallet to user1
     const message = "I want to link this wallet to my GMCoin account";
     const additionalWallet = ethers.Wallet.createRandom().connect(ethers.provider);
     await owner.sendTransaction({ to: additionalWallet.address, value: ethers.parseEther("1") });
     const signature = await additionalWallet.signMessage(message);
-    await coinContract.connect(user1).linkAdditionalWallet(additionalWallet.address, signature);
+    await accountManager.connect(user1).linkAdditionalWallet(additionalWallet.address, signature);
 
     // Verify user1 now has 2 wallets
-    const user1Data = await coinContract.getUnifiedUserByWallet(user1.address);
-    const user1Wallets = await coinContract.getUnifiedUserWallets(user1Data.userId);
+    const user1Data = await accountManager.getUnifiedUserByWallet(user1.address);
+    const user1Wallets = await accountManager.getUnifiedUserWallets(user1Data.userId);
     expect(user1Wallets.length).to.equal(2);
     expect(user1Wallets).to.include.members([user1.address, additionalWallet.address]);
 
     // Merge user1 into user2
-    const user2Data = await coinContract.getUnifiedUserByWallet(user2.address);
-    await coinContract.connect(owner).mergeUsers(user1Data.userId, user2Data.userId);
+    const user2Data = await accountManager.getUnifiedUserByWallet(user2.address);
+    await accountManager.connect(owner).mergeUsers(user1Data.userId, user2Data.userId);
 
     // Verify merge results
-    expect(await coinContract.totalUnifiedUsersCount()).to.equal(2n);
+    expect(await accountManager.totalUnifiedUsersCount()).to.equal(2n);
 
     // All wallets from user1 should now point to user2
-    const mergedUser = await coinContract.getUnifiedUserByWallet(user1.address);
-    const mergedUser2 = await coinContract.getUnifiedUserByWallet(additionalWallet.address);
+    const mergedUser = await accountManager.getUnifiedUserByWallet(user1.address);
+    const mergedUser2 = await accountManager.getUnifiedUserByWallet(additionalWallet.address);
     expect(mergedUser.userId).to.equal(user2Data.userId);
     expect(mergedUser2.userId).to.equal(user2Data.userId);
 
     // user2 should now have combined data
-    const finalUser2 = await coinContract.getUnifiedUserById(user2Data.userId);
+    const finalUser2 = await accountManager.getUnifiedUserById(user2Data.userId);
     expect(finalUser2.farcasterFid).to.equal(BigInt(FID_1));
     expect(finalUser2.twitterId).to.equal(TWITTER_ALPHA);
 
     // Remove user3
-    await coinContract.connect(user3).removeMe();
-    expect(await coinContract.totalUnifiedUsersCount()).to.equal(1n);
+    await accountManager.connect(user3).removeMe();
+    expect(await accountManager.totalUnifiedUsersCount()).to.equal(1n);
 
     // Final state: only user2 remains with combined data from user1
-    const finalCount = await coinContract.totalUnifiedUsersCount();
+    const finalCount = await accountManager.totalUnifiedUsersCount();
     expect(finalCount).to.equal(1n);
   });
 
