@@ -3,19 +3,13 @@ import { ethers } from "hardhat";
 async function main() {
   console.log("🧪 Testing ALL major GMCoin functions are preserved...");
   
-  // Deploy libraries
-  const TwitterOracleLib = await ethers.deployContract("TwitterOracleLib");
+  // Deploy only libraries that GMCoin needs
   const MintingLib = await ethers.deployContract("MintingLib");
-  const FarcasterOracleLib = await ethers.deployContract("FarcasterOracleLib");
-  const AccountManagerLib = await ethers.deployContract("AccountManagerLib");
 
   // Deploy main contract
   const GMCoin = await ethers.getContractFactory("GMCoin", {
     libraries: {
-      "contracts/TwitterOracleLib.sol:TwitterOracleLib": await TwitterOracleLib.getAddress(),
       "contracts/MintingLib.sol:MintingLib": await MintingLib.getAddress(),
-      "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": await FarcasterOracleLib.getAddress(),
-      "contracts/AccountManagerLib.sol:AccountManagerLib": await AccountManagerLib.getAddress(),
     },
   });
 

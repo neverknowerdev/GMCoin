@@ -3,42 +3,21 @@ import { ethers } from "hardhat";
 async function main() {
   console.log("🧪 Testing GMCoin contract deployability...");
   
-  // Deploy libraries first
+  // Deploy only libraries that GMCoin needs
   console.log("📚 Deploying libraries...");
   
-  const TwitterOracleLib = await ethers.getContractFactory("TwitterOracleLib");
-  const twitterLib = await TwitterOracleLib.deploy();
-  await twitterLib.waitForDeployment();
-  const twitterLibAddress = await twitterLib.getAddress();
-  console.log("✅ TwitterOracleLib deployed to:", twitterLibAddress);
-
   const MintingLib = await ethers.getContractFactory("MintingLib");
   const mintingLib = await MintingLib.deploy();
   await mintingLib.waitForDeployment();
   const mintingLibAddress = await mintingLib.getAddress();
   console.log("✅ MintingLib deployed to:", mintingLibAddress);
 
-  const FarcasterOracleLib = await ethers.getContractFactory("FarcasterOracleLib");
-  const farcasterLib = await FarcasterOracleLib.deploy();
-  await farcasterLib.waitForDeployment();
-  const farcasterLibAddress = await farcasterLib.getAddress();
-  console.log("✅ FarcasterOracleLib deployed to:", farcasterLibAddress);
-
-  const AccountManagerLib = await ethers.getContractFactory("AccountManagerLib");
-  const accountLib = await AccountManagerLib.deploy();
-  await accountLib.waitForDeployment();
-  const accountLibAddress = await accountLib.getAddress();
-  console.log("✅ AccountManagerLib deployed to:", accountLibAddress);
-
   // Deploy main contract with library linking
   console.log("🚀 Deploying GMCoin with library linking...");
   
   const GMCoinFactory = await ethers.getContractFactory("GMCoin", {
     libraries: {
-      "contracts/TwitterOracleLib.sol:TwitterOracleLib": twitterLibAddress,
       "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
-      "contracts/FarcasterOracleLib.sol:FarcasterOracleLib": farcasterLibAddress,
-      "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
     },
   });
 

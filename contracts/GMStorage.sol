@@ -192,6 +192,7 @@ contract GMStorage {
   function farcasterUserExist(uint256 farcasterFid) public view returns (bool) {
     return mintingData.farcasterUserIndexByFID[farcasterFid] != 0;
   }
+
   function isActiveMintingProcess() public view returns (bool) {
     return mintingData.mintingInProgressForDay != 0;
   }
