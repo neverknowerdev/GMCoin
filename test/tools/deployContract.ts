@@ -133,7 +133,7 @@ export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number =
         
         // Set accountManager address in GMCoin
         const accountManagerAddress = await accountManager.getAddress();
-        // Note: GMCoin needs a setter for accountManager or it should be set during initialization
+        await (coinContract as any).setAccountManager(accountManagerAddress);
 
         return {
             coinContract,

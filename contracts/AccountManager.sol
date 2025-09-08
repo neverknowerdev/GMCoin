@@ -27,6 +27,8 @@ abstract contract AccountManager is Initializable, OwnableUpgradeable, UUPSUpgra
     __Ownable_init(_gmCoin);
     __UUPSUpgradeable_init();
     gmCoin = IGMCoin(_gmCoin);
+    // Wire gmCoin into library storage so lib calls can access GMCoin functions
+    accountStorage.gmCoinContract = gmCoin;
   }
 
   function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
@@ -39,6 +41,8 @@ abstract contract AccountManager is Initializable, OwnableUpgradeable, UUPSUpgra
   function setGmCoin(address _gmCoin) public {
     _requireOwner();
     gmCoin = IGMCoin(_gmCoin);
+    // Keep library storage in sync
+    accountStorage.gmCoinContract = gmCoin;
   }
 
   // Twitter events
@@ -106,6 +110,7 @@ abstract contract AccountManager is Initializable, OwnableUpgradeable, UUPSUpgra
   modifier onlyGelato() virtual {
     _;
   }
+
   // Access control - to be inherited from main contract
   function _requireOwner() internal view virtual;
 

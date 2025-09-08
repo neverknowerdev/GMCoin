@@ -76,7 +76,7 @@ describe("AccountManagement", function () {
     expect(wallets).to.include.members([wallet1.address, wallet2.address]);
   });
 
-  it("setPrimaryWallet onlyOwner", async () => {
+  it("setPrimaryWallet allowed for account owner", async () => {
     const { accountManager } = await deployAndEnable();
     const gelato = accountManager.connect(gelatoAddr);
 
@@ -87,15 +87,15 @@ describe("AccountManagement", function () {
     const sig = await signLinkMessage(wallet2);
     await accountManager.connect(wallet1).linkAdditionalWallet(wallet2.address, sig);
 
-    // non-owner cannot set primary
-    await expect(
-      accountManager.connect(wallet1).setPrimaryWallet(user.userId, wallet2.address)
-    ).to.be.reverted; // owner-gated at AccountManager
-
-    // owner can set primary
-    await accountManager.connect(owner).setPrimaryWallet(user.userId, wallet2.address);
-    const updated = await accountManager.getUnifiedUserById(user.userId);
+    // account owner can set primary
+    await accountManager.connect(wallet1).setPrimaryWallet(user.userId, wallet2.address);
+    let updated = await accountManager.getUnifiedUserById(user.userId);
     expect(updated.primaryWallet).to.equal(wallet2.address);
+
+    // unrelated contract owner should not be able to set if not linked
+    await expect(
+      accountManager.connect(owner).setPrimaryWallet(user.userId, wallet1.address)
+    ).to.be.reverted;
   });
 
   it("mergeUsers onlyOwner and moves wallets/social ids", async () => {

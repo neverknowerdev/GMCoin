@@ -116,6 +116,11 @@ contract GMCoin is
     super._update(from, to, value);
   }
 
+  // Configure AccountManager address used for unified user mutations
+  function setAccountManager(address _accountManager) external _onlyOwner {
+    accountManager = _accountManager;
+  }
+
   function _mintForUserByTwitterIndex(uint256 userIndex, uint256 amount) internal override(MintingOracle) {
     address walletAddr = mintingData.walletByTwitterID[mintingData.allTwitterUsers[userIndex]];
     require(walletAddr != address(0), "walletAddr shouldn't be zero!");
