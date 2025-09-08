@@ -56,25 +56,7 @@ describe("GM", function () {
         const TwitterCoinV2Factory: ContractFactory = await ethers.getContractFactory("GMCoinV2");
 
         // Deploy libraries and get factories with proper linking
-        const TwitterOracleLib = await ethers.getContractFactory("TwitterOracleLib");
-        const twitterLib = await TwitterOracleLib.deploy();
-        await twitterLib.waitForDeployment();
-        const twitterLibAddress = await twitterLib.getAddress();
-
-        const MintingLib = await ethers.getContractFactory("MintingLib");
-        const mintingLib = await MintingLib.deploy();
-        await mintingLib.waitForDeployment();
-        const mintingLibAddress = await mintingLib.getAddress();
-
-        const FarcasterOracleLib = await ethers.getContractFactory("FarcasterOracleLib");
-        const farcasterLib = await FarcasterOracleLib.deploy();
-        await farcasterLib.waitForDeployment();
-        const farcasterLibAddress = await farcasterLib.getAddress();
-
-        const AccountManagerLib = await ethers.getContractFactory("AccountManagerLib");
-        const accountLib = await AccountManagerLib.deploy();
-        await accountLib.waitForDeployment();
-        const accountLibAddress = await accountLib.getAddress();
+        // Skip legacy lib deployments; current flow links only MintingLib inside fixtures
 
         // Deploy new libraries
         const TwitterVerificationLib = await ethers.getContractFactory("TwitterVerificationLib", {
@@ -290,16 +272,17 @@ describe("GM", function () {
         } = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = coinContract.connect(gelatoAddr);
+        await accountManager.connect(owner).enableUnifiedUserSystem();
 
         const wallet1 = await createRandomWallet();
         const wallet2 = await createRandomWallet();
         const wallet3 = await createRandomWallet();
         const wallet4 = await createRandomWallet();
 
-        await gelatoContract.verifyTwitter("user1" as any, wallet1 as any);
-        await gelatoContract.verifyTwitter("user2" as any, wallet2 as any);
-        await gelatoContract.verifyTwitter("user3" as any, wallet3 as any);
-        await gelatoContract.verifyTwitter("user4" as any, wallet4 as any);
+        await accountManager.connect(gelatoAddr).verifyTwitterUnified("user1" as any, wallet1 as any);
+        await accountManager.connect(gelatoAddr).verifyTwitterUnified("user2" as any, wallet2 as any);
+        await accountManager.connect(gelatoAddr).verifyTwitterUnified("user3" as any, wallet3 as any);
+        await accountManager.connect(gelatoAddr).verifyTwitterUnified("user4" as any, wallet4 as any);
 
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal(["user1", "user2", "user3", "user4"]);
         await accountManager.connect(wallet4).removeMe();
@@ -316,8 +299,8 @@ describe("GM", function () {
         await expect(accountManager.connect(wallet3).removeMe()).to.be.reverted;
         await expect(accountManager.connect(wallet4).removeMe()).to.be.reverted;
 
-        await gelatoContract.verifyTwitter("user1" as any, wallet1 as any);
-        await gelatoContract.verifyTwitter("user2" as any, wallet2 as any);
+        await accountManager.connect(gelatoAddr).verifyTwitterUnified("user1" as any, wallet1 as any);
+        await accountManager.connect(gelatoAddr).verifyTwitterUnified("user2" as any, wallet2 as any);
 
         await expect(await gelatoContract.getTwitterUsers(0n, 10n)).to.deep.equal(["user1", "user2"]);
 

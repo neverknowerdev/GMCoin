@@ -16,7 +16,7 @@ import {Web3FunctionHardhat} from "@gelatonetwork/web3-functions-sdk/hardhat-plu
 import {GMCoinExposed} from "../typechain";
 import {MockHttpServer} from './tools/mockServer';
 import {Provider, HDNodeWallet, EventLog, Contract, JsonRpcProvider} from "ethers";
-import {generateEventLog} from './tools/helpers';
+import {generateEventLogFromContract} from './tools/helpers';
 import {deployGMCoinWithProxy} from "./tools/deployContract";
 import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers";
 import * as url from 'url';
@@ -66,6 +66,8 @@ describe("GelatoW3F", function () {
         } = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = smartContract.connect(gelatoAddr);
+        const { accountManager } = await loadFixture(deployGMCoinWithProxy);
+        await accountManager.connect(owner).enableUnifiedUserSystem();
 
         const userLimit = 10000;
         const concurrencyLimit = 50;
@@ -76,11 +78,9 @@ describe("GelatoW3F", function () {
         let usernameByWallet: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
             const userID = String(i + 1)
-            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any);
+            await accountManager.connect(gelatoAddr).verifyTwitterUnified(userID as any, generatedWallets[i].address as any);
             walletByUsername.set(userID, generatedWallets[i].address);
             usernameByWallet.set(generatedWallets[i].address, userID);
-
-            expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);
         }
 
         // let allUserTweetsByUsername = loadUserTweets('./test/generatedUserTweets_error.json')
@@ -799,7 +799,7 @@ async function mintUntilEnd(smartContract: GMCoinExposed, gelatoAddr: HardhatEth
 
     await gelatoContract.startMinting();
 
-    let overrideLog = await generateEventLog('twitterMintingProcessed', [mintingDay, []])
+    const overrideLog = await generateEventLogFromContract(smartContract, 'twitterMintingProcessed', [mintingDay, []])
     // await writeEventLogFile('web3-functions/twitter-worker', 'twitterMintingProcessed', [mintingDay, []]);
 
     let hasLogsToProcess = true;

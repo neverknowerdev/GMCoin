@@ -1,6 +1,6 @@
 ### Test run summary
 
-- **36 passing**, **35 failing**
+- **58 passing**, **18 failing**
 
 ### Failing tests grouped by file with details and suggested fixes
 
@@ -49,39 +49,34 @@ Failures (11–14) are the same root cause as above: missing `requestFarcasterVe
 
 #### test/TestGMCoin.ts
 
-- Failure (16): HH700 Artifact not found: `TwitterOracleLib`
-
-  - The test deploy path tries to deploy multiple libs (`TwitterOracleLib`, `FarcasterOracleLib`, etc.) that do not exist in `contracts/` anymore.
-  - Fix options:
-    - Update `test/TestGMCoin.ts` to use current deployment path (`test/tools/deployContract.ts`) that only deploys `MintingLib` and `AccountManagerLib` and upgrades to `GMCoinExposed`.
-    - Or re-add stub library contracts or remove library linking in this test. Recommended: adjust the test to align with `deployGMCoinWithProxy` and remove references to `TwitterOracleLib`, `FarcasterOracleLib`, `TwitterVerificationLib`, etc.
-
-- Failure (17): `gelatoContract.verifyTwitter is not a function`
-  - `verifyTwitter` no longer exists on `GMCoin`. Twitter verification is now unified via `AccountManager` unified user flows; however, many other tests still use `verifyTwitter`. You can implement a thin `verifyTwitter(string userID, address wallet)` on `GMCoin` (onlyGelato) that populates twitter mappings in `GMStorage` similar to Farcaster, to keep tests green.
+- Status: 2 failing
+- Causes:
+  - proxy redeployment success: references to legacy lib addresses; remove that code.
+  - removeMe: ensure setup links via `accountManager.verifyTwitterUnified` before reading twitter users; update expected lists accordingly.
 
 ---
 
 #### test/TestGelatoW3FXVerification.ts
 
-- Failures (18–21): ENOENT: artifacts for `TwitterOracle.sol/TwitterOracle.json` not found in `test/tools/helpers.ts`.
-  - The helper reads a legacy ABI artifact that no longer exists.
-  - Fix options:
-    - Change `generateEventLog` to use the contract’s own interface at runtime rather than reading an external ABI file. There is already a version in `test/TestFarcasterWorker.ts` using `createFarcasterEventLog` with `smartContract.interface`.
-    - Update `test/tools/helpers.ts` to accept a contract instance and generate logs via its `interface` (similar to `generateEventLogFromContract`). Then update tests to use it.
+- Resolved: all tests now pass (4 passing)
+- Changes made:
+  - Switched to `generateEventLogFromContract(accountManager, ...)` for log creation.
+  - Enabled unified system in tests and asserted via `accountManager.getUnifiedUserByWallet`.
+  - Removed legacy `GMCoin.getWalletByUserID` assertion usage.
 
 ---
 
 #### test/TestMinting.ts
 
-- Failures (22–25): `verifyTwitter` missing on `GMCoin` and subsequent functions.
-  - Fix: Add `verifyTwitter(string userID, address wallet)` on `GMCoin` as a gelato-only method that updates twitter user mappings and emits `TwitterVerificationResult(userID, wallet, true, '')`. This will also enable minting tests relying on twitter user lists.
+- Status: 4 failing
+- Cause: tests still use legacy `GMCoin.verifyTwitter` and possibly wrong tuple shapes. Fix by enabling unified system, using `accountManager.verifyTwitterUnified`, and matching `mintCoinsForTwitterUsers` ABI.
 
 ---
 
 #### test/TestTwitterWorker.ts
 
-- Failures (26–28): `verifyTwitter` missing on `GMCoin`.
-  - Fix: Same as above.
+- Status: 1 passing, 2 failing
+- Causes: app still calls `GMCoin.verifyTwitter` in setup and strictly expects `canExec=true`. Fix by using `accountManager.verifyTwitterUnified` and allowing `canExec=false` with message when getters are unavailable.
 
 ---
 

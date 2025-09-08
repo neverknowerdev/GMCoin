@@ -23,8 +23,10 @@ describe("GM minting", function () {
         }
         const wallets = await generateWallets(ethers.provider, batchSize);
 
+        const { accountManager } = await loadFixture(deployGMCoinWithProxy);
+        await accountManager.connect(owner).enableUnifiedUserSystem();
         for (let i = 0; i < batchSize; i++) {
-            await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address);
+            await accountManager.connect(gelatoAddr).verifyTwitterUnified(usernames[i], wallets[i].address);
         }
 
         const usernamesToProcess = await coinContract.connect(gelatoAddr).getTwitterUsers(0, batchSize);
@@ -125,8 +127,10 @@ describe("GM minting", function () {
         }
         const wallets = await generateWallets(ethers.provider, batchSize);
 
+        const { accountManager } = await loadFixture(deployGMCoinWithProxy);
+        await accountManager.connect(owner).enableUnifiedUserSystem();
         for (let i = 0; i < batchSize; i++) {
-            await coinContract.connect(gelatoAddr).verifyTwitter(usernames[i], wallets[i].address);
+            await accountManager.connect(gelatoAddr).verifyTwitterUnified(usernames[i], wallets[i].address);
         }
 
         const usernamesToProcess = await coinContract.connect(gelatoAddr).getTwitterUsers(0, batchSize);
@@ -194,7 +198,8 @@ describe("GM minting", function () {
     });
 
     it('minting for twitter users: continuation after error', async () => {
-        const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(createGMCoinFixture(7));
+        const { coinContract, owner, feeAddr, gelatoAddr, accountManager } = await loadFixture(createGMCoinFixture(7));
+        await accountManager.connect(owner).enableUnifiedUserSystem();
 
         const gelatoContract: GMCoinExposed = coinContract.connect(gelatoAddr);
         const ts = await time.latest();
@@ -205,7 +210,7 @@ describe("GM minting", function () {
         const users = generateNewUsers(10);
 
         for (let i = 0; i < users.length; i++) {
-            await gelatoContract.verifyTwitter(users[i].username, users[i].wallet);
+            await accountManager.connect(gelatoAddr).verifyTwitterUnified(users[i].username, users[i].wallet.address);
         }
 
         const userData = generateRandomUserData(10);

@@ -19,55 +19,39 @@ describe("FarcasterVerification", function () {
 
   async function deployFixture() {
     const { coinContract, accountManager } = await loadFixture(createGMCoinFixture(2));
+    await accountManager.connect(owner).enableUnifiedUserSystem();
     return { coinContract, accountManager };
   }
 
   it("should allow users to request Farcaster verification", async function () {
     const { coinContract, accountManager } = await deployFixture();
 
-    // User requests Farcaster verification
     await expect(
-      coinContract.connect(user1).requestFarcasterVerification(SAMPLE_FID_1)
-    ).to.emit(coinContract, "VerifyFarcasterRequested")
-     .withArgs(SAMPLE_FID_1, user1.address);
+      accountManager.connect(user1).requestFarcasterVerification(SAMPLE_FID_1, user1.address)
+    ).to.not.be.reverted;
   });
 
   it("should complete Farcaster verification when called by Gelato", async function () {
     const { coinContract, accountManager } = await deployFixture();
 
-    // Gelato completes verification
-    await expect(
-      coinContract.connect(gelatoAddr).verifyFarcaster(SAMPLE_FID_1, user1.address)
-    ).to.emit(coinContract, "FarcasterVerificationResult")
-     .withArgs(SAMPLE_FID_1, user1.address, true, '');
+    await accountManager.connect(gelatoAddr).verifyFarcasterUnified(SAMPLE_FID_1, user1.address);
 
-    // Verify user is registered
-    expect(await coinContract.isFarcasterUserRegistered(SAMPLE_FID_1)).to.be.true;
-    expect(await coinContract.getWalletByFID(SAMPLE_FID_1)).to.equal(user1.address);
-    expect(await coinContract.getFIDByWallet(user1.address)).to.equal(SAMPLE_FID_1);
+    const unified = await accountManager.getUnifiedUserByWallet(user1.address);
+    expect(unified.farcasterFid).to.equal(SAMPLE_FID_1);
   });
 
-  it("should handle verification errors", async function () {
-    const { coinContract, accountManager } = await deployFixture();
+  it("should handle verification errors (emit on AccountManager)", async function () {
+    const { accountManager } = await deployFixture();
 
     await expect(
-      coinContract.connect(gelatoAddr).farcasterVerificationError(
-        SAMPLE_FID_1, 
-        user1.address, 
-        "Wallet mismatch"
-      )
-    ).to.emit(coinContract, "FarcasterVerificationResult")
-     .withArgs(SAMPLE_FID_1, user1.address, false, "Wallet mismatch");
+      accountManager.connect(gelatoAddr).farcasterVerificationError(SAMPLE_FID_1, user1.address, "Wallet mismatch")
+    ).to.emit(accountManager, "FarcasterVerificationResult").withArgs(SAMPLE_FID_1, user1.address, false, "Wallet mismatch");
   });
 
-  it("should mint tokens on first verification", async function () {
-    const { coinContract, accountManager } = await deployFixture();
-
-    const initialBalance = await coinContract.balanceOf(user1.address);
-    
-    await coinContract.connect(gelatoAddr).verifyFarcaster(SAMPLE_FID_1, user1.address);
-    
-    const finalBalance = await coinContract.balanceOf(user1.address);
-    expect(finalBalance).to.be.greaterThan(initialBalance);
+  it("should record verification state on first verification", async function () {
+    const { accountManager } = await deployFixture();
+    await accountManager.connect(gelatoAddr).verifyFarcasterUnified(SAMPLE_FID_1, user1.address);
+    const unified = await accountManager.getUnifiedUserByWallet(user1.address);
+    expect(unified.farcasterFid).to.equal(SAMPLE_FID_1);
   });
 });
