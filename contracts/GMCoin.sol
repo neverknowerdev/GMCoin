@@ -146,11 +146,18 @@ contract GMCoin is
   }
 
   function removeTwitterUser(string memory twitterId) external onlyAccountManager {
-    if (mintingData.userIndexByTwitterId[twitterId] > 0) {
-      mintingData.allTwitterUsers[mintingData.userIndexByTwitterId[twitterId]] = mintingData.allTwitterUsers[
-        mintingData.allTwitterUsers.length - 1
-      ];
+    uint256 index = mintingData.userIndexByTwitterId[twitterId];
+    // Determine existence even when index == 0
+    if (
+      index < mintingData.allTwitterUsers.length &&
+      keccak256(bytes(mintingData.allTwitterUsers[index])) == keccak256(bytes(twitterId))
+    ) {
+      // Swap-with-last removal
+      string memory lastId = mintingData.allTwitterUsers[mintingData.allTwitterUsers.length - 1];
+      mintingData.allTwitterUsers[index] = lastId;
+      mintingData.userIndexByTwitterId[lastId] = index;
       mintingData.allTwitterUsers.pop();
+
       delete mintingData.userIndexByTwitterId[twitterId];
       delete mintingData.walletByTwitterID[twitterId];
     }
@@ -164,11 +171,13 @@ contract GMCoin is
   }
 
   function removeFarcasterUser(uint256 farcasterFid) external onlyAccountManager {
-    if (mintingData.farcasterUserIndexByFID[farcasterFid] > 0) {
-      mintingData.allFarcasterUsers[mintingData.farcasterUserIndexByFID[farcasterFid]] = mintingData.allFarcasterUsers[
-        mintingData.allFarcasterUsers.length - 1
-      ];
+    uint256 index = mintingData.farcasterUserIndexByFID[farcasterFid];
+    if (index < mintingData.allFarcasterUsers.length && mintingData.allFarcasterUsers[index] == farcasterFid) {
+      uint256 lastFid = mintingData.allFarcasterUsers[mintingData.allFarcasterUsers.length - 1];
+      mintingData.allFarcasterUsers[index] = lastFid;
+      mintingData.farcasterUserIndexByFID[lastFid] = index;
       mintingData.allFarcasterUsers.pop();
+
       delete mintingData.farcasterUserIndexByFID[farcasterFid];
       delete mintingData.walletByFarcasterFID[farcasterFid];
     }

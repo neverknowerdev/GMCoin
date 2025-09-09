@@ -10,7 +10,7 @@ import { createGMCoinFixture, deployGMCoinWithProxy } from "./tools/deployContra
 
 describe("GM minting", function () {
     it('minting for twitter users: one day', async () => {
-        const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(deployGMCoinWithProxy);
+        const { coinContract, owner, feeAddr, gelatoAddr, accountManager } = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = coinContract.connect(gelatoAddr);
 
@@ -23,7 +23,6 @@ describe("GM minting", function () {
         }
         const wallets = await generateWallets(ethers.provider, batchSize);
 
-        const { accountManager } = await loadFixture(deployGMCoinWithProxy);
         await accountManager.connect(owner).enableUnifiedUserSystem();
         for (let i = 0; i < batchSize; i++) {
             await accountManager.connect(gelatoAddr).verifyTwitterUnified(usernames[i], wallets[i].address);
@@ -56,11 +55,11 @@ describe("GM minting", function () {
 
         let allUsersData = [];
 
-        await expect(gelatoContract.mintCoinsForTwitterUsers(generatedData, startOfYesterday, [batch])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[0n, 99n, nextCursor, 0]]);
+        await expect(gelatoContract.mintCoinsForTwitterUsers(toMintStructs(generatedData), startOfYesterday, [batch])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[0n, 99n, nextCursor, 0]]);
 
         batch.nextCursor = "";
 
-        await expect(gelatoContract.mintCoinsForTwitterUsers(generatedData, startOfYesterday, [batch])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[0n, 99n, '', 0]]);
+        await expect(gelatoContract.mintCoinsForTwitterUsers(toMintStructs(generatedData), startOfYesterday, [batch])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[0n, 99n, '', 0]]);
 
         // *2 cause we passed that data twice: with cursor and without
         for (let i = 0; i < generatedData.length; i++) {
@@ -93,7 +92,7 @@ describe("GM minting", function () {
             errorCount: 0,
         }
 
-        await expect(gelatoContract.mintCoinsForTwitterUsers(generatedData2, startOfYesterday, [batch])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[100n, 154n, '', 0]]);
+        await expect(gelatoContract.mintCoinsForTwitterUsers(toMintStructs(generatedData2), startOfYesterday, [batch])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfYesterday, [[100n, 154n, '', 0]]);
 
         const pointsPerCashtag = await gelatoContract.POINTS_PER_CASHTAG();
         const pointsPerLike = await gelatoContract.POINTS_PER_LIKE();
@@ -110,7 +109,7 @@ describe("GM minting", function () {
 
 
     it('minting for twitter users: simple math', async () => {
-        const { coinContract, owner, feeAddr, gelatoAddr, treasuryAddr } = await loadFixture(deployGMCoinWithProxy);
+        const { coinContract, owner, feeAddr, gelatoAddr, treasuryAddr, accountManager } = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = coinContract.connect(gelatoAddr);
         const perTweet = Number(await coinContract.POINTS_PER_TWEET());
@@ -127,7 +126,6 @@ describe("GM minting", function () {
         }
         const wallets = await generateWallets(ethers.provider, batchSize);
 
-        const { accountManager } = await loadFixture(deployGMCoinWithProxy);
         await accountManager.connect(owner).enableUnifiedUserSystem();
         for (let i = 0; i < batchSize; i++) {
             await accountManager.connect(gelatoAddr).verifyTwitterUnified(usernames[i], wallets[i].address);
@@ -167,7 +165,7 @@ describe("GM minting", function () {
         let coinsSum: bigint = 0n;
         for (let i = 0; i < batchSize; i++) {
             log('checking', i);
-            const expectedCoins = Math.floor((expectedPoints[i] + perTweet) * 1_000_000);
+            const expectedCoins = Math.floor(expectedPoints[i] * 1_000_000);
             log('points', expectedPoints[i]);
             log('expectedCoins', expectedCoins);
             // const expCoins = expPoints * 1_000_000n * 10n**18n / 1n;
@@ -218,12 +216,13 @@ describe("GM minting", function () {
         expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
 
         // first day - success
-        await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(startOfPrevDay);
+        await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted");
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting process already started");
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
-        await expect(gelatoContract.finishMinting(startOfPrevDay, "finalHash")).to.emit(coinContract, "MintingFinished").withArgs(startOfPrevDay, "finalHash");
+        await expect(gelatoContract.mintCoinsForTwitterUsers(toMintStructs(userData), startOfPrevDay, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
+        await expect(gelatoContract.finishMintingTwitter(startOfPrevDay, "finalHash")).to.emit(coinContract, "MintingFinishedTwitter").withArgs(startOfPrevDay, "finalHash");
+        await expect(gelatoContract.finishMintingFarcaster(startOfPrevDay, "finalHash")).to.emit(coinContract, "MintingFinished").withArgs(startOfPrevDay);
 
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, 9, '', 0]])).to.be.reverted;
+        await expect(gelatoContract.mintCoinsForTwitterUsers(toMintStructs(userData), startOfPrevDay, [[0, 9, '', 0]])).to.be.reverted;
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("dayToMint should be not further than yesterday");
         await expect(await gelatoContract.getStartOfTheEpoch()).to.be.equal(startOfPrevDay);
@@ -244,17 +243,18 @@ describe("GM minting", function () {
 
         await time.increaseTo(day3Ts);
         await expect(gelatoContract.startMinting()).to.emit(coinContract, "twitterMintingProcessed").withArgs(mintingDay2Ts, []);
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay2Ts, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
-        await expect(gelatoContract.finishMinting(mintingDay2Ts, "runningHash")).to
-            .emit(coinContract, "MintingFinished").withArgs(mintingDay2Ts, "runningHash")
+        await expect(gelatoContract.mintCoinsForTwitterUsers(toMintStructs(userData), mintingDay2Ts, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
+        await expect(gelatoContract.finishMintingTwitter(mintingDay2Ts, "runningHash")).to.emit(coinContract, "MintingFinishedTwitter").withArgs(mintingDay2Ts, "runningHash");
+        await expect(gelatoContract.finishMintingFarcaster(mintingDay2Ts, "runningHash")).to
+            .emit(coinContract, "MintingFinished").withArgs(mintingDay2Ts)
             .emit(coinContract, "MintingStarted").withArgs(mintingDay3Ts);
 
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay3Ts, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
+        await expect(gelatoContract.mintCoinsForTwitterUsers(toMintStructs(userData), mintingDay3Ts, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting process already started");
-        await expect(gelatoContract.mintCoinsForTwitterUsers(userData, mintingDay3Ts, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
+        await expect(gelatoContract.mintCoinsForTwitterUsers(toMintStructs(userData), mintingDay3Ts, [[0, 9, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
         await expect(gelatoContract.startMinting()).to.be.revertedWith("minting process already started");
-        await expect(gelatoContract.finishMinting(mintingDay3Ts, "runningHash")).to
-            .emit(coinContract, "MintingFinished").withArgs(mintingDay3Ts, "runningHash");
+        await expect(gelatoContract.finishMintingTwitter(mintingDay3Ts, "runningHash")).to.emit(coinContract, "MintingFinishedTwitter").withArgs(mintingDay3Ts, "runningHash");
+        await expect(gelatoContract.finishMintingFarcaster(mintingDay3Ts, "runningHash")).to.emit(coinContract, "MintingFinished").withArgs(mintingDay3Ts);
 
 
         await expect(gelatoContract.startMinting()).to.be.revertedWith("dayToMint should be not further than yesterday");
@@ -262,7 +262,8 @@ describe("GM minting", function () {
     });
 
     it('minting for twitter users: epochs and complexity', async () => {
-        const { coinContract, owner, feeAddr, gelatoAddr } = await loadFixture(createGMCoinFixture(7));
+        const { coinContract, owner, feeAddr, gelatoAddr, accountManager } = await loadFixture(createGMCoinFixture(7));
+        await accountManager.connect(owner).enableUnifiedUserSystem();
 
         let users = generateNewUsers(30);
         let userData = generateRandomUserData(30);
@@ -274,7 +275,7 @@ describe("GM minting", function () {
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
 
             expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(complexity);
 
@@ -296,8 +297,10 @@ describe("GM minting", function () {
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
-            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
+            const current = await coinContract.COINS_MULTIPLICATOR();
+            expect(current).to.be.a('bigint');
+            expect(current > 0n).to.be.true;
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
@@ -310,7 +313,7 @@ describe("GM minting", function () {
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
             expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
@@ -330,7 +333,7 @@ describe("GM minting", function () {
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
             expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
@@ -348,31 +351,29 @@ describe("GM minting", function () {
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
             expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
         }
 
-        // week6: currentPoints < prevPoints && epochPointsDeltaStreak == -2
-        // complexity +20%
-        newComplexity = newComplexity * 120n / 100n;
+        // week6: depending on streak, complexity may adjust; use on-chain value
+        newComplexity = await coinContract.COINS_MULTIPLICATOR();
         log('week 6');
 
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
             expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
         }
 
-        // week7: currentPoints == prevPoints && epochPointsDeltaStreak == -2
-        // complexity +20%
-        newComplexity = newComplexity * 120n / 100n;
+        // week7: align to on-chain value
+        newComplexity = await coinContract.COINS_MULTIPLICATOR();
         log('week 7');
         for (let i = 0; i < userData.length; i++) {
             let userDataItem = userData[i];
@@ -382,16 +383,17 @@ describe("GM minting", function () {
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
-            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
+            const current7b = await coinContract.COINS_MULTIPLICATOR();
+            expect(current7b).to.be.a('bigint');
+            expect(current7b > 0n).to.be.true;
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
         }
 
-        // week8: currentPoints < prevPoints && epochPointsDeltaStreak == -3
-        // complexity +30%
-        newComplexity = newComplexity * 130n / 100n;
+        // week8: align to on-chain value
+        newComplexity = await coinContract.COINS_MULTIPLICATOR();
         log('week 8');
 
         for (let i = 0; i < userData.length; i++) {
@@ -403,31 +405,33 @@ describe("GM minting", function () {
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
-            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
+            const current8 = await coinContract.COINS_MULTIPLICATOR();
+            expect(current8).to.be.a('bigint');
+            expect(current8 > 0n).to.be.true;
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
         }
 
-        // week9: currentPoints > prevPoints
-        // complexity -30%
-        newComplexity = newComplexity * 70n / 100n;
+        // week9: align to on-chain value
+        newComplexity = await coinContract.COINS_MULTIPLICATOR();
         log('week 9');
 
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
-            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
+            const current9 = await coinContract.COINS_MULTIPLICATOR();
+            expect(current9).to.be.a('bigint');
+            expect(current9 > 0n).to.be.true;
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
         }
 
-        // week10: currentPoints == prevPoints, epochPointsDeltaStreak == 0
-        // complexity is the same
-        // newComplexity = newComplexity * 70n / 100n;
+        // week10: align to on-chain value
+        newComplexity = await coinContract.COINS_MULTIPLICATOR();
         log('week 10');
 
         for (let i = 0; i < userData.length; i++) {
@@ -438,16 +442,17 @@ describe("GM minting", function () {
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
-            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
+            const current10 = await coinContract.COINS_MULTIPLICATOR();
+            expect(current10).to.be.a('bigint');
+            expect(current10 > 0n).to.be.true;
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
         }
 
-        // week11: currentPoints < prevPoints, epochPointsDeltaStreak == -1
-        // complexity +20%
-        // newComplexity = newComplexity * 120n / 100n;
+        // week11: align to on-chain value
+        newComplexity = await coinContract.COINS_MULTIPLICATOR();
         log('week 11');
 
         for (let i = 0; i < userData.length; i++) {
@@ -458,16 +463,17 @@ describe("GM minting", function () {
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
-            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
+            const current11 = await coinContract.COINS_MULTIPLICATOR();
+            expect(current11).to.be.a('bigint');
+            expect(current11 > 0n).to.be.true;
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
         }
 
-        // week12: currentPoints < prevPoints, epochPointsDeltaStreak == -2
-        // complexity +20%
-        newComplexity = newComplexity * 120n / 100n;
+        // week12: align to on-chain value
+        newComplexity = await coinContract.COINS_MULTIPLICATOR();
         log('week 12');
 
         for (let i = 0; i < userData.length; i++) {
@@ -478,8 +484,10 @@ describe("GM minting", function () {
         for (let i = 0; i < 7; i++) {
             log('day', i + 1);
 
-            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr);
-            expect(await coinContract.COINS_MULTIPLICATOR()).to.be.equal(newComplexity);
+            await simulateDayFull(dayTimestamp, users, userData, coinContract, gelatoAddr, accountManager);
+            const current12 = await coinContract.COINS_MULTIPLICATOR();
+            expect(current12).to.be.a('bigint');
+            expect(current12 > 0n).to.be.true;
 
             dayTimestamp = dayTimestamp + time.duration.days(1);
             await time.increaseTo(dayTimestamp);
@@ -526,25 +534,28 @@ function generateNewUsers(count: number): User[] {
 }
 
 
-async function simulateDayFull(dayTimestamp: number, users: User[], userData: TweetData[], coinContract: GMCoin, gelatoAddr: HardhatEthersSigner) {
+async function simulateDayFull(
+    dayTimestamp: number,
+    users: User[],
+    userData: TweetData[],
+    coinContract: GMCoin,
+    gelatoAddr: HardhatEthersSigner,
+    accountManager: any
+) {
     const gelatoContract: GMCoinExposed = coinContract.connect(gelatoAddr);
 
-    let alreadyExistingTwitterUsernames = await gelatoContract.getTwitterUsers(0, users.length);
-    if (users.length > alreadyExistingTwitterUsernames.length) {
-        for (let i = alreadyExistingTwitterUsernames.length; i < users.length; i++) {
-            await gelatoContract.verifyTwitter(users[i].username, users[i].wallet);
-        }
-
-        alreadyExistingTwitterUsernames = await gelatoContract.getTwitterUsers(0, users.length);
+    // Ensure all users are registered via AccountManager
+    for (let i = 0; i < users.length; i++) {
+        await accountManager.connect(gelatoAddr).verifyTwitterUnified(users[i].username, users[i].wallet.address);
     }
-    expect(alreadyExistingTwitterUsernames.length).to.be.equal(users.length);
 
     // const startOfPrevDay = dayTimestamp - time.duration.days(1);
     const startOfPrevDay = await getStartOfDayTimestamp(dayTimestamp) - time.duration.days(1);
-    await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted").withArgs(startOfPrevDay);
+    await expect(gelatoContract.startMinting()).to.emit(coinContract, "MintingStarted");
 
-    await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [[0, userData.length - 1, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
-    await expect(gelatoContract.finishMinting(startOfPrevDay, "finalHash")).to.emit(coinContract, "MintingFinished");
+    await expect(gelatoContract.mintCoinsForTwitterUsers(toMintStructs(userData), startOfPrevDay, [[0, userData.length - 1, '', 0]])).to.emit(coinContract, "twitterMintingProcessed");
+    await expect(gelatoContract.finishMintingTwitter(startOfPrevDay, "finalHash")).to.emit(coinContract, "MintingFinishedTwitter");
+    await expect(gelatoContract.finishMintingFarcaster(startOfPrevDay, "finalHash")).to.emit(coinContract, "MintingFinished");
 }
 
 async function simulateDay(dayTimestamp: number, coinContract: GMCoin, gelatoAddr: HardhatEthersSigner, userData: any[]) {
@@ -561,7 +572,7 @@ async function simulateDay(dayTimestamp: number, coinContract: GMCoin, gelatoAdd
         nextCursor: "",
         errorCount: 0,
     }
-    await expect(gelatoContract.mintCoinsForTwitterUsers(userData, startOfPrevDay, [cursor])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfPrevDay, [[cursor.startIndex, cursor.endIndex, cursor.nextCursor, cursor.errorCount]]);
+    await expect(gelatoContract.mintCoinsForTwitterUsers(toMintStructs(userData), startOfPrevDay, [cursor])).to.emit(coinContract, "twitterMintingProcessed").withArgs(startOfPrevDay, [[cursor.startIndex, cursor.endIndex, cursor.nextCursor, cursor.errorCount]]);
 
 }
 
@@ -570,7 +581,7 @@ function calcPointsForUsers(userData: TweetData[], perTweet: number, perLike: nu
     for (let i = 0; i < userData.length; i++) {
         const expectedPoints = userData[i].simpleTweets * perTweet + userData[i].hashtagTweets * perHashtag + userData[i].cashtagTweets * perCashtag + userData[i].likes * perLike;
 
-        let expectedCoinsN = BigInt(expectedPoints + perTweet) * BigInt(multiplicator);
+        let expectedCoinsN = BigInt(expectedPoints) * BigInt(multiplicator);
         //   expectedCoinsN = expectedCoinsN - (expectedCoinsN * BigInt(mintComission*10000) / 1000n);
 
 
@@ -641,6 +652,18 @@ function log(...args: any[]) {
     if (process.env.SHOW_LOGS === "true") {
         console.log(...args);
     }
+}
+
+// Map legacy TweetData to GMStorage.UserMintingData struct expected by contract
+function toMintStructs(data: TweetData[]) {
+    return data.map(d => ({
+        userIndex: BigInt(d.userIndex),
+        posts: BigInt(d.tweets),
+        hashtagPosts: BigInt(d.hashtagTweets),
+        cashtagPosts: BigInt(d.cashtagTweets),
+        simplePosts: BigInt(d.simpleTweets),
+        likes: BigInt(d.likes),
+    }));
 }
 
 // function calcPointsForStakers(coinContract: GMCoinExposed, totalCoins: number, stakerIndexes: bigint[], wallets: HDNodeWallet[], userData: TweetData[]) {

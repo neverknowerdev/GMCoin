@@ -195,8 +195,8 @@ library AccountManagerLib {
     user.primaryWallet = primaryWallet;
     user.isHumanVerified = false;
     user.createdAt = uint32(block.timestamp);
-    user.twitterId = twitterId;
-    user.farcasterFid = farcasterFid;
+    // Do not set social IDs here; let linkSocialAccountToUser handle
+    // assigning twitterId/farcasterFid and syncing GMCoin state.
 
     accountStorage.allUnifiedUsers.push(userId);
     accountStorage.unifiedUserIndexById[userId] = accountStorage.allUnifiedUsers.length - 1;
