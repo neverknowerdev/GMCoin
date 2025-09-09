@@ -37,22 +37,22 @@ describe("UnifiedUserEdgeCases", function () {
   it("verifyFarcasterUnified onlyGelato", async () => {
     const { coinContract, accountManager } = await deploy();
     await expect(
-      accountManager.connect(owner).verifyFarcasterUnified(FID_1, wallet1.address)
-    ).to.be.revertedWithCustomError(accountManager, "OnlyGelato");
+      accountManager.connect(wallet1).verifyFarcasterUnified(FID_1, wallet1.address)
+    ).to.be.revertedWith("Only owner or gelato");
   });
 
   it("verifyBothFarcasterAndTwitter onlyGelato", async () => {
     const { coinContract, accountManager } = await deploy();
     await expect(
-      accountManager.connect(owner).verifyBothFarcasterAndTwitter(FID_1, wallet1.address, TWITTER_ALPHA)
-    ).to.be.revertedWithCustomError(accountManager, "OnlyGelato");
+      accountManager.connect(wallet1).verifyBothFarcasterAndTwitter(FID_1, wallet1.address, TWITTER_ALPHA)
+    ).to.be.revertedWith("Only owner or gelato");
   });
 
   it("verifyFarcasterAndMergeWithTwitter onlyGelato", async () => {
     const { coinContract, accountManager } = await deploy();
     await expect(
-      accountManager.connect(owner).verifyFarcasterAndMergeWithTwitter(FID_1, wallet1.address, TWITTER_ALPHA)
-    ).to.be.revertedWithCustomError(accountManager, "OnlyGelato");
+      accountManager.connect(wallet1).verifyFarcasterAndMergeWithTwitter(FID_1, wallet1.address, TWITTER_ALPHA)
+    ).to.be.revertedWith("Only owner or gelato");
   });
 
   it("setPrimaryWallet reverts if new wallet not linked", async () => {

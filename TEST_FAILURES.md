@@ -21,6 +21,7 @@
   - Refactored tests to use `AccountManager` APIs (request via `requestFarcasterVerification(fid, wallet)`, verify via `verifyFarcasterUnified(fid, wallet)` using `gelatoAddr`).
   - Replaced non-existent `GMCoin` getters with assertions using `accountManager.getUnifiedUserByWallet(wallet).farcasterFid` and `gmCoin.farcasterUserExist(fid)` where applicable.
   - Removed revert expectations that don’t match current design; asserted state is unchanged instead.
+  - Updated duplicate FID request case to expect `FarcasterAccountAlreadyLinked` custom error.
 
 ---
 

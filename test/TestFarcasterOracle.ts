@@ -58,10 +58,10 @@ describe("FarcasterOracle", function () {
             await accountManager.connect(user1).requestFarcasterVerification(SAMPLE_FID_1, user1.address);
             await accountManager.connect(gelatoAddr).verifyFarcasterUnified(SAMPLE_FID_1, user1.address);
             
-            // Second verification with same FID - keep state unchanged
-            await accountManager.connect(user2).requestFarcasterVerification(SAMPLE_FID_1, user2.address);
-            const unified = await accountManager.getUnifiedUserByWallet(user1.address);
-            expect(unified.farcasterFid).to.equal(SAMPLE_FID_1);
+            // Second verification with same FID should revert as already linked
+            await expect(
+                accountManager.connect(user2).requestFarcasterVerification(SAMPLE_FID_1, user2.address)
+            ).to.be.revertedWithCustomError(accountManager, 'FarcasterAccountAlreadyLinked');
         });
 
         it("should reject requesting verification for wallet already linked to different FID", async function () {
