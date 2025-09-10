@@ -93,22 +93,19 @@ library AccountManagerLib {
     }
 
     if (fromUser.farcasterFid != 0 && (toUser.farcasterFid == 0 || overrideFarcasterFid)) {
-      // Remove mapping for fromUser's farcaster FID if it exists anywhere
-      if (accountStorage.gmCoinContract.farcasterUserExist(fromUser.farcasterFid)) {
-        _removeFarcasterIdFromUser(accountStorage, fromUserId, fromUser.farcasterFid);
-      }
+      uint256 fidToMove = fromUser.farcasterFid;
+      // Always remove mapping for fromUser's farcaster FID from unified mappings and GMCoin
+      _removeFarcasterIdFromUser(accountStorage, fromUserId, fidToMove);
 
-      // If target has a farcaster already and we're overriding, clear it
+      // If target has a farcaster already and we're overriding, clear it as well
       if (toUser.farcasterFid != 0 && overrideFarcasterFid) {
         _removeFarcasterIdFromUser(accountStorage, toUserId, toUser.farcasterFid);
       }
 
       // Now safely link fromUser's farcaster to target
-      if (!accountStorage.gmCoinContract.farcasterUserExist(fromUser.farcasterFid)) {
-        linkSocialAccountToUser(accountStorage, toUserId, fromUser.primaryWallet, '', fromUser.farcasterFid);
-      }
+      linkSocialAccountToUser(accountStorage, toUserId, fromUser.primaryWallet, '', fidToMove);
 
-      toUser.farcasterFid = fromUser.farcasterFid;
+      toUser.farcasterFid = fidToMove;
       toUser.farcasterWallet = fromUser.farcasterWallet;
     }
 

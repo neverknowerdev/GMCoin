@@ -194,8 +194,8 @@ describe("UnifiedUserFlows", function () {
 
     // Non-owner tries to merge
     await expect(
-      coinContract.connect(user1).mergeUsers(user1Data.userId, user2Data.userId)
-    ).to.be.reverted;
+      (accountManager as any).connect(user1).mergeUsers(user1Data.userId, user2Data.userId)
+    ).to.be.revertedWith("Ownable: caller is not the owner");
   });
 
   it("linkAdditionalWallet fails with invalid signature", async () => {
