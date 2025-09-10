@@ -81,9 +81,9 @@ export const ContractABI = [
     {
         "inputs": [
             {
-                "internalType": "uint64",
+                "internalType": "uint16",
                 "name": "start",
-                "type": "uint64"
+                "type": "uint16"
             },
             {
                 "internalType": "uint16",
@@ -196,7 +196,7 @@ export const ContractABI = [
                 "type": "string"
             }
         ],
-        "name": "finishMinting",
+        "name": "finishMintingTwitter",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"

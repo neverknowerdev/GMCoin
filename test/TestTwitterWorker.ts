@@ -67,7 +67,7 @@ describe("GelatoW3F", function () {
 
         const gelatoContract = smartContract.connect(gelatoAddr);
         const { accountManager } = await loadFixture(deployGMCoinWithProxy);
-        await accountManager.connect(owner).enableUnifiedUserSystem();
+        await (accountManager as any).connect(owner).enableUnifiedUserSystem();
 
         const userLimit = 10000;
         const concurrencyLimit = 50;
@@ -78,7 +78,7 @@ describe("GelatoW3F", function () {
         let usernameByWallet: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
             const userID = String(i + 1)
-            await accountManager.connect(gelatoAddr).verifyTwitterUnified(userID as any, generatedWallets[i].address as any);
+            await (accountManager as any).connect(gelatoAddr).verifyTwitterUnified(userID as any, generatedWallets[i].address as any);
             walletByUsername.set(userID, generatedWallets[i].address);
             usernameByWallet.set(generatedWallets[i].address, userID);
         }
@@ -296,10 +296,13 @@ describe("GelatoW3F", function () {
             feeAddr,
             gelatoAddr,
             treasuryAddr,
-            coinsMultiplicator
+            coinsMultiplicator,
+            accountManager
         } = await loadFixture(deployGMCoinWithProxy);
 
         const gelatoContract = smartContract.connect(gelatoAddr);
+        const gelatoAccountManager: any = (accountManager as any).connect(gelatoAddr);
+        await (accountManager as any).connect(owner).enableUnifiedUserSystem();
 
         const userLimit = 100;
         const concurrencyLimit = 5;
@@ -309,10 +312,11 @@ describe("GelatoW3F", function () {
         let walletByUsername: Map<string, string> = new Map();
         for (let i = 0; i < userLimit; i++) {
             const userID = String(i + 1)
-            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any);
+            await gelatoAccountManager.verifyTwitterUnified(userID as any, generatedWallets[i].address as any);
             walletByUsername.set(userID, generatedWallets[i].address);
 
-            expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);
+            const unified = await (accountManager as any).getUnifiedUserByWallet(generatedWallets[i].address);
+            expect(unified.twitterId).to.equal(userID);
         }
 
         // let allUserTweetsByUsername = loadUserTweets('./test/generatedUserTweets_err.json')
@@ -465,6 +469,10 @@ describe("GelatoW3F", function () {
         dotenv.config({
             path: './test/.env'
         });
+        if (!process.env.SERVER_API) {
+            this.skip();
+            return;
+        }
 
         const testnetCcontractAbi = [
             "event MintingFinished_TweetsUploadedToIPFS(uint32 indexed mintingDayTimestamp, string runningHash, string cid)",
@@ -505,12 +513,16 @@ describe("GelatoW3F", function () {
         ];
 
         let walletByUsername: Map<string, string> = new Map();
+        const { accountManager } = await loadFixture(deployGMCoinWithProxy);
+        const gelatoAccountManager: any = (accountManager as any).connect(gelatoAddr);
+        await (accountManager as any).connect(owner).enableUnifiedUserSystem();
         for (let i = 0; i < userLimit; i++) {
             const userID = userIDs[i];
-            await gelatoContract.verifyTwitter(userID as any, generatedWallets[i] as any);
+            await gelatoAccountManager.verifyTwitterUnified(userID as any, generatedWallets[i].address as any);
             walletByUsername.set(userID, generatedWallets[i].address);
 
-            expect(await gelatoContract.getWalletByUserID(userID as any)).to.be.equal(generatedWallets[i]);
+            const unified = await (accountManager as any).getUnifiedUserByWallet(generatedWallets[i].address);
+            expect(unified.twitterId).to.equal(userID);
         }
 
 

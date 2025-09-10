@@ -386,7 +386,7 @@ async function executeTwitterWorker(logger: CloudwatchLogger, context: Web3Funct
 
             transactions.push({
                 to: await smartContract.getAddress() as string,
-                data: smartContract.interface.encodeFunctionData("finishMinting", [
+                data: smartContract.interface.encodeFunctionData("finishMintingTwitter", [
                     BigInt(mintingDayTimestamp),
                     finalHash
                 ]),

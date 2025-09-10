@@ -93,16 +93,23 @@ library AccountManagerLib {
     }
 
     if (fromUser.farcasterFid != 0 && (toUser.farcasterFid == 0 || overrideFarcasterFid)) {
-      if (accountStorage.gmCoinContract.farcasterUserExist(toUser.farcasterFid)) {
-        _removeFarcasterIdFromUser(accountStorage, fromUserId, toUser.farcasterFid);
+      // Remove mapping for fromUser's farcaster FID if it exists anywhere
+      if (accountStorage.gmCoinContract.farcasterUserExist(fromUser.farcasterFid)) {
+        _removeFarcasterIdFromUser(accountStorage, fromUserId, fromUser.farcasterFid);
       }
 
-      // if no new farcasterFid addded - add it
+      // If target has a farcaster already and we're overriding, clear it
+      if (toUser.farcasterFid != 0 && overrideFarcasterFid) {
+        _removeFarcasterIdFromUser(accountStorage, toUserId, toUser.farcasterFid);
+      }
+
+      // Now safely link fromUser's farcaster to target
       if (!accountStorage.gmCoinContract.farcasterUserExist(fromUser.farcasterFid)) {
         linkSocialAccountToUser(accountStorage, toUserId, fromUser.primaryWallet, '', fromUser.farcasterFid);
       }
 
       toUser.farcasterFid = fromUser.farcasterFid;
+      toUser.farcasterWallet = fromUser.farcasterWallet;
     }
 
     // Move all wallets from fromUser to toUser
@@ -290,11 +297,14 @@ library AccountManagerLib {
     delete accountStorage.unifiedUsers[userId];
     delete accountStorage.unifiedUserWallets[userId];
 
-    if (accountStorage.unifiedUserIndexById[userId] > 0) {
-      uint256 lastUserId = accountStorage.allUnifiedUsers[accountStorage.allUnifiedUsers.length - 1];
+    {
       uint256 currentUserIndex = accountStorage.unifiedUserIndexById[userId];
-      accountStorage.allUnifiedUsers[currentUserIndex] = lastUserId;
-      accountStorage.unifiedUserIndexById[lastUserId] = currentUserIndex;
+      uint256 lastIdx = accountStorage.allUnifiedUsers.length - 1;
+      if (currentUserIndex < lastIdx) {
+        uint256 lastUserId = accountStorage.allUnifiedUsers[lastIdx];
+        accountStorage.allUnifiedUsers[currentUserIndex] = lastUserId;
+        accountStorage.unifiedUserIndexById[lastUserId] = currentUserIndex;
+      }
       accountStorage.allUnifiedUsers.pop();
       delete accountStorage.unifiedUserIndexById[userId];
     }
