@@ -23,15 +23,23 @@ contract GMStorage {
   int32 public pointsDeltaStreak;
   uint256 public totalPoints;
 
-  uint256[253] __gap;
+  address accountManager;
 
-  struct UserTwitterData {
+  uint256[252] __gap;
+
+  struct UserMintingData {
     uint64 userIndex;
-    uint16 tweets;
-    uint16 hashtagTweets; // Number of hashtags in the tweet
-    uint16 cashtagTweets; // Number of cashtags in the tweet
-    uint16 simpleTweets; // Number of simple tags in the tweet
-    uint32 likes; // Number of likes for the tweet
+    uint16 posts;
+    uint16 hashtagPosts;
+    uint16 cashtagPosts;
+    uint16 simplePosts;
+    uint32 likes;
+  }
+
+  // Minting result data
+  struct UserMintingResult {
+    uint64 userIndex;
+    uint256 mintAmount;
   }
 
   struct Batch {
@@ -63,7 +71,10 @@ contract GMStorage {
     address trustedSigner;
     bytes32 _not_used_gelatoTaskId_twitterVerificationThirdweb;
     bytes32 gelatoTaskId_twitterVerificationAuthcode;
-    uint256[53] __gap;
+    // Farcaster Gelato tasks
+    bytes32 gelatoTaskId_farcasterVerification;
+    bytes32 gelatoTaskId_farcasterWorker;
+    uint256[51] __gap;
   }
 
   struct MintingConfig {
@@ -79,27 +90,38 @@ contract GMStorage {
 
   // @custom:storage-location
   struct MintingData {
-    mapping(string => address) wallets;
+    // Deprecated placeholder to maintain storage layout (slot 0)
+    mapping(string => address) __deprecated_wallets; // Previously `wallets`
+    //
     string[] allTwitterUsers;
-    mapping(address => string) usersByWallets;
-    mapping(string => address) walletsByUserIDs;
+    mapping(address => string) twitterIdByWallet;
+    mapping(string => address) walletByTwitterID;
+    //
     mapping(address => bool) registeredWallets;
-    mapping(string => uint) userIndexByUserID;
+    mapping(string => uint) userIndexByTwitterId;
     uint256 mintingDayPointsFromUsers;
     uint32 mintingInProgressForDay;
     uint32 lastMintedDay;
     uint32 epochStartedAt;
     uint256 lastEpochPoints;
     uint256 currentEpochPoints;
-    // deprecated vars
-
+    // deprecated vars - these MUST stay in the exact V1 positions
+    bytes32 __deprecated_gelatoTaskId_twitterVerification;
+    bytes32 __deprecated_gelatoTaskId_twitterWorker;
+    bytes32 __deprecated_gelatoTaskId_dailyTrigger;
+    address __deprecated_trustedSigner;
+    // NEW: fields added after V1 (consuming gap space)
     mapping(address => uint256) mintedAmountByWallet;
-    bytes32 __deprecated_gelatoVar2;
-    bytes32 __deprecated_gelatoVar3;
-    address __deprecated_gelatoVar4;
-    bytes32 __deprecated_gelatoVar5;
-    bytes32 __deprecated_gelatoVar6;
-    uint256[53] __gap;
+    // Farcaster mappings
+    uint256[] allFarcasterUsers; // All Farcaster FIDs
+    mapping(uint256 => uint) farcasterUserIndexByFID; // FID -> array index
+    mapping(uint256 => address) walletByFarcasterFID;
+    // NEW: Unified User Structure (using gap space)
+
+    bool unifiedUserSystemEnabled; // Feature flag for unified system
+    bool isTwitterMintingFinished;
+    bool isFarcasterMintingFinished;
+    uint256[50] __gap; // Gap: V1 had 55, adjusted to maintain exact struct size
   }
 
   function COINS_MULTIPLICATOR() public view returns (uint256) {
@@ -153,4 +175,33 @@ contract GMStorage {
   function totalUsersCount() public view returns (uint256) {
     return mintingData.allTwitterUsers.length;
   }
+
+  // Farcaster accessor functions
+  function gelatoTaskId_farcasterVerification() public view returns (bytes32) {
+    return gelatoConfig.gelatoTaskId_farcasterVerification;
+  }
+
+  function gelatoTaskId_farcasterWorker() public view returns (bytes32) {
+    return gelatoConfig.gelatoTaskId_farcasterWorker;
+  }
+
+  function twitterUserExist(string memory twitterId) public view returns (bool) {
+    return mintingData.userIndexByTwitterId[twitterId] != 0;
+  }
+
+  function farcasterUserExist(uint256 farcasterFid) public view returns (bool) {
+    return mintingData.farcasterUserIndexByFID[farcasterFid] != 0;
+  }
+
+  function isActiveMintingProcess() public view returns (bool) {
+    return mintingData.mintingInProgressForDay != 0;
+  }
+
+  // totalFarcasterUsersCount moved to FarcasterOracle
+
+  // =============================================================================
+  // NEW: Unified User System Functions
+  // =============================================================================
+
+  // Unified user functions moved to AccountManager
 }

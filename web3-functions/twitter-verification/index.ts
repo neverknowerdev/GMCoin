@@ -14,7 +14,7 @@ import { bytesToHex, hexToBytes, toBytes } from '@noble/ciphers/utils';
 const TWITTER_ME_URL = '/2/users/me';
 
 const VerifierContractABI = [
-    "function verifyTwitter(string calldata userID, address wallet) public",
+    "function createOrLinkUnifiedUser(address wallet, string memory twitterId, uint256 farcasterFid) public returns (uint256)",
     "function twitterVerificationError(address wallet, string calldata userID, string calldata errorMsg) public",
     "event VerifyTwitterRequested(string accessCodeEncrypted, string userID, address indexed wallet)",
 ];
@@ -75,9 +75,10 @@ Web3Function.onRun(async (context: Web3FunctionEventContext): Promise<Web3Functi
             callData: [
                 {
                     to: userArgs.verifierContractAddress as string,
-                    data: verifierContract.interface.encodeFunctionData("verifyTwitter", [
+                    data: verifierContract.interface.encodeFunctionData("createOrLinkUnifiedUser", [
+                        wallet,
                         userID,
-                        wallet
+                        0  // farcasterFid is 0 for Twitter verification
                     ]),
                 },
             ],

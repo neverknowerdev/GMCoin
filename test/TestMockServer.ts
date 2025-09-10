@@ -47,7 +47,7 @@ describe("GelatoW3F", function () {
             expect(data.success).to.be.true;
 
             // Optionally, check if the endpoint was called with the correct parameters
-            mockServer.expectURLToBeCalled('/api/submit', 'POST', undefined, "{\"data\":\"example\"}");
+            mockServer.expectURLToBeCalled('/api/submit', 'POST', undefined, {data: 'example'});
         }
     });
 })

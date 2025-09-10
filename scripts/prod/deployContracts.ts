@@ -7,7 +7,18 @@ import {ethers, upgrades} from "hardhat";
 
 
 async function main(): Promise<void> {
-    const contract = await ethers.getContractFactory("GMCoin");
+    // Deploy libraries that GMCoin needs
+    const MintingLib = await ethers.getContractFactory("MintingLib");
+    const mintingLib = await MintingLib.deploy();
+    await mintingLib.waitForDeployment();
+    const mintingLibAddress = await mintingLib.getAddress();
+    console.log('MintingLib deployed to:', mintingLibAddress);
+
+    const contract = await ethers.getContractFactory("GMCoin", {
+        libraries: {
+            "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+        },
+    });
 
     const [owner, feeAddress] = await ethers.getSigners();
 
