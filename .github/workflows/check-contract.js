@@ -157,6 +157,7 @@ async function getTopUsersByTransfers(transferEvents, contractAddress, limit = 1
 async function getBlockByTimestamp(targetTimestamp) {
     const apiKey = process.env.ETHERSCAN_KEY;
     const url = `https://api.etherscan.io/v2/api?chainid=8453&module=block&action=getblocknobytime&timestamp=${targetTimestamp}&closest=before&apikey=${apiKey}`;
+    console.log('url', `https://api.etherscan.io/v2/api?chainid=8453&module=block&action=getblocknobytime&timestamp=${targetTimestamp}&closest=before&apikey=[API KEY]);
 
     const response = await fetch(url);
     const data = await response.json();
@@ -183,7 +184,7 @@ async function getAllDecodedLogs(provider, contractAddress, abi, fromBlock, toBl
     for (let start = fromBlock; start <= toBlock; start += chunkSize) {
         // Check if we're taking too long
         if (Date.now() - startTime > maxProcessingTime) {
-            console.log(`⚠️  Processing timeout reached (${maxProcessingTime / 1000}s). Stopping at block ${start}.`);
+            console.log(`⚠️  Processing timeout reached(${ maxProcessingTime / 1000}s). Stopping at block ${ start }.`);
             break;
         }
 
@@ -192,53 +193,53 @@ async function getAllDecodedLogs(provider, contractAddress, abi, fromBlock, toBl
 
         // Show progress every 100 chunks to avoid spam
         if (currentChunk % 100 === 0 || currentChunk === totalChunks) {
-            console.log(`Processing chunk ${currentChunk}/${totalChunks} (blocks ${start}-${end})`);
+            console.log(`Processing chunk ${ currentChunk }/${totalChunks} (blocks ${start}-${end})`);
         }
 
+try {
+    const logs = await withRetry(() => provider.getLogs({
+        address: contractAddress,
+        fromBlock: start,
+        toBlock: end
+    }));
+
+    for (const log of logs) {
         try {
-            const logs = await withRetry(() => provider.getLogs({
-                address: contractAddress,
-                fromBlock: start,
-                toBlock: end
-            }));
-
-            for (const log of logs) {
-                try {
-                    const parsed = iface.parseLog(log);
-                    allLogs.push({
-                        ...parsed,
-                        blockNumber: log.blockNumber,
-                        transactionHash: log.transactionHash,
-                        logIndex: log.logIndex
-                    });
-                } catch (e) {
-                    // Ignore unknown logs
-                }
-            }
-
-            // Add a small delay between chunks to avoid overwhelming the RPC
-            if (start + chunkSize <= toBlock) {
-                await sleep(50);
-            }
-        } catch (error) {
-            console.error(`Failed to fetch logs for blocks ${start}-${end}:`, error);
-
-            // Check if it's a QuickNode-specific error
-            if (error.message && error.message.includes('eth_getLogs is limited to a 5 range')) {
-                console.log(`QuickNode limit hit for blocks ${start}-${end}, continuing with next chunk...`);
-            } else if (error.message && error.message.includes('rate limit') || error.message.includes('too many requests')) {
-                console.log(`Rate limit hit for blocks ${start}-${end}, waiting longer before next chunk...`);
-                await sleep(1000); // Wait 1 second for rate limit
-            }
-
-            // Continue with next chunk instead of failing completely
-            continue;
+            const parsed = iface.parseLog(log);
+            allLogs.push({
+                ...parsed,
+                blockNumber: log.blockNumber,
+                transactionHash: log.transactionHash,
+                logIndex: log.logIndex
+            });
+        } catch (e) {
+            // Ignore unknown logs
         }
     }
 
-    const processingTime = (Date.now() - startTime) / 1000;
-    console.log(`Completed processing ${currentChunk}/${totalChunks} chunks in ${processingTime.toFixed(1)}s, found ${allLogs.length} events`);
-    return allLogs;
+    // Add a small delay between chunks to avoid overwhelming the RPC
+    if (start + chunkSize <= toBlock) {
+        await sleep(50);
+    }
+} catch (error) {
+    console.error(`Failed to fetch logs for blocks ${start}-${end}:`, error);
+
+    // Check if it's a QuickNode-specific error
+    if (error.message && error.message.includes('eth_getLogs is limited to a 5 range')) {
+        console.log(`QuickNode limit hit for blocks ${start}-${end}, continuing with next chunk...`);
+    } else if (error.message && error.message.includes('rate limit') || error.message.includes('too many requests')) {
+        console.log(`Rate limit hit for blocks ${start}-${end}, waiting longer before next chunk...`);
+        await sleep(1000); // Wait 1 second for rate limit
+    }
+
+    // Continue with next chunk instead of failing completely
+    continue;
+}
+    }
+
+const processingTime = (Date.now() - startTime) / 1000;
+console.log(`Completed processing ${currentChunk}/${totalChunks} chunks in ${processingTime.toFixed(1)}s, found ${allLogs.length} events`);
+return allLogs;
 }
 
 // Use the ABI variable as currently defined in the file
