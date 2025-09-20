@@ -153,17 +153,17 @@ async function getTopUsersByTransfers(transferEvents, contractAddress, limit = 1
     });
 }
 
-// Helper: get block number for a given timestamp using Basescan API
+// Helper: get block number for a given timestamp using Etherscan API V2
 async function getBlockByTimestamp(targetTimestamp) {
-    const apiKey = process.env.BASESCAN_API_KEY;
-    const url = `https://api.basescan.org/api?module=block&action=getblocknobytime&timestamp=${targetTimestamp}&closest=before&apikey=${apiKey}`;
+    const apiKey = process.env.ETHERSCAN_KEY;
+    const url = `https://api.etherscan.io/v2/api?chainid=8453&module=block&action=getblocknobytime&timestamp=${targetTimestamp}&closest=before&apikey=${apiKey}`;
 
     const response = await fetch(url);
     const data = await response.json();
     if (data.status === "1") {
         return parseInt(data.result, 10);
     } else {
-        throw new Error("Failed to get block by timestamp from Basescan: " + (data.message || JSON.stringify(data)));
+        throw new Error("Failed to get block by timestamp from Etherscan V2: " + (data.message || JSON.stringify(data)));
     }
 }
 
