@@ -157,14 +157,13 @@ async function getTopUsersByTransfers(transferEvents, contractAddress, limit = 1
 async function getBlockByTimestamp(targetTimestamp) {
     const apiKey = process.env.ETHERSCAN_KEY;
     const url = `https://api.etherscan.io/v2/api?chainid=8453&module=block&action=getblocknobytime&timestamp=${targetTimestamp}&closest=before&apikey=${apiKey}`;
-    console.log('url', `https://api.etherscan.io/v2/api?chainid=8453&module=block&action=getblocknobytime&timestamp=${targetTimestamp}&closest=before&apikey=[API KEY]`);
 
     const response = await fetch(url);
     const data = await response.json();
     if (data.status === "1") {
         return parseInt(data.result, 10);
     } else {
-        throw new Error("Failed to get block by timestamp from Etherscan V2: " + (data.message || JSON.stringify(data)));
+        throw new Error("Failed to get block by timestamp from Etherscan V2: " + (data.message + ": " + data.result || JSON.stringify(data)));
     }
 }
 
