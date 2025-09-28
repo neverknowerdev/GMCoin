@@ -9,6 +9,13 @@ contract GMStorage {
 
   Batch[] emptyArray;
 
+  enum VerificationType {
+    none,
+    WorldChainDevice,
+    WorldChainPassport,
+    WorldChainOrb
+  }
+
   TimeLockConfig public timeLockConfig;
   FeeConfig public feeConfig;
 
@@ -63,7 +70,8 @@ contract GMStorage {
     address trustedSigner;
     bytes32 _not_used_gelatoTaskId_twitterVerificationThirdweb;
     bytes32 gelatoTaskId_twitterVerificationAuthcode;
-    uint256[53] __gap;
+    bytes32 gelatoTaskId_worldchainVerification;
+    uint256[52] __gap;
   }
 
   struct MintingConfig {
@@ -99,7 +107,9 @@ contract GMStorage {
     address __deprecated_gelatoVar4;
     bytes32 __deprecated_gelatoVar5;
     bytes32 __deprecated_gelatoVar6;
-    uint256[53] __gap;
+    mapping(address => bool) isWorldchainWallet;
+    mapping(address => VerificationType) walletVerification;
+    uint256[51] __gap;
   }
 
   function COINS_MULTIPLICATOR() public view returns (uint256) {
@@ -138,6 +148,10 @@ contract GMStorage {
     return gelatoConfig.gelatoTaskId_dailyTrigger;
   }
 
+  function gelatoTaskId_worldchainVerification() public view returns (bytes32) {
+    return gelatoConfig.gelatoTaskId_worldchainVerification;
+  }
+
   function epochStartedAt() public view returns (uint32) {
     return mintingData.epochStartedAt;
   }
@@ -152,5 +166,15 @@ contract GMStorage {
 
   function totalUsersCount() public view returns (uint256) {
     return mintingData.allTwitterUsers.length;
+  }
+
+  struct UserInfo {
+    bool userExist;
+    uint userIndex;
+    string twitterID;
+    bool isWorldchain;
+    uint256 mintedAmount;
+    uint256 userBalance;
+    VerificationType verificationType;
   }
 }

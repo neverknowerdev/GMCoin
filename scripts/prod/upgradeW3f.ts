@@ -15,6 +15,7 @@ async function main() {
         // await setupTwitterVerificationThirdweb(contractAddress, owner);
         // await setupTwitterVerificationAuthcode(contractAddress, owner);
         await setupTwitterWorker(contractAddress, owner);
+        await setupWorldchainVerification(contractAddress, owner);
         // await setupDailyFunction(contractAddress);
 
         console.log('all done!!');
@@ -144,6 +145,31 @@ async function setupDailyFunction(contractAddress: string) {
     const execData = GMCoin.interface.encodeFunctionData("startMinting", []);
     let tx = await GMCoin.createDailyFunction(nextDay2AM, interval, execData);
     await tx.wait();
+}
+
+async function setupWorldchainVerification(contractAddress: string, owner: any) {
+    const worldchainVerificationFunc = w3f.get('verify-wallet-worldchain');
+    const worldchainVerificationCID = await worldchainVerificationFunc.deploy();
+    console.log('worldchainVerification CID', worldchainVerificationCID);
+
+    const worldchainVerificationArgsHex = await encodeUserArgs(worldchainVerificationCID, {
+        verifierContractAddress: contractAddress,
+    });
+
+    const GMCoin = (await ethers.getContractFactory("GMCoin")).attach(contractAddress);
+    const requestWorldchainVerificationEvent = GMCoin.interface.getEvent('requestWorldchainVerification');
+    const worldchainVerificationTopics: string[][] = [[ethers.id(requestWorldchainVerificationEvent?.format("sighash") as string)]];
+
+    let tx = await GMCoin.createWorldchainVerificationFunction(worldchainVerificationCID, worldchainVerificationArgsHex, worldchainVerificationTopics);
+    await tx.wait();
+
+    const gelatoConfig = await GMCoin.gelatoConfig();
+    const worldchainVerificationTaskId = gelatoConfig.gelatoTaskId_worldchainVerification;
+    const worldchainVerificationSecrets = loadEnvVariables('verify-wallet-worldchain', "prod");
+
+    await setSecretsForW3f(contractAddress, owner, worldchainVerificationTaskId, hre.network.config.chainId as number, worldchainVerificationSecrets);
+
+    return worldchainVerificationTaskId;
 }
 
 function secondsUntilNext2AM(): number {

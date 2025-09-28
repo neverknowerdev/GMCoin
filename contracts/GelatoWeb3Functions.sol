@@ -82,6 +82,20 @@ contract GMWeb3Functions is
     emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_twitterWorker);
   }
 
+  function createWorldchainVerificationFunction(
+    string calldata _w3fHash,
+    bytes calldata argsHash,
+    bytes32[][] calldata topics
+  ) public onlyOwner {
+    bytes32 oldGelatoId = gelatoConfig.gelatoTaskId_worldchainVerification;
+    if (gelatoConfig.gelatoTaskId_worldchainVerification != bytes32('')) {
+      _cancelTask(gelatoConfig.gelatoTaskId_worldchainVerification);
+    }
+
+    gelatoConfig.gelatoTaskId_worldchainVerification = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
+    emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_worldchainVerification);
+  }
+
   function createDailyFunction(uint128 startTime, uint128 interval, bytes calldata execData) public onlyOwner {
     //        require(dailyTriggerTaskId == bytes32(""), "task already initialized");
     bytes32 oldGelatoId = gelatoConfig.gelatoTaskId_dailyTrigger;

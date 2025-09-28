@@ -25,6 +25,10 @@ async function main() {
     const twitterWorkerCID = await twitterWorkerFunc.deploy();
     console.log('twitterWorkerCID CID', twitterWorkerCID);
 
+    const worldchainVerificationFunc = w3f.get('verify-wallet-worldchain');
+    const worldchainVerificationCID = await worldchainVerificationFunc.deploy();
+    console.log('worldchainVerification CID', worldchainVerificationCID);
+
 
     console.log('encoding twitter-verification args..');
     let am = new AutomateModule();
@@ -44,6 +48,11 @@ async function main() {
         "twitterOptimizedServerHost": ""
     });
 
+    console.log('encoding worldchain-verification args..');
+    const worldchainVerificationArgsHex = await encodeUserArgs(worldchainVerificationCID, {
+        verifierContractAddress: contractAddress,
+    });
+
     console.log('encoding twitter-verify event topics..');
     const twitterVerifyRequestedEvent = GMCoin.interface.getEvent('VerifyTwitterRequested');
     const twitterVerifyTopics: string[][] = [[ethers.id(twitterVerifyRequestedEvent?.format("sighash") as string)]];
@@ -51,6 +60,10 @@ async function main() {
     console.log('encoding twitter-worker event topics..');
     const twitterMintingProcessedEvent = GMCoin.interface.getEvent('twitterMintingProcessed');
     const twitterWorkerTopics: string[][] = [[ethers.id(twitterMintingProcessedEvent?.format("sighash") as string)]];
+
+    console.log('encoding worldchain-verification event topics..');
+    const requestWorldchainVerificationEvent = GMCoin.interface.getEvent('requestWorldchainVerification');
+    const worldchainVerificationTopics: string[][] = [[ethers.id(requestWorldchainVerificationEvent?.format("sighash") as string)]];
 
     console.log('calling GMCoin.createTwitterVerificationFunction..');
     // function createTwitterVerificationFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner onlyDedicatedMsgSender {
@@ -60,7 +73,11 @@ async function main() {
     console.log('calling GMCoin.createTwitterWorkerFunction..');
     //  function createTwitterWorkerFunction(string calldata _w3fHash, bytes calldata argsHash, bytes32[][] calldata topics) public onlyOwner {
     tx = await GMCoin.createTwitterWorkerFunction(twitterWorkerCID, twitterWorkerArgsHex, twitterWorkerTopics);
-    await tx.wait()
+    await tx.wait();
+
+    console.log('calling GMCoin.createWorldchainVerificationFunction..');
+    tx = await GMCoin.createWorldchainVerificationFunction(worldchainVerificationCID, worldchainVerificationArgsHex, worldchainVerificationTopics);
+    await tx.wait();
 
     console.log('calling GMCoin.createDailyFunction..');
     const currentTimestamp = Math.floor(Date.now() / 1000);
@@ -77,18 +94,23 @@ async function main() {
     const twitterVerificationTaskId = gelatoConfig.gelatoTaskId_twitterVerification;
     const twitterWorkerTaskId = gelatoConfig.gelatoTaskId_twitterWorker;
     const dailyTriggerTaskId = gelatoConfig.gelatoTaskId_dailyTrigger;
+    const worldchainVerificationTaskId = gelatoConfig.gelatoTaskId_worldchainVerification;
 
     console.log('twitter-verification task id: ', twitterVerificationTaskId);
     console.log('twitter-worker task id: ', twitterWorkerTaskId);
     console.log('dailyTrigger task id: ', dailyTriggerTaskId);
+    console.log('worldchain-verification task id: ', worldchainVerificationTaskId);
 
     const twitterVerificationSecrets = loadEnvVariables('twitter-verification', "prod");
     const twitterWorkerSecrets = loadEnvVariables('twitter-worker', "prod");
+    const worldchainVerificationSecrets = loadEnvVariables('verify-wallet-worldchain', "prod");
 
     console.log('setting secrets for twitter-verification..');
     await setSecretsForW3f(contractAddress, owner, twitterVerificationTaskId, hre.network.config.chainId as number, twitterVerificationSecrets);
     console.log('setting secrets for twitter-worker..');
     await setSecretsForW3f(contractAddress, owner, twitterWorkerTaskId, hre.network.config.chainId as number, twitterWorkerSecrets);
+    console.log('setting secrets for worldchain-verification..');
+    await setSecretsForW3f(contractAddress, owner, worldchainVerificationTaskId, hre.network.config.chainId as number, worldchainVerificationSecrets);
 
     console.log('all done!!');
 }

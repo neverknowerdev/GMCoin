@@ -9,8 +9,17 @@ import './TwitterOracle.sol';
 
 import { GMWeb3Functions } from './GelatoWeb3Functions.sol';
 import { GMStorage } from './Storage.sol';
+import { Verification } from './Verification.sol';
 
-contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracle {
+contract GMCoin is
+  GMStorage,
+  Initializable,
+  OwnableUpgradeable,
+  ERC20Upgradeable,
+  UUPSUpgradeable,
+  GMTwitterOracle,
+  Verification
+{
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
     _disableInitializers();
@@ -72,5 +81,36 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
 
     _mint(walletAddr, amount);
     mintingData.mintedAmountByWallet[walletAddr] += amount;
+  }
+
+  modifier onlyServerRelayer() override(Verification, GMTwitterOracle) {
+    require(_msgSender() == serverRelayerAddress, 'only relay server can call this function');
+    _;
+  }
+
+  modifier onlyGelatoOrOwner() override(GMTwitterOracle) {
+    require(
+      _msgSender() == gelatoConfig.gelatoAddress || _msgSender() == owner(),
+      'only Gelato or owner can call this function'
+    );
+    _;
+  }
+
+  modifier onlyGelato() override(GMTwitterOracle, Verification) {
+    require(_msgSender() == gelatoConfig.gelatoAddress, 'only Gelato can call this function');
+    _;
+  }
+
+  function getUser(address walletAddress) public view returns (UserInfo memory) {
+    return
+      UserInfo({
+        userExist: mintingData.registeredWallets[walletAddress],
+        userIndex: mintingData.userIndexByUserID[mintingData.usersByWallets[walletAddress]],
+        twitterID: mintingData.usersByWallets[walletAddress],
+        isWorldchain: mintingData.isWorldchainWallet[walletAddress],
+        mintedAmount: mintingData.mintedAmountByWallet[walletAddress],
+        userBalance: balanceOf(walletAddress),
+        verificationType: mintingData.walletVerification[walletAddress]
+      });
   }
 }

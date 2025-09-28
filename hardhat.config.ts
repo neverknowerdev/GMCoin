@@ -20,6 +20,7 @@ const config = {
                 enabled: true,
                 runs: 200
             },
+            viaIR: true,
             outputSelection: {
                 "*": {
                     "*": ["storageLayout"],
@@ -42,10 +43,25 @@ const config = {
         networks: ["hardhat"], //(multiChainProvider) injects provider for these networks
     },
     etherscan: {
-        apiKey: {
-            baseSepolia: process.env.BASESCAN_KEY,
-            base: process.env.BASESCAN_KEY,
-        }
+        apiKey: process.env.ETHERSCAN_KEY,
+        customChains: [
+            {
+                network: "base",
+                chainId: 8453,
+                urls: {
+                    apiURL: "https://api.basescan.org/api",
+                    browserURL: "https://basescan.org"
+                }
+            },
+            {
+                network: "baseSepolia",
+                chainId: 84532,
+                urls: {
+                    apiURL: "https://api-sepolia.basescan.org/api",
+                    browserURL: "https://sepolia.basescan.org"
+                }
+            }
+        ]
     },
     networks: {
         hardhat: {

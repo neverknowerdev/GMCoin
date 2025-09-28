@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.24;
 
-import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
 import '@openzeppelin/contracts/utils/cryptography/ECDSA.sol';
 import '@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol';
 
@@ -9,22 +8,16 @@ import 'hardhat/console.sol';
 import { GMStorage } from './Storage.sol';
 import { GMWeb3Functions } from './GelatoWeb3Functions.sol';
 
-contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
-  modifier onlyGelato() {
-    require(_msgSender() == gelatoConfig.gelatoAddress, 'only Gelato can call this function');
+contract GMTwitterOracle is GMStorage, GMWeb3Functions {
+  modifier onlyGelato() virtual {
     _;
   }
 
-  modifier onlyGelatoOrOwner() {
-    require(
-      _msgSender() == gelatoConfig.gelatoAddress || _msgSender() == owner(),
-      'only Gelato or owner can call this function'
-    );
+  modifier onlyGelatoOrOwner() virtual {
     _;
   }
 
-  modifier onlyServerRelayer() {
-    require(_msgSender() == serverRelayerAddress, 'only relay server can call this function');
+  modifier onlyServerRelayer() virtual {
     _;
   }
 
@@ -107,24 +100,28 @@ contract GMTwitterOracle is GMStorage, Initializable, GMWeb3Functions {
     emit VerifyTwitterRequested(accessCodeEncrypted, userID, _msgSender());
   }
 
-  //    function requestTwitterVerificationFromRelayer(
-  //        string calldata userID,
-  //        address wallet,
-  //        bytes calldata signature,
-  //        string calldata accessTokenEncrypted
-  //    ) public onlyServerRelayer {
-  //        address recoveredSigner = ECDSA.recover(
-  //            MessageHashUtils.toEthSignedMessageHash(bytes('I confirm that I want to verify my Twitter account with GMCoin')),
-  //            signature
-  //        );
-  //
-  //        require(recoveredSigner != address(0), 'empty signer');
-  //        require(recoveredSigner == wallet, 'wrong signer or signature');
-  //        require(mintingData.walletsByUserIDs[userID] == address(0), 'wallet already linked for that user');
-  //        require(!mintingData.registeredWallets[recoveredSigner], 'wallet already verified and linked to Twitter');
-  //
-  //        emit VerifyTwitterRequested(accessTokenEncrypted, userID, recoveredSigner);
-  //    }
+  function requestTwitterVerificationByAuthCodeRelayer(
+    string calldata userID,
+    string calldata tweetID,
+    string calldata authCode,
+    address wallet,
+    bytes calldata signature,
+    string calldata message,
+    bool isWorldchainWallet
+  ) public onlyServerRelayer {
+    require(wallet != address(0), 'empty wallet');
+    require(signature.length > 0, 'empty signature');
+
+    address recoveredSigner = ECDSA.recover(MessageHashUtils.toEthSignedMessageHash(bytes(message)), signature);
+
+    require(recoveredSigner != address(0), 'empty signer');
+    require(recoveredSigner == wallet, 'wrong signer or signature');
+    require(mintingData.walletsByUserIDs[userID] == address(0), 'user has different wallet linked');
+    require(mintingData.registeredWallets[wallet] == false, 'wallet already linked for that user');
+
+    mintingData.isWorldchainWallet[wallet] = isWorldchainWallet;
+    emit verifyTwitterByAuthCodeRequested(wallet, authCode, tweetID, userID);
+  }
 
   function twitterVerificationError(
     address wallet,
