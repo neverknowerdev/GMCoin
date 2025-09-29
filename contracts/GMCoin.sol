@@ -5,15 +5,59 @@ import '@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol';
 import '@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol';
 import '@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol';
-import './TwitterOracle.sol';
+import '@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol';
+import './MintingOracle.sol';
+import './Errors.sol';
 
-import { GMWeb3Functions } from './GelatoWeb3Functions.sol';
-import { GMStorage } from './Storage.sol';
-
-contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeable, UUPSUpgradeable, GMTwitterOracle {
+contract GMCoin is
+  GMStorage,
+  Initializable,
+  OwnableUpgradeable,
+  ERC20Upgradeable,
+  UUPSUpgradeable,
+  MintingOracle,
+  GMWeb3Functions
+{
   /// @custom:oz-upgrades-unsafe-allow constructor
   constructor() {
     _disableInitializers();
+  }
+
+  function initialize(
+    address _owner,
+    address _feeAddress,
+    address _treasuryAddress,
+    address _gelatoAddress,
+    address _relayServerAddress
+  ) public initializer {
+    feeConfig.feeAddress = _feeAddress;
+    feeConfig.treasuryAddress = _treasuryAddress;
+
+    feeConfig.feePercentage = 100; // 1% fee of transaction
+    feeConfig.treasuryPercentage = 1000; // 10% of minted coins
+
+    __Ownable_init(_owner);
+    __UUPSUpgradeable_init();
+    __ERC20_init('GM Coin', 'GM');
+    __GelatoWeb3Functions__init(_owner);
+
+    // Initialize Gelato config
+    gelatoConfig.gelatoAddress = _gelatoAddress;
+    serverRelayerAddress = _relayServerAddress;
+
+    // Initialize minting config with default values
+    mintingConfig.COINS_MULTIPLICATOR = 1_000_000;
+    mintingConfig.EPOCH_DAYS = 2;
+    mintingConfig.POINTS_PER_TWEET = 1;
+    mintingConfig.POINTS_PER_LIKE = 1;
+    mintingConfig.POINTS_PER_HASHTAG = 2;
+    mintingConfig.POINTS_PER_CASHTAG = 4;
+    mintingConfig.epochNumber = 1;
+
+    mintingData.epochStartedAt = uint32(block.timestamp);
+
+    // Enable unified user system by default
+    mintingData.unifiedUserSystemEnabled = true;
   }
 
   function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
@@ -21,33 +65,39 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
   event UpgradePlanned(uint256 plannedTime, address newImplementation);
   event UpgradeApplied(uint256 time, address newImplementation);
 
-  // function clearThirdwebGelatoFunc() public reinitializer(4) onlyOwner {
-  //   deleteThirdwebGelatoFunc();
-  // }
+  modifier _onlyOwner() override(MintingOracle) {
+    if (_msgSender() != owner()) revert OnlyOwner();
+    _;
+  }
 
-  // disabled Timelock for testing period on Mainnet, then would be turned on
-  //    function scheduleUpgrade(address newImplementation) public onlyOwner {
-  //        require(newImplementation != address(0), "wrong newImplementation address");
-  //        require(timeLockConfig.plannedNewImplementation != newImplementation, "you already planned upgrade with this implementation");
-  //
-  //        timeLockConfig.plannedNewImplementation = newImplementation;
-  //        timeLockConfig.plannedNewImplementationTime = block.timestamp + 3 days;
-  //
-  //        emit UpgradePlanned(timeLockConfig.plannedNewImplementationTime, newImplementation);
-  //    }
-  //
-  //    function upgradeToAndCall(address newImplementation, bytes memory data) public override payable onlyOwner {
-  //        require(newImplementation != address(0), "wrong newImplementation address");
-  //        require(newImplementation == timeLockConfig.plannedNewImplementation, "you should schedule upgrade first");
-  //        require(block.timestamp > timeLockConfig.plannedNewImplementationTime, "timeDelay is not passed to make an upgrade");
-  //
-  //        timeLockConfig.plannedNewImplementationTime = 0;
-  //        timeLockConfig.plannedNewImplementation = address(0);
-  //
-  //        super.upgradeToAndCall(newImplementation, data);
-  //
-  //        emit UpgradeApplied(block.timestamp, newImplementation);
-  //    }
+  // Override modifiers from parent contracts
+  modifier onlyGelato() override(MintingOracle) {
+    if (_msgSender() != gelatoConfig.gelatoAddress) revert OnlyGelato();
+    _;
+  }
+
+  modifier onlyAccountManager() {
+    if (_msgSender() != accountManager) revert OnlyAccountManager();
+    _;
+  }
+
+  modifier onlyServerRelayer() override(MintingOracle) {
+    if (_msgSender() != serverRelayerAddress) revert OnlyServerRelayer();
+    _;
+  }
+
+  modifier onlyGelatoOrOwner() override(MintingOracle) {
+    if (_msgSender() != gelatoConfig.gelatoAddress && _msgSender() != owner()) revert OnlyGelatoOrOwner();
+    _;
+  }
+
+  function _checkOwner() internal view override(OwnableUpgradeable) {
+    super._checkOwner();
+  }
+
+  function msgSender() internal view override(MintingOracle) returns (address) {
+    return super._msgSender();
+  }
 
   function _update(address from, address to, uint256 value) internal override {
     // minting
@@ -66,11 +116,78 @@ contract GMCoin is GMStorage, Initializable, OwnableUpgradeable, ERC20Upgradeabl
     super._update(from, to, value);
   }
 
-  function _mintForUserByIndex(uint256 userIndex, uint256 amount) internal override {
-    address walletAddr = walletByTwitterUserIndex(userIndex);
+  // Configure AccountManager address used for unified user mutations
+  function setAccountManager(address _accountManager) external _onlyOwner {
+    accountManager = _accountManager;
+  }
+
+  function _mintForUserByTwitterIndex(uint256 userIndex, uint256 amount) internal override(MintingOracle) {
+    address walletAddr = mintingData.walletByTwitterID[mintingData.allTwitterUsers[userIndex]];
     require(walletAddr != address(0), "walletAddr shouldn't be zero!");
 
     _mint(walletAddr, amount);
     mintingData.mintedAmountByWallet[walletAddr] += amount;
+  }
+
+  function _mintForUserByFarcasterIndex(uint256 userIndex, uint256 amount) internal override(MintingOracle) {
+    address walletAddr = mintingData.walletByFarcasterFID[mintingData.allFarcasterUsers[userIndex]];
+    require(walletAddr != address(0), "walletAddr shouldn't be zero!");
+
+    _mint(walletAddr, amount);
+    mintingData.mintedAmountByWallet[walletAddr] += amount;
+  }
+
+  // functions to call from AccountManager
+  function addTwitterUser(string memory twitterId, address wallet) external onlyAccountManager {
+    if (mintingData.userIndexByTwitterId[twitterId] > 0) revert TwitterAccountAlreadyLinked();
+    mintingData.allTwitterUsers.push(twitterId);
+    mintingData.userIndexByTwitterId[twitterId] = mintingData.allTwitterUsers.length - 1;
+    mintingData.walletByTwitterID[twitterId] = wallet;
+  }
+
+  function removeTwitterUser(string memory twitterId) external onlyAccountManager {
+    uint256 index = mintingData.userIndexByTwitterId[twitterId];
+    // Determine existence even when index == 0
+    if (
+      index < mintingData.allTwitterUsers.length &&
+      keccak256(bytes(mintingData.allTwitterUsers[index])) == keccak256(bytes(twitterId))
+    ) {
+      // Swap-with-last removal
+      string memory lastId = mintingData.allTwitterUsers[mintingData.allTwitterUsers.length - 1];
+      mintingData.allTwitterUsers[index] = lastId;
+      mintingData.userIndexByTwitterId[lastId] = index;
+      mintingData.allTwitterUsers.pop();
+
+      delete mintingData.userIndexByTwitterId[twitterId];
+      delete mintingData.walletByTwitterID[twitterId];
+    }
+  }
+
+  function addFarcasterUser(uint256 farcasterFid, address wallet) external onlyAccountManager {
+    if (mintingData.farcasterUserIndexByFID[farcasterFid] > 0) revert FarcasterAccountAlreadyLinked();
+    mintingData.allFarcasterUsers.push(farcasterFid);
+    mintingData.farcasterUserIndexByFID[farcasterFid] = mintingData.allFarcasterUsers.length - 1;
+    mintingData.walletByFarcasterFID[farcasterFid] = wallet;
+  }
+
+  function removeFarcasterUser(uint256 farcasterFid) external onlyAccountManager {
+    uint256 index = mintingData.farcasterUserIndexByFID[farcasterFid];
+    if (index < mintingData.allFarcasterUsers.length && mintingData.allFarcasterUsers[index] == farcasterFid) {
+      uint256 lastFid = mintingData.allFarcasterUsers[mintingData.allFarcasterUsers.length - 1];
+      mintingData.allFarcasterUsers[index] = lastFid;
+      mintingData.farcasterUserIndexByFID[lastFid] = index;
+      mintingData.allFarcasterUsers.pop();
+
+      delete mintingData.farcasterUserIndexByFID[farcasterFid];
+      delete mintingData.walletByFarcasterFID[farcasterFid];
+    }
+  }
+
+  function changeTwitterUserWallet(string memory twitterId, address wallet) external onlyAccountManager {
+    mintingData.walletByTwitterID[twitterId] = wallet;
+  }
+
+  function changeFarcasterUserWallet(uint256 farcasterFid, address wallet) external onlyAccountManager {
+    mintingData.walletByFarcasterFID[farcasterFid] = wallet;
   }
 }

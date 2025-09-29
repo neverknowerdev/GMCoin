@@ -5,6 +5,7 @@ import '@openzeppelin/hardhat-upgrades';
 import '@typechain/hardhat';
 
 import "./tasks/addTwitterUser";
+import "./tasks/addFarcasterUser";
 import "./tasks/tweetCountStat";
 
 // Process Env Variables
@@ -18,8 +19,9 @@ const config = {
         settings: {
             optimizer: {
                 enabled: true,
-                runs: 200
+                runs: 1  // Minimal runs for maximum size reduction
             },
+            viaIR: true,
             outputSelection: {
                 "*": {
                     "*": ["storageLayout"],
@@ -61,22 +63,22 @@ const config = {
         baseSepolia: {
             url: "https://sepolia.base.org", // RPC URL for Base Sepolia
             chainId: 84532, // Base Sepolia's chain ID
-            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_PRIVATE_KEY, process.env.BASE_TESTNET2_PRIVATE_KEY],
+            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_PRIVATE_KEY, process.env.BASE_TESTNET2_PRIVATE_KEY].filter(Boolean),
         },
         base: {
             url: "https://mainnet.base.org",
             chainId: 8453,
-            accounts: process.env.CI ? [] : [process.env.BASE_PROD_PRIVATE_KEY, process.env.BASE_PROD_FEE_PRIVATE_KEY, process.env.BASE_FARCASTER_ACC_PRIVATE_KEY],
+            accounts: process.env.CI ? [] : [process.env.BASE_PROD_PRIVATE_KEY, process.env.BASE_PROD_FEE_PRIVATE_KEY, process.env.BASE_FARCASTER_ACC_PRIVATE_KEY].filter(Boolean),
         },
         polygon: {
             url: "https://polygon-bor-rpc.publicnode.com",
             chainId: 137,
-            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_LEARNING_PRIVATE_KEY]
+            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_LEARNING_PRIVATE_KEY].filter(Boolean)
         },
         polygonAmoy: {
             url: "https://rpc-amoy.polygon.technology",
             chainId: 80002,
-            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_PRIVATE_KEY]
+            accounts: process.env.CI ? [] : [process.env.BASE_TESTNET_PRIVATE_KEY].filter(Boolean)
         }
     },
     gasReporter: {

@@ -6,6 +6,10 @@
     "test:ci": "hardhat test --reporter mocha-junit-reporter --reporter-options mochaFile=./test-results/results.xml",
     "test-twitter-worker": "hardhat test --grep 'twitter-worker success'",
     "test-twitter-worker-realworld": "hardhat test --grep 'twitter-worker real-world'",
+    "test-farcaster-worker": "hardhat test --grep 'farcaster-worker success'",
+    "test-farcaster-components": "hardhat test TestFarcasterWorkerComponents.ts",
+    "test-farcaster-oracle": "hardhat test TestFarcasterOracle.ts",
+    "test-all-farcaster": "hardhat test --grep 'Farcaster'",
     "test-filter": "hardhat test --grep 'filterUserTweets'",
     "coverage": "hardhat test"
   },
@@ -64,5 +68,6 @@
     "p-limit": "^3.1.0",
     "siwe": "^2.3.2",
     "thirdweb": "^5.99.2"
-  }
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

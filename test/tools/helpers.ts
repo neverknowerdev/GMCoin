@@ -1,13 +1,11 @@
 import {ethers, Interface, EventFragment} from 'ethers';
-import fs from 'fs';
-import path from 'path';
-
-const abiPath = 'artifacts/contracts/TwitterOracle.sol/GMTwitterOracle.json'; // Replace with your ABI file path
-
 export async function generateEventLog(eventName: string, params: any[]): any {
-    const abiFile = JSON.parse(fs.readFileSync(abiPath, 'utf8'));
+    throw new Error('generateEventLog no longer reads artifacts. Use generateEventLogFromContract(contract, eventName, params).');
+}
 
-    const iface = new Interface(abiFile.abi);
+// Version that accepts a contract parameter (for Farcaster tests)
+export function generateEventLogFromContract(contract: any, eventName: string, params: any[]): any {
+    const iface = contract.interface;
     const event = iface.getEvent(eventName);
     if (event == null) {
         throw Error('event not found');

@@ -1,4 +1,4 @@
-import {forEach} from "lodash";
+import { forEach } from "lodash";
 
 export const ContractABI = [
     {
@@ -12,22 +12,22 @@ export const ContractABI = [
                     },
                     {
                         "internalType": "uint16",
-                        "name": "tweets",
+                        "name": "casts",
                         "type": "uint16"
                     },
                     {
                         "internalType": "uint16",
-                        "name": "hashtagTweets",
+                        "name": "hashtagCasts",
                         "type": "uint16"
                     },
                     {
                         "internalType": "uint16",
-                        "name": "cashtagTweets",
+                        "name": "cashtagCasts",
                         "type": "uint16"
                     },
                     {
                         "internalType": "uint16",
-                        "name": "simpleTweets",
+                        "name": "simpleCasts",
                         "type": "uint16"
                     },
                     {
@@ -36,7 +36,7 @@ export const ContractABI = [
                         "type": "uint32"
                     }
                 ],
-                "internalType": "struct GMTwitterOracle.UserTwitterData[]",
+                "internalType": "struct GMStorage.UserFarcasterData[]",
                 "name": "userData",
                 "type": "tuple[]"
             },
@@ -68,12 +68,12 @@ export const ContractABI = [
                         "type": "uint8"
                     }
                 ],
-                "internalType": "struct GMTwitterOracle.Batch[]",
+                "internalType": "struct GMStorage.Batch[]",
                 "name": "batches",
                 "type": "tuple[]"
             }
         ],
-        "name": "mintCoinsForTwitterUsers",
+        "name": "mintCoinsForFarcasterUsers",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -81,9 +81,9 @@ export const ContractABI = [
     {
         "inputs": [
             {
-                "internalType": "uint16",
+                "internalType": "uint64",
                 "name": "start",
-                "type": "uint16"
+                "type": "uint64"
             },
             {
                 "internalType": "uint16",
@@ -91,12 +91,12 @@ export const ContractABI = [
                 "type": "uint16"
             }
         ],
-        "name": "getTwitterUsers",
+        "name": "getFarcasterUsers",
         "outputs": [
             {
-                "internalType": "string[]",
+                "internalType": "uint256[]",
                 "name": "",
-                "type": "string[]"
+                "type": "uint256[]"
             }
         ],
         "stateMutability": "view",
@@ -135,12 +135,12 @@ export const ContractABI = [
                     }
                 ],
                 "indexed": false,
-                "internalType": "struct GMTwitterOracle.Batch[]",
+                "internalType": "struct GMStorage.Batch[]",
                 "name": "batches",
                 "type": "tuple[]"
             }
         ],
-        "name": "twitterMintingProcessed",
+        "name": "farcasterMintingProcessed",
         "type": "event"
     },
     {
@@ -173,12 +173,12 @@ export const ContractABI = [
                         "type": "uint8"
                     }
                 ],
-                "internalType": "struct GMTwitterOracle.Batch[]",
+                "internalType": "struct GMStorage.Batch[]",
                 "name": "batches",
                 "type": "tuple[]"
             }
         ],
-        "name": "logErrorBatches",
+        "name": "logFarcasterErrorBatches",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
@@ -196,16 +196,49 @@ export const ContractABI = [
                 "type": "string"
             }
         ],
-        "name": "finishMintingTwitter",
+        "name": "finishFarcasterMinting",
         "outputs": [],
         "stateMutability": "nonpayable",
         "type": "function"
     },
-
+    {
+        "inputs": [],
+        "name": "totalFarcasterUsersCount",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint64",
+                "name": "start",
+                "type": "uint64"
+            },
+            {
+                "internalType": "uint16",
+                "name": "count",
+                "type": "uint16"
+            }
+        ],
+        "name": "getFarcasterUsers",
+        "outputs": [
+            {
+                "internalType": "uint256[]",
+                "name": "",
+                "type": "uint256[]"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
 ];
-
-// tweetID, userID, tweetContent, likesCount, points
-export type TweetTuple = [tweetID: number, userID: number, tweetContent: string, likesCount: number, points: number];
 
 export interface Batch {
     startIndex: number;
@@ -222,115 +255,133 @@ export function BatchToString(initBatches: Batch[]): string {
     return '[' + res + ']';
 }
 
-export interface Tweet {
+export interface Cast {
     userIndex: number;
-    userID: string;
+    fid: number;
     username: string;
-    tweetID: string;
-    tweetContent: string;
+    castHash: string;
+    castContent: string;
     likesCount: number;
-    userDescriptionText: string;
+    recastsCount: number;
+    timestamp: string;
 }
 
-export interface UserResult {
-    rest_id: string; // This is the userID
-    profile_bio: {
-        description: string;
-    };
-    core: {
-        name: string;
-        screen_name: string;
-    }
-}
-
-interface TwitterResultCore {
-    user_results: {
-        result: UserResult
-    };
-}
-
-interface TweetLegacy {
-    full_text: string; // The tweet content
-    favorite_count: number; // The number of likes
-    created_at: string;
-}
-
-export interface TwitterApiResponse {
-    data: {
-        search_by_raw_query: {
-            search_timeline: {
-                timeline: {
-                    instructions: Array<{
-                        entry?: {
-                            content: {
-                                cursor_type?: string,
-                                value?: string
-                            }
-                        },
-                        entries?: Array<{
-                            content: {
-                                cursor_type?: string,
-                                value?: string,
-
-                                content?: {
-                                    tweet_results?: {
-                                        rest_id: string; // This is the tweetID
-                                        result: {
-                                            rest_id?: string; // This
-                                            core?: TwitterResultCore;
-                                            tweet?: {
-                                                rest_id?: string
-                                                core: TwitterResultCore;
-                                                legacy: TweetLegacy
-                                            }
-                                            legacy?: TweetLegacy
-                                        };
-                                    };
-                                };
-                            };
-                        }>;
-                    }>;
+export interface NeynarApiResponse {
+    casts: Array<{
+        hash: string;
+        parent_hash?: string;
+        parent_url?: string;
+        root_parent_url?: string;
+        parent_author?: {
+            fid: number;
+        };
+        author: {
+            object: string;
+            fid: number;
+            custody_address: string;
+            username: string;
+            display_name: string;
+            pfp_url: string;
+            profile: {
+                bio: {
+                    text: string;
                 };
             };
+            follower_count: number;
+            following_count: number;
+            verifications: string[];
+            verified_addresses: {
+                eth_addresses: string[];
+                sol_addresses: string[];
+            };
+            active_status: string;
+            power_badge: boolean;
         };
-    };
+        text: string;
+        timestamp: string;
+        embeds: Array<{
+            url: string;
+            cast_id?: {
+                fid: number;
+                hash: string;
+            };
+        }>;
+        reactions: {
+            likes_count: number;
+            recasts_count: number;
+            likes: Array<{
+                fid: number;
+                fname: string;
+            }>;
+            recasts: Array<{
+                fid: number;
+                fname: string;
+                timestamp: string;
+            }>;
+        };
+        replies: {
+            count: number;
+        };
+        channel?: {
+            object: string;
+            id: string;
+            name: string;
+            description: string;
+            image_url: string;
+            created_at: number;
+            parent_url: string;
+            url: string;
+            lead_fid: number;
+            moderator_fids: number[];
+            member_count: number;
+        };
+        mentioned_profiles: Array<{
+            object: string;
+            fid: number;
+            custody_address: string;
+            username: string;
+            display_name: string;
+            pfp_url: string;
+            profile: {
+                bio: {
+                    text: string;
+                };
+            };
+        }>;
+    }>;
+    next_cursor?: string;
 }
 
 export interface w3fStorage {
     get(key: string): Promise<string | undefined>;
-
     set(key: string, value: string): Promise<void>;
-
     delete(key: string): Promise<void>;
-
     getKeys(): Promise<string[]>;
-
     getSize(): Promise<number>;
 }
 
-
-export enum TweetProcessingType {
+export enum CastProcessingType {
     Skipped = 0,
     Simple = 1,
     Hashtag = 2,
     Cashtag = 3,
 }
 
-// Define the result structure
+// Define the result structure for Farcaster users
 export interface Result {
     userIndex: number;
-    hashtagTweets: number;
-    cashtagTweets: number;
-    simpleTweets: number;
-    tweets: number;
+    hashtagCasts: number;
+    cashtagCasts: number;
+    simpleCasts: number;
+    casts: number;
     likes: number;
 }
 
 export const defaultResult: Result = {
     userIndex: 0,
-    hashtagTweets: 0,
-    cashtagTweets: 0,
-    simpleTweets: 0,
-    tweets: 0,
+    hashtagCasts: 0,
+    cashtagCasts: 0,
+    simpleCasts: 0,
+    casts: 0,
     likes: 0,
 };

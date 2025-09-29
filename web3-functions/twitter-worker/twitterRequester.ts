@@ -1,8 +1,5 @@
 import ky from "ky";
-import { Batch, Result, Tweet, TwitterApiResponse, TwitterResultCore, UserResult } from "./consts";
-import { setMaxIdleHTTPParsers } from "http";
-import { setDefaultAutoSelectFamily } from "net";
-import { use } from "chai";
+import { Batch, Tweet, TwitterApiResponse } from "./consts";
 
 export interface TwitterSecrets {
     OfficialBearerToken: string;

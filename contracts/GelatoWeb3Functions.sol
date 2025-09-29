@@ -9,7 +9,7 @@ import '@openzeppelin/contracts/utils/introspection/ERC165.sol';
 import './vendor/gelato/AutomateModuleHelper.sol';
 import './vendor/gelato/AutomateTaskCreatorUpgradeable.sol';
 import './vendor/gelato/Types.sol';
-import { GMStorage } from './Storage.sol';
+import { GMStorage } from './GMStorage.sol';
 
 contract GMWeb3Functions is
   GMStorage,
@@ -91,6 +91,36 @@ contract GMWeb3Functions is
 
     gelatoConfig.gelatoTaskId_dailyTrigger = createWeb3FunctionTime(startTime, interval, execData);
     emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_dailyTrigger);
+  }
+
+  // Farcaster Gelato functions
+
+  function createFarcasterVerificationFunction(
+    string calldata _w3fHash,
+    bytes calldata argsHash,
+    bytes32[][] calldata topics
+  ) public onlyOwner {
+    bytes32 oldGelatoId = gelatoConfig.gelatoTaskId_farcasterVerification;
+    if (gelatoConfig.gelatoTaskId_farcasterVerification != bytes32('')) {
+      _cancelTask(gelatoConfig.gelatoTaskId_farcasterVerification);
+    }
+
+    gelatoConfig.gelatoTaskId_farcasterVerification = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
+    emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_farcasterVerification);
+  }
+
+  function createFarcasterWorkerFunction(
+    string calldata _w3fHash,
+    bytes calldata argsHash,
+    bytes32[][] calldata topics
+  ) public onlyOwner {
+    bytes32 oldGelatoId = gelatoConfig.gelatoTaskId_farcasterWorker;
+    if (gelatoConfig.gelatoTaskId_farcasterWorker != bytes32('')) {
+      _cancelTask(gelatoConfig.gelatoTaskId_farcasterWorker);
+    }
+
+    gelatoConfig.gelatoTaskId_farcasterWorker = createWeb3FunctionEvent(_w3fHash, argsHash, topics);
+    emit Web3FunctionChanged(oldGelatoId, gelatoConfig.gelatoTaskId_farcasterWorker);
   }
 
   function createWeb3FunctionEvent(

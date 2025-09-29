@@ -3,6 +3,40 @@ import {smock} from "@neverknowerdev/smock";
 import {GMCoinExposed} from "../../typechain";
 import {ContractFactory} from "ethers";
 
+async function deployLibrariesAndGetFactories() {
+    // Deploy only existing libraries
+    const MintingLib = await ethers.getContractFactory("MintingLib");
+    const mintingLib = await MintingLib.deploy();
+    await mintingLib.waitForDeployment();
+    const mintingLibAddress = await mintingLib.getAddress();
+
+    const AccountManagerLib = await ethers.getContractFactory("AccountManagerLib");
+    const accountLib = await AccountManagerLib.deploy();
+    await accountLib.waitForDeployment();
+    const accountLibAddress = await accountLib.getAddress();
+
+    // Get contract factories - GMCoin only needs MintingLib (AccountManager functions are built-in now)
+    const GMCoinExposedFactory = await ethers.getContractFactory("GMCoinExposed", {
+        libraries: {
+            "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+        },
+    });
+
+    const GMCoinFactory = await ethers.getContractFactory("GMCoin", {
+        libraries: {
+            "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+        },
+    });
+
+    const GMCoinTestnetFactory = await ethers.getContractFactory("GMCoinTestnet", {
+        libraries: {
+            "contracts/MintingLib.sol:MintingLib": mintingLibAddress,
+        },
+    });
+
+    return { GMCoinExposedFactory, GMCoinFactory, GMCoinTestnetFactory, mintingLibAddress, accountLibAddress };
+}
+
 export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number = 0) {
     return async function deployGMToken() {
         // Contracts are deployed using the first signer/account by default
@@ -43,8 +77,10 @@ export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number =
 
         const contractAddress = await coinContractV1.getAddress();
 
-        const TwitterCoin = await ethers.getContractFactory("GMCoinExposed");
-        const coinContract: GMCoinExposed = await upgrades.upgradeProxy(contractAddress, TwitterCoin) as GMCoinExposed;
+        const { GMCoinExposedFactory, accountLibAddress } = await deployLibrariesAndGetFactories();
+        const coinContract: GMCoinExposed = await upgrades.upgradeProxy(contractAddress, GMCoinExposedFactory, {
+            unsafeAllowLinkedLibraries: true,
+        }) as GMCoinExposed;
         await coinContract.waitForDeployment();
 
 
@@ -80,8 +116,28 @@ export function createGMCoinFixture(epochDays: number = 2, ownerSupply: number =
         // });
         // await tx.wait();
 
+        // Deploy AccountManagerStub for testing
+        const AccountManagerStub = await ethers.getContractFactory("AccountManagerStub", {
+            libraries: {
+                "contracts/AccountManagerLib.sol:AccountManagerLib": accountLibAddress,
+            },
+        });
+        const accountManager = await upgrades.deployProxy(AccountManagerStub, 
+            [await coinContract.getAddress()],
+            { kind: "uups", unsafeAllowLinkedLibraries: true, unsafeAllow: ['constructor'] }
+        );
+        await accountManager.waitForDeployment();
+        
+        // Set gelato address in AccountManagerStub
+        await accountManager.setGelatoAddress(gelatoAddr.address);
+        
+        // Set accountManager address in GMCoin
+        const accountManagerAddress = await accountManager.getAddress();
+        await (coinContract as any).setAccountManager(accountManagerAddress);
+
         return {
             coinContract,
+            accountManager,
             owner,
             feeAddr,
             treasuryAddr,
