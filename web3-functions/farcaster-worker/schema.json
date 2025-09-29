@@ -1,0 +1,12 @@
+{
+  "web3FunctionVersion": "2.0.0",
+  "runtime": "js-1.0",
+  "memory": 512,
+  "timeout": 300,
+  "userArgs": {
+    "contractAddress": "string",
+    "concurrencyLimit": "number", 
+    "serverURLPrefix": "string",
+    "neynarFeedURL": "string"
+  }
+}
